@@ -1,0 +1,63 @@
+* vrange: a vector store that runs off the end of a user program's field.
+* The user program (BA = 400, LA = 404: relative words 0 to 77) loads eight
+* words into V1 and stores them from word 74 on: four fit, four do not.
+* The words inside the field are stored, the word beyond the limit is not
+* altered, and the operand range flag sets.  The reference model takes the
+* interrupt right after the instruction, so the P it saves is the address
+* of the next instruction and the two instructions behind the store have
+* not run.  (A vector transfer that stays inside the field lets the
+* instructions behind it issue while it goes on; this one must not.)
+* RUNTIMES: direct exch
+         INCLUDE "rt_direct.cal"
+UBASE    =       10000                   ; absolute word address of the field
+UPKG     =       3000                    ; the user's exchange package
+         TBEGIN
+         A1      UPKG
+         XA      A1
+         EX
+         S2      UPKG+3,0                ; XA, VL, F and A3
+         CHKS    S2,UPKG/20*T$P2_40+10*T$P2_33+40*T$P2_24,2
+         S2      UPKG,0                  ; P and A0
+         S2      S2>D'24
+         CHKS    S2,UAFTER-UBASE*4,3
+         A3      UPKG+2,0
+         CHKA    A3,0,4                  ; A2: the instruction behind the store has not run
+         S2      UBASE+74,0
+         CHKS    S2,D'1001,5
+         S2      UBASE+77,0
+         CHKS    S2,D'1004,6
+         S2      UBASE+100,0             ; the word beyond the field
+         CHKS    S2,D'123456,7
+         S2      UBASE+60,0              ; the store that stayed inside it
+         CHKS    S2,D'1001,10
+         S2      UBASE+67,0
+         CHKS    S2,D'1010,11
+         TPASS
+         TEND
+*
+         ORG     UPKG
+         CON     (UCODE-UBASE*4)*T$P2_24 ; P, relative to the base
+         CON     UBASE/20*T$P2_28        ; BA
+         CON     (UBASE+100)/20*T$P2_28  ; LA: the field is 10000-10077; M = 0
+         CON     UPKG/20*T$P2_40         ; XA back to this package
+         BSSZ    D'12                    ; A4-A7, S0-S7
+*
+* the user program; its addresses are relative to UBASE
+         ORG     UBASE+10
+UCODE    A1      10
+         VL      A1
+         A0      40
+         V1      ,A0,1                   ; words 40 to 47
+         A0      60
+         ,A0,1   V1                      ; inside the field: goes on in the background
+         A4      7
+         A0      74
+         ,A0,1   V1                      ; words 74 to 103: operand range at 100
+UAFTER   A2      5
+         A3      6
+         EX
+         ORG     UBASE+40
+         CON     D'1001,D'1002,D'1003,D'1004,D'1005,D'1006,D'1007,D'1010
+         ORG     UBASE+100
+         CON     D'123456                ; must survive
+         END

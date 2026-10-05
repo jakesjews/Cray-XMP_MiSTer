@@ -10,8 +10,14 @@
 //   176, 177  VL words between memory and a V register, starting at address
 //             (A0) and stepping by (Ak)
 //
-// A memory instruction stays the current instruction until its last word is
-// done, and issues in the DONE clock.  Nothing here assumes how long memory
+// A scalar reference or a block transfer stays the current instruction until
+// its last word is done, and issues in the DONE clock.  A vector transfer
+// issues three clocks after it starts and goes on in the background while
+// other instructions issue, as on the real machine (manual 4-70); the V
+// register stays reserved and other memory instructions wait.  The exception
+// is a vector transfer whose first or last address is outside the field: it
+// stays the current instruction to its end, so that the range error
+// interrupt is taken right behind it.  Nothing here assumes how long memory
 // takes: a read word is handed to its register the clock after the
 // acknowledge, and a write word is requested only once its register has been
 // read.  A store works ahead: it reads the next word from its register while
@@ -87,6 +93,9 @@ module mem_fu (
 	i_mem_ack,
 	o_mem_type,
 	o_mem_issue,
+	i_issue,
+	o_v_num,
+	o_v_store,
 	o_mem_busy,
 	o_range_err
 );
@@ -146,6 +155,9 @@ module mem_fu (
 	//instruction issue
 	output wire o_mem_type;
 	output wire o_mem_issue;
+	input wire i_issue;  //the current instruction issues this clock
+	output wire [2:0] o_v_num;  //the V register of the vector transfer under way
+	output wire o_v_store;  //and it is being stored
 	output wire o_mem_busy;
 	output reg o_range_err;  //a reference outside the field was dropped
 
@@ -171,13 +183,18 @@ module mem_fu (
 	//-----------------------------------------------------------------
 	// Decode
 	//-----------------------------------------------------------------
-	wire [ 6:0] op = i_cip[15:9];
-	wire        b_t_type = (i_cip[15:11] == 5'b00111);  //034-037, 1 parcel
-	wire        a_s_type = (i_cip[15:14] == 2'b10);  //100-137, 2 parcels
-	wire        v_type = (op == 7'o176) || (op == 7'o177);  //1 parcel
-	wire [23:0] jkm = {{2{i_cip[5]}}, i_cip[5:0], i_lip[15:0]};  //signed displacement
+	//The instruction being carried out.  A vector transfer goes on after its
+	//instruction has issued, so nothing looks at i_cip once a transfer has started.
+	reg  [15:0] cur;
+	wire [15:0] ins = (state == IDLE) ? i_cip : cur;
 
-	wire is_read = b_t_type ? !i_cip[9] : a_s_type ? !i_cip[12] : (op == 7'o176);
+	wire [ 6:0] op = ins[15:9];
+	wire        b_t_type = (ins[15:11] == 5'b00111);  //034-037, 1 parcel
+	wire        a_s_type = (ins[15:14] == 2'b10);  //100-137, 2 parcels
+	wire        v_type = (op == 7'o176) || (op == 7'o177);  //1 parcel
+	wire [23:0] jkm = {{2{ins[5]}}, ins[5:0], i_lip[15:0]};  //signed displacement
+
+	wire is_read = b_t_type ? !ins[9] : a_s_type ? !ins[12] : (op == 7'o176);
 	wire to_b = (op == 7'o034);
 	wire to_t = (op == 7'o036);
 	wire from_b = (op == 7'o035);
@@ -196,23 +213,24 @@ module mem_fu (
 			start_addr   = i_a0_data;
 			start_stride = 24'd1;
 			start_count  = i_ai_data[6:0];
-			reg_conflict = i_a_res_mask[0] || i_a_res_mask[i_cip[8:6]];
+			reg_conflict = i_a_res_mask[0] || i_a_res_mask[ins[8:6]];
 		end else if (a_s_type) begin  //one word at (Ah) + jkm
 			start_addr = i_ah_data + jkm;
 			start_stride = 24'd0;
 			start_count = 7'd1;
 			//a load must not pass a result still on its way to the same register file
-			reg_conflict = !i_cip[12] ? (i_cip[13] ? (|{i_a_res_mask,i_s_res_mask}) : (|i_a_res_mask))
-								   : (i_cip[13] ? (i_a_res_mask[i_cip[11:9]] || i_s_res_mask[i_cip[8:6]])
-												: (i_a_res_mask[i_cip[11:9]] || i_a_res_mask[i_cip[8:6]]));
+			reg_conflict = !ins[12] ? (ins[13] ? (|{i_a_res_mask,i_s_res_mask}) : (|i_a_res_mask))
+								   : (ins[13] ? (i_a_res_mask[ins[11:9]] || i_s_res_mask[ins[8:6]])
+												: (i_a_res_mask[ins[11:9]] || i_a_res_mask[ins[8:6]]));
 		end else begin  //VL words from (A0), stepping by (Ak)
 			start_addr   = i_a0_data;
 			start_stride = i_ak_data;
 			start_count  = vl_count;
-			reg_conflict = i_a_res_mask[0] || i_a_res_mask[i_cip[2:0]];
+			reg_conflict = i_a_res_mask[0] || i_a_res_mask[ins[2:0]];
 		end
 
-	assign o_mem_type = b_t_type || a_s_type || v_type;
+	//what the current instruction is, whatever this unit is doing
+	assign o_mem_type = (i_cip[15:11] == 5'b00111) || (i_cip[15:14] == 2'b10) || (i_cip[15:10] == 6'b111111);
 
 	wire start = (state==IDLE) &&
 			 ((b_t_type && i_cip_vld && !reg_conflict) ||
@@ -235,10 +253,11 @@ module mem_fu (
 			case (state)
 				IDLE:
 				if (start) begin
+					cur        <= i_cip;
 					address    <= start_addr;
 					stride     <= start_stride;
 					remaining  <= start_count;
-					reg_idx    <= v_type ? 6'd0 : i_cip[5:0];
+					reg_idx    <= v_type ? 6'd0 : ins[5:0];
 					wait_cnt   <= src_wait;
 					fetch_left <= start_count;
 					wr_valid   <= 1'b0;
@@ -327,9 +346,9 @@ module mem_fu (
 	always @*
 		if (from_b) src_word = {40'b0, i_b_rd_data};
 		else if (from_t) src_word = i_t_rd_data;
-		else if (a_s_type) src_word = i_cip[13] ? i_si_data : {40'b0, i_ai_data};
+		else if (a_s_type) src_word = ins[13] ? i_si_data : {40'b0, i_ai_data};
 		else
-			case (i_cip[5:3])
+			case (ins[5:3])
 				3'd0: src_word = i_v0_data;
 				3'd1: src_word = i_v1_data;
 				3'd2: src_word = i_v2_data;
@@ -377,7 +396,35 @@ module mem_fu (
 	assign o_mem_wr_en = (state == WR) && wr_valid && !out_of_field;
 	assign o_mem_seq   = (state == WR);
 
-	assign o_mem_issue = (state == DONE);
+	//-----------------------------------------------------------------
+	// Letting a vector instruction issue while its transfer goes on
+	//-----------------------------------------------------------------
+	// The addresses of a transfer run evenly from the first to the last, so the
+	// whole of it is inside the field when both of those are.
+	reg               released;  // the instruction has issued; the transfer goes on behind it
+	reg        [ 1:0] age;  // clocks since the start, up to 3
+	reg signed [31:0] span;  // from the first address to the last
+	reg               fits;  // a vector transfer with both ends in the field
+
+	wire signed [32:0] last_rel = $signed({9'b0, address}) + $signed({span[31], span});
+	wire        [32:0] last_abs = $unsigned(last_rel) + {11'b0, base};
+	wire               last_in = !last_rel[32] && (last_abs < {12'b0, limit});
+
+	always @(posedge clk)
+		if (rst || (state == IDLE)) begin
+			released <= 1'b0;
+			age      <= 2'd0;
+			fits     <= 1'b0;
+		end else begin
+			if (age != 2'd3) age <= age + 2'd1;
+			if (age == 2'd0) span <= $signed({1'b0, remaining} - 8'sd1) * $signed(stride);
+			if (age == 2'd1) fits <= v_type && !out_of_field && last_in;
+			if (o_mem_issue && i_issue) released <= 1'b1;
+		end
+
+	assign o_mem_issue = ((state == DONE) || fits) && !released;
 	assign o_mem_busy  = (state != IDLE);
+	assign o_v_num     = is_read ? ins[8:6] : ins[5:3];
+	assign o_v_store   = (state != IDLE) && v_type && !is_read;
 
 endmodule

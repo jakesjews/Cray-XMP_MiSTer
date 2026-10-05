@@ -175,7 +175,8 @@ fn every_smoke_test_is_run() {
             "range.cal",
             "recur.cal",
             "shift.cal",
-            "vector.cal"
+            "vector.cal",
+            "vrange.cal"
         ],
         "a smoke test was added or removed: give it a test function here"
     );
@@ -219,6 +220,11 @@ fn smoke_chan() {
 #[test]
 fn smoke_exitflag() {
     pass("exitflag", &["direct"]);
+}
+
+#[test]
+fn smoke_vrange() {
+    pass("vrange", MONITOR);
 }
 
 #[test]

@@ -950,7 +950,8 @@ localparam VLOG      = 3'b000,   //vector logical
 	wire       vmem_wr;  //o_mem_data holds element vmem_wr_idx of a 176
 	wire [5:0] vmem_wr_idx;
 	wire [5:0] vmem_rd_idx;
-	wire       vmem_store = mem_busy && (cip_instr == 7'o177);
+	wire       vmem_store;  //a 177 is storing register vmem_num
+	wire [2:0] vmem_num;  //the V register of the vector transfer under way
 
 	genvar gr;
 	generate
@@ -966,7 +967,7 @@ localparam VLOG      = 3'b000,   //vector logical
 				wr_data = s_j_data;
 				if (vreg_swrite[gr])  //077: (Sj) to element (Ak)
 					wr_en = 1'b1;
-				if (vmem_wr && (cip_i == gr)) begin
+				if (vmem_wr && (vmem_num == gr)) begin
 					wr_en   = 1'b1;
 					wr_idx  = vmem_wr_idx;
 					wr_data = data_from_mem_to_regs;
@@ -987,7 +988,7 @@ localparam VLOG      = 3'b000,   //vector logical
 				.i_recursive(vwrite_start[gr]),
 				.i_rec_delay(v_rec_delay),
 				.i_elem_idx (a_k_data[5:0]),
-				.i_mem_rd   (vmem_store && (cip_j == gr)),
+				.i_mem_rd   (vmem_store && (vmem_num == gr)),
 				.i_mem_idx  (vmem_rd_idx),
 				.o_rd_data  (v_rd_data[64*gr+:64]),
 				.i_wr_start (vwrite_start[gr]),
@@ -1387,7 +1388,10 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_mem_wr_en      (mem_wr_en),
 		.i_mem_ack        (mem_ack),
 		.o_mem_type       (mem_type),
-		.o_mem_issue      (mem_issue)
+		.o_mem_issue      (mem_issue),
+		.i_issue          (cip_issue),
+		.o_v_num          (vmem_num),
+		.o_v_store        (vmem_store)
 	);
 
 

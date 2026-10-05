@@ -133,7 +133,12 @@ simulator's single-step mode, where an exit with a result still in flight was
 taken before its flag was set; that is fixed. Several of its changes differ
 from the manual (exit flags set in monitor mode, a vector length of 64 for
 `VL 1`, a result register that is also an operand read element by element),
-and it still has upstream faults repaired here, so nothing was taken from it.
+and it still has upstream faults repaired here, so no code was taken from it.
+One idea was: its memory instructions issue at once and transfer in the
+background. For vector loads and stores that is what the real machine does
+(manual page 4-70), and this core now does it too. Its other additions are not
+CRAY-1 behaviour (eight instruction buffers, a two-clock address multiply) or
+belong to the X-MP.
 
 What it and the review showed about the X-MP paths, none of which the CRAY-1
 build uses, and all of which wait for the X-MP work:
@@ -157,9 +162,16 @@ three or more of its elements lie in a line, except in the I/O page, and
 picks its elements out as they arrive. A block or vector store reads the next
 word from its register while the one before is on its way to memory.
 
+A vector load or store lets its instruction issue three clocks after it starts
+and goes on in the background while other instructions issue; its V register
+stays reserved and other memory instructions wait for it. A transfer whose
+first or last address is outside the field stays the current instruction
+instead, so the range error interrupt is taken right behind it. Scalar
+references and block transfers hold issue until they are done.
+
 With these and chaining, the monitor's SAXPY demonstration runs its vector
-loop about 9 times faster than its scalar loop on a DE10-Nano: 7,413 clock
-periods against 67,742 for 1024 elements.
+loop about 10 times faster than its scalar loop on a DE10-Nano: 6,740 clock
+periods against 67,766 for 1024 elements.
 
 Measured on a DE10-Nano at 29.4 MHz: a store takes 2 clocks, a single read 8
 clocks typically and 22 at worst, a 16-word burst 23 typically and 32 at worst.
