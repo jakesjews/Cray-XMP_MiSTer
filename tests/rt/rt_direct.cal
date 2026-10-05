@@ -1,0 +1,56 @@
+* rt_direct.cal: test runtime, direct start.
+*
+* The dead start loads the exchange package at words 0-17: monitor mode,
+* base address 0, the largest limit address, P at the test's entry.  The
+* test runs at once; no other exchange takes place.  A0-A7, S0-S7 and VL
+* start as 0 (VL = 0 is a vector length of 100 octal).
+*
+*          INCLUDE "rt_direct.cal"
+*          TBEGIN
+*          ... the test, ending in TPASS or TFAIL n ...
+*          TEND
+*          ... data ...
+*          END
+*
+* TEND takes the dump if asked (TEND DUMPAS, TEND DUMPALL), stores ASCII
+* 'CRAYDONE' in word 101, writes the exit code to TEST_EXIT (0 if the status
+* in word 100 is 1, otherwise the status) and then jumps to itself.
+*
+* The same test runs under the other runtime when this INCLUDE names
+* rt_exch.cal instead.  The macros are described in rt_common.cal.
+*
+* The tests in tests/smoke are written against this file.  Each has a line
+* "* RUNTIMES: direct exch user reloc" naming the start-ups it can run
+* under: exch is the same text with rt_exch.cal in the INCLUDE, user adds
+* "TUSER 0" after the INCLUDE and reloc adds "TUSER 1000"
+* (tools/crates/model/tests/smoke.rs does this; with sed:
+* sed 's/rt_direct\.cal/rt_exch.cal/' test.cal).
+*
+         INCLUDE "rt_common.cal"
+*
+         ORG     0
+         CON     T$ENTRY*4*T$P2_24       ; P = entry parcel; A0 = 0
+         CON     0                       ; BA = 0; A1 = 0
+         CON     T$LAMAX*T$P2_28+1*T$P2_24 ; LA; M = monitor mode; A2 = 0
+         CON     0                       ; XA = 0, VL = 0, F = 0; A3 = 0
+         BSSZ    D'12                    ; A4-A7, S0-S7
+*
+         MACRO   TUSER %BA
+         ENDM
+*
+         MACRO   TBEGIN
+         ORG     T$ENTRY
+         ENDM
+*
+         MACRO   TEND %DUMP
+T$END    %DUMP
+         S2      T$CDON,0
+         T$DONE,0 S2
+         S1      T$STAT,0
+         S2      1
+         S0      S1\S2
+         JSN     T$EXW
+         S1      0
+T$EXW    T$EXIT,0 S1
+T$HANG   J       T$HANG
+         ENDM

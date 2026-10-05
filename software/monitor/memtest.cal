@@ -1,0 +1,55 @@
+* Demonstration 7: memory test.  Every word above the monitor, up to the
+* I/O page, is written with a pattern made from its address and read back,
+* then the same again with the complement of the pattern.
+MTBEG    =       10000
+MTEND    =       3777760
+*
+MEMTST   SAY     MMT1
+         R       CRLF
+         A6      MTEND
+         A7      0                       ; words that read back wrong
+         S6      0                       ; 0, then all ones for the complement
+MT1      A5      MTBEG
+MT2      S1      A5
+         S2      S1
+         S2      S2<D'21
+         S3      S1
+         S3      S3<D'42
+         S1      S1\S2
+         S1      S1\S3
+         S1      S1\S6
+         0,A5    S1
+         A5      A5+1
+         A0      A5-A6
+         JAM     MT2
+         A5      MTBEG
+MT3      S1      A5
+         S2      S1
+         S2      S2<D'21
+         S3      S1
+         S3      S3<D'42
+         S1      S1\S2
+         S1      S1\S3
+         S1      S1\S6
+         S4      0,A5
+         S0      S1\S4
+         JSZ     MT4
+         A7      A7+1
+MT4      A5      A5+1
+         A0      A5-A6
+         JAM     MT3
+         SAY     MMT2
+         R       CRLF
+         S0      S6
+         JSN     MT5
+         S6      -1
+         J       MT1
+MT5      S1      A7
+         R       PUTDEC
+         SAY     MMT3
+         R       CRLF
+MTX      EX
+         J       MTX
+MMT1     DATA    'MEMORY TEST, WORDS 0010000 TO 3777757',0
+MMT2     DATA    'PASS DONE',0
+MMT3     DATA    ' ERRORS',0

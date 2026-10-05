@@ -1,0 +1,249 @@
+* rt_common.cal: what the two test runtimes share.  Do not include this
+* file directly: include rt_direct.cal or rt_exch.cal.
+*
+* Memory layout (word addresses, octal, relative to the test's base address)
+*
+*     0000-0017  exchange package 0, loaded by the dead start
+*     0020-0037  rt_exch: the exchange package of the test
+*     0040-0077  rt_exch: the monitor start-up
+*     0100       T$STAT  status: 777 no verdict yet, 1 pass, n > 1 check n failed
+*     0101       T$DONE  ASCII 'CRAYDONE' once the run has finished
+*     0102-0104  scratch words of CHKS and CHKA
+*     0105       the constant 'CRAYDONE'
+*     0200-3777  the test: code and data, from TBEGIN on
+*     4000-5277  T$DUMP  the dump area of DUMPAS and DUMPALL
+*
+* A test that places things itself (ORG) must keep clear of these areas and
+* of its own code: the assembler does not warn when words are assembled
+* twice, the later ones win.
+*
+* Dump area
+*
+*     4000-4007  A0-A7 (24 bits each)                DUMPAS and DUMPALL
+*     4010-4017  S0-S7                               DUMPAS and DUMPALL
+*     4020       vector length, as a count 1 to 100  DUMPALL
+*     4021       VM                                  DUMPALL
+*     4100-4177  B00-B77                             DUMPALL (035)
+*     4200-4277  T00-T77                             DUMPALL (037)
+*     4300-4377  V0 elements 0 to 63                 DUMPALL (177, VL = 100)
+*     4400-4477  V1, and so on to
+*     5200-5277  V7
+*
+* Macros (every runtime defines the same set)
+*
+*     TUSER ba       between INCLUDE and TBEGIN: under rt_exch, run the test
+*                    in user mode with base address register = ba (octal,
+*                    in units of 20 words).  Ignored by rt_direct.
+*     TBEGIN         start of the test: code follows, at word 0200
+*     TPASS          status = 1.  Clobbers S0.
+*     TFAIL n        status = n and go to the end of the test (TEND).
+*                    n must be greater than 1.  Clobbers S0.
+*     CHKS Sr,exp,n  fail check n unless (Sr) = exp (64 bits).  Clobbers S0.
+*     CHKA Ar,exp,n  fail check n unless (Ar) = the low 24 bits of exp.
+*                    Clobbers S0.
+*     TEND           end of the test, once per test.  TEND DUMPAS or
+*                    TEND DUMPALL dumps first; the dump is also taken when a
+*                    check fails.
+*     DUMPAS         store A0-A7 and S0-S7 in the dump area.  Clobbers
+*                    nothing.
+*     DUMPALL        DUMPAS, then VL, VM, B, T and V0-V7.  Clobbers A0, A1,
+*                    S1, S2, S3 and leaves VL = 100 (octal); VM is restored.
+*                    The vector length is found by testing V0 (175), so the
+*                    word at 4020 is only defined in the reference model if
+*                    the first (VL) elements of V0 are.
+*     PUTC           write the character in S1 to the console.  Clobbers S0.
+*     PUTCH c        write the character c ('A' or a number).  Clobbers S0, S1.
+*     PUTNL          write a line feed.  Clobbers S0, S1.
+*     PUTS label     write the string at label: characters packed eight to a
+*                    word (DATA 'text'), ended by a zero character.  A
+*                    string of 8, 16, ... characters needs a zero word after
+*                    it: DATA 'EIGHTCHR',0.  Clobbers A0, A1, A2, S0, S1, S2.
+*     PUTOCT         write (S1) as 22 octal digits.  Clobbers A0, A1, A2, S0,
+*                    S1, S2, S3.
+*
+* The console macros address the I/O page, which a test can only reach when
+* its base address is 0.  CHKS and CHKA use loads and stores with index 0
+* (12h, 13h, 11h), 046, 052, 014 and 006; the dump uses stores with index 0
+* and, for DUMPALL, 073, 175, 051, 026, 003, 0020, 035, 037 and 177.  No
+* macro uses a return jump, so B00 is never clobbered.
+*
+* Symbols starting with T$ and macro parameters starting with % belong to
+* the runtime.
+*
+T$ENTRY  =       200                     ; first word of the test
+T$STAT   =       100
+T$DONE   =       101
+T$SV6    =       102
+T$SV7    =       103
+T$TMP    =       104
+T$CDON   =       105
+T$DUMP   =       4000
+T$CSTA   =       3777760                 ; CON_STAT
+T$CDAT   =       3777761                 ; CON_DATA
+T$EXIT   =       3777762                 ; TEST_EXIT
+T$CYCL   =       3777763                 ; CYCLES
+T$P2_24  =       100000000               ; 2**24: P and the M and F fields
+T$P2_28  =       2000000000              ; 2**28: BA and LA
+T$P2_33  =       100000000000            ; 2**33: VL
+T$P2_40  =       20000000000000          ; 2**40: XA
+T$LAMAX  =       777777                  ; the largest limit address
+*
+         ORG     T$STAT
+         CON     777                     ; no verdict yet
+         CON     0                       ; not done
+         BSSZ    3                       ; scratch
+         CON     'CRAYDONE'
+*
+         MACRO   TPASS
+         S0      1
+         T$STAT,0 S0
+         ENDM
+*
+         MACRO   TFAIL %N
+         S0      %N
+         T$STAT,0 S0
+         J       T$END
+         ENDM
+*
+* (Sr) is taken through memory so that S0 can be checked too: S0 named as
+* an operand of a logical instruction would read as a constant.
+         MACRO   CHKS %REG,%EXP,%N
+         LOCAL   %K,%OK
+         T$SV6,0 S6
+         T$SV7,0 S7
+         T$TMP,0 %REG
+         S6      T$TMP,0
+         S7      %K,0
+         S0      S6\S7
+         S6      T$SV6,0
+         S7      T$SV7,0
+         JSZ     %OK
+         TFAIL   %N
+%K       CON     %EXP
+%OK
+         ENDM
+*
+         MACRO   CHKA %REG,%EXP,%N
+         LOCAL   %K,%OK
+         T$SV6,0 S6
+         T$SV7,0 S7
+         T$TMP,0 %REG
+         S6      T$TMP,0
+         S7      %K,0
+         S0      S6\S7
+         S0      S0<D'40                 ; compare 24 bits
+         S6      T$SV6,0
+         S7      T$SV7,0
+         JSZ     %OK
+         TFAIL   %N
+%K       CON     %EXP
+%OK
+         ENDM
+*
+         MACRO   DUMPAS
+         T$DUMP+0,0 A0
+         T$DUMP+1,0 A1
+         T$DUMP+2,0 A2
+         T$DUMP+3,0 A3
+         T$DUMP+4,0 A4
+         T$DUMP+5,0 A5
+         T$DUMP+6,0 A6
+         T$DUMP+7,0 A7
+         T$DUMP+10,0 S0
+         T$DUMP+11,0 S1
+         T$DUMP+12,0 S2
+         T$DUMP+13,0 S3
+         T$DUMP+14,0 S4
+         T$DUMP+15,0 S5
+         T$DUMP+16,0 S6
+         T$DUMP+17,0 S7
+         ENDM
+*
+         MACRO   DUMPALL
+         DUMPAS
+         S1      VM
+         T$DUMP+21,0 S1
+         VM      V0,Z                    ; one VM bit for each element below
+         S2      VM                      ; the vector length: it is zero
+         VM      V0,N                    ; or it is not
+         S3      VM
+         S2      S2!S3
+         A1      PS2
+         T$DUMP+20,0 A1
+         VM      S1
+         A1      100
+         A0      T$DUMP+100
+         ,A0     B0,A1
+         A0      T$DUMP+200
+         ,A0     T0,A1
+         VL      A1
+         A0      T$DUMP+300
+         ,A0,1   V0
+         A0      T$DUMP+400
+         ,A0,1   V1
+         A0      T$DUMP+500
+         ,A0,1   V2
+         A0      T$DUMP+600
+         ,A0,1   V3
+         A0      T$DUMP+700
+         ,A0,1   V4
+         A0      T$DUMP+1000
+         ,A0,1   V5
+         A0      T$DUMP+1100
+         ,A0,1   V6
+         A0      T$DUMP+1200
+         ,A0,1   V7
+         ENDM
+*
+         MACRO   PUTC
+         LOCAL   %W
+%W       S0      T$CSTA,0                ; wait for output ready, bit 2**1
+         S0      S0<D'62
+         JSP     %W
+         T$CDAT,0 S1
+         ENDM
+*
+         MACRO   PUTCH %C
+         S1      %C
+         PUTC
+         ENDM
+*
+         MACRO   PUTNL
+         PUTCH   12
+         ENDM
+*
+         MACRO   PUTS %STR
+         LOCAL   %WD,%CH,%DN
+         A1      %STR
+%WD      S2      0,A1                    ; the next eight characters
+         A1      A1+1
+         A2      D'8
+%CH      S1      S2
+         S1      S1>D'56
+         S0      S1
+         JSZ     %DN                     ; a zero character ends the string
+         PUTC
+         S2      S2<D'8
+         A2      A2-1
+         A0      A2
+         JAN     %CH
+         J       %WD
+%DN
+         ENDM
+*
+         MACRO   PUTOCT
+         LOCAL   %LP
+         S2      S1
+         A1      D'22                    ; digits
+         A2      1                       ; the first digit is one bit
+%LP      S3      0
+         S3      S3,S2<A2                ; the next digit
+         S2      S2<A2
+         S1      60
+         S1      S1+S3
+         PUTC
+         A2      3
+         A1      A1-1
+         A0      A1
+         JAN     %LP
+         ENDM

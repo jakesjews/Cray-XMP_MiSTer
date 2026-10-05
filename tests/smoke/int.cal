@@ -1,0 +1,92 @@
+* int: integer arithmetic in the A and S registers, with the special values
+* register 0 has as an operand: (Aj) = 0, (Ak) = 1, (Sj) = 0, (Sk) = 2**63.
+* RUNTIMES: direct exch user reloc
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+* 24-bit two's complement in the A registers (030, 031, 032)
+         A1      D'100
+         A2      D'23
+         A3      A1+A2
+         CHKA    A3,D'123,2
+         A3      A1-A2
+         CHKA    A3,D'77,3
+         A3      A2-A1
+         CHKA    A3,-D'77,4
+         A3      A1*A2
+         CHKA    A3,D'2300,5
+         A4      -1
+         CHKA    A4,77777777,6
+         A4      #7                      ; 021: the complement of 7
+         CHKA    A4,77777770,7
+         A5      17777777                ; 020: a 22-bit constant
+         A6      A5*A5                   ; the low 24 bits of the product
+         CHKA    A6,40000001,10
+         A6      A5+A5
+         A6      A6+A6
+         A6      A6+A6                   ; overflows 24 bits
+         CHKA    A6,77777770,11
+* register 0 as an operand
+         A0      D'55
+         A3      A0+A1                   ; 0 + (A1)
+         CHKA    A3,D'100,12
+         A3      A1+A0                   ; (A1) + 1
+         CHKA    A3,D'101,13
+         A3      A0-A1                   ; 0 - (A1)
+         CHKA    A3,-D'100,14
+         A3      A1-A0                   ; (A1) - 1
+         CHKA    A3,D'99,15
+         A3      A0*A1                   ; 0
+         CHKA    A3,0,16
+         A3      A1*A0                   ; (A1) * 1
+         CHKA    A3,D'100,17
+         A3      A0+1                    ; 0 + 1
+         CHKA    A3,1,20
+         CHKA    A0,D'55,21              ; A0 itself is an ordinary register
+* 64-bit two's complement in the S registers (060, 061)
+         S1      D'1000
+         S2      D'234
+         S3      S1+S2
+         CHKS    S3,D'1234,22
+         S3      S1-S2
+         CHKS    S3,D'766,23
+         S3      S2-S1
+         CHKS    S3,-D'766,24
+         S3      -S2
+         CHKS    S3,-D'234,25
+         S4      -1
+         S3      S4+S1
+         CHKS    S3,D'999,26
+         S5      #1234                   ; 041: the complement of 1234
+         CHKS    S5,-1235,27
+* register 0 as an operand (the checks use S0, so they come afterwards)
+         S0      D'77
+         S3      S0+S1                   ; 0 + (S1)
+         S4      S1+S0                   ; (S1) + 2**63
+         S5      S1-S0                   ; (S1) - 2**63
+         S6      S0-S1                   ; 0 - (S1)
+         CHKS    S0,D'77,34              ; S0 itself is an ordinary register
+         CHKS    S3,D'1000,30
+         CHKS    S4,X'80000000000003E8,31
+         CHKS    S5,X'80000000000003E8,32
+         CHKS    S6,-D'1000,33
+* between A and S: 023, 026, 027, 071
+         S5      PAT,0
+         A3      S5                      ; the low 24 bits
+         CHKA    A3,X'000F00,35
+         A3      PS5                     ; sixteen and four one bits
+         CHKA    A3,D'20,36
+         A3      ZS5                     ; sixteen leading zeros
+         CHKA    A3,D'16,37
+         A3      ZS0                     ; (Sj) = 0: 64
+         CHKA    A3,D'64,40
+         A4      -1
+         S3      A4                      ; no sign extension
+         CHKS    S3,X'FFFFFF,41
+         S3      +A4                     ; sign extension
+         CHKS    S3,-1,42
+         S3      A0                      ; (Ak) = 1
+         CHKS    S3,1,43
+         TPASS
+         TEND
+PAT      CON     X'0000FFFF00000F00
+         END

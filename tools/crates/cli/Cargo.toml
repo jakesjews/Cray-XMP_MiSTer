@@ -1,0 +1,14 @@
+[package]
+name = "cray1-cli"
+description = "The cray1 command: assembler, disassembler and instruction table for the Cray-1 core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "cray1"
+path = "src/main.rs"
+
+[dependencies]
+cray1-isa = { path = "../isa" }
+cray1-asm = { path = "../asm" }

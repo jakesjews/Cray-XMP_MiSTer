@@ -1,0 +1,72 @@
+* recur: a vector register that is both an operand and the result (HRM
+* pages 3-14 to 3-16).  The element counter of the operand/result register
+* is held until the first result arrives, functional unit time + 2 clock
+* periods after the start, so results form groups: five for the integer add
+* unit (3 + 2), eight for the floating point add unit (6 + 2).
+* RUNTIMES: direct exch user reloc
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+         A1      D'64
+         VL      A1
+* integer: V1 holds 1 in every element, V2 element 0 is 0.
+* V2 = V1 + V2 leaves in element e the number of elements e, e-5, e-10 ...
+         A0      ONE
+         A2      0
+         V1      ,A0,A2                  ; an increment of 0: 64 copies
+         V2      0
+         V2      V1+V2
+         A2      D'4
+         S1      V2,A2
+         CHKS    S1,1,2
+         A2      D'5
+         S1      V2,A2
+         CHKS    S1,2,3
+         A2      D'59
+         S1      V2,A2
+         CHKS    S1,D'12,4               ; elements 4, 9, ... 59
+         A2      D'60
+         S1      V2,A2
+         CHKS    S1,D'13,5               ; elements 0, 5, ... 60
+         A2      D'63
+         S1      V2,A2
+         CHKS    S1,D'13,6               ; elements 3, 8, ... 63
+* the five partial sums add up to the sum of all 64 elements
+         A2      D'59
+         S2      V2,A2
+         A2      D'60
+         S1      V2,A2
+         S2      S2+S1
+         A2      D'61
+         S1      V2,A2
+         S2      S2+S1
+         A2      D'62
+         S1      V2,A2
+         S2      S2+S1
+         A2      D'63
+         S1      V2,A2
+         S2      S2+S1
+         CHKS    S2,D'64,7
+* floating point: V3 holds 1.0 in every element, V4 element 0 is 0.
+* V4 = V3 + V4 leaves eight partial sums of 8.0 in elements 56 to 63.
+         A0      FONE
+         A2      0
+         V3      ,A0,A2
+         V4      0
+         V4      V3+FV4
+         A2      D'7
+         S1      V4,A2
+         CHKS    S1,X'4001800000000000,10 ; 1.0
+         A2      D'8
+         S1      V4,A2
+         CHKS    S1,X'4002800000000000,11 ; 2.0
+         A2      D'56
+         S1      V4,A2
+         CHKS    S1,X'4004800000000000,12 ; 8.0
+         A2      D'63
+         S1      V4,A2
+         CHKS    S1,X'4004800000000000,13 ; 8.0
+         TPASS
+         TEND
+ONE      CON     1
+FONE     CON     X'4001800000000000      ; 1.0
+         END

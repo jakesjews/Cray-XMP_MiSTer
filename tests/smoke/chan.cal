@@ -1,0 +1,28 @@
+* chan: the channel instructions with no channels attached.
+* 033 reads zero for the interrupting channel, a channel address and a
+* channel error flag.  0010 to 0012 change no register in any mode.
+* RUNTIMES: direct exch user
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+         A1      5
+         A2      7
+         A3      3
+         A4      6
+         A1      CI                      ; 033i0x
+         CHKA    A1,0,2
+         A2      CA,A3                   ; 033ij0
+         CHKA    A2,0,3
+         A4      CE,A3                   ; 033ij1
+         CHKA    A4,0,4
+         A1      D'11
+         A2      D'22
+         CA,A3   A1                      ; 0010jk
+         CL,A3   A2                      ; 0011jk
+         CI,A3                           ; 0012jx
+         PASS
+         CHKA    A1,D'11,5
+         CHKA    A2,D'22,6
+         CHKA    A3,3,7
+         TPASS
+         TEND    DUMPAS
+         END

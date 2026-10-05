@@ -1,0 +1,97 @@
+* mem: loads and stores (10h-13h) and the block transfers between memory
+* and the B and T registers (034-037).
+* RUNTIMES: direct exch user reloc
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+* 12h and 13h: 64 bits, address (Ah) + displacement
+         S1      SRC,0
+         CHKS    S1,X'1111111111111111,2
+         A1      SRC
+         S2      1,A1
+         CHKS    S2,X'2222222222222222,3
+         A2      SRC+3
+         S3      -1,A2                   ; a negative displacement
+         CHKS    S3,X'3333333333333333,4
+         BUF,0   S1
+         A3      BUF
+         1,A3    S2
+         -1,A3   S3                      ; BUF-1 is SPARE
+         S4      BUF,0
+         CHKS    S4,X'1111111111111111,5
+         S4      BUF+1,0
+         CHKS    S4,X'2222222222222222,6
+         S4      SPARE,0
+         CHKS    S4,X'3333333333333333,7
+* 10h and 11h: 24 bits; a store zeroes the upper 40 bits
+         A4      SRC+1,0
+         CHKA    A4,X'222222,10
+         A5      -1
+         S5      -1
+         BUF+2,0 S5
+         BUF+2,0 A5
+         S5      BUF+2,0
+         CHKS    S5,X'FFFFFF,11
+         A6      2,A3
+         CHKA    A6,-1,12
+* 034: memory to B registers; only the low 24 bits
+         A0      SRC
+         A1      3
+         B10,A1  ,A0
+         A2      B10
+         CHKA    A2,X'111111,13
+         A2      B11
+         CHKA    A2,X'222222,14
+         A2      B12
+         CHKA    A2,X'333333,15
+* 035: B registers to memory, right justified
+         A0      BUF+4
+         ,A0     B10,A1
+         S1      BUF+4,0
+         CHKS    S1,X'111111,16
+         S1      BUF+6,0
+         CHKS    S1,X'333333,17
+* registers are circular: B77 is followed by B00
+         A0      SRC
+         A1      2
+         B77,A1  ,A0
+         A2      B77
+         CHKA    A2,X'111111,20
+         A2      B0
+         CHKA    A2,X'222222,21
+* 036 and 037: T registers, 64 bits
+         A0      SRC
+         A1      4
+         T76,A1  ,A0
+         S1      T76
+         CHKS    S1,X'1111111111111111,22
+         S1      T77
+         CHKS    S1,X'2222222222222222,23
+         S1      T0
+         CHKS    S1,X'3333333333333333,24
+         S1      T1
+         CHKS    S1,X'4444444444444444,25
+         S2      X'77
+         T0      S2
+         A0      BUF+10
+         ,A0     T76,A1
+         S1      BUF+10,0
+         CHKS    S1,X'1111111111111111,26
+         S1      BUF+12,0
+         CHKS    S1,X'77,27
+         S1      BUF+13,0
+         CHKS    S1,X'4444444444444444,30
+* a block length of 0 transfers nothing
+         A0      BUF
+         A1      0
+         ,A0     T1,A1
+         S1      BUF,0
+         CHKS    S1,X'1111111111111111,31
+         TPASS
+         TEND
+SRC      CON     X'1111111111111111
+         CON     X'2222222222222222
+         CON     X'3333333333333333
+         CON     X'4444444444444444
+SPARE    CON     0
+BUF      BSSZ    D'12
+         END

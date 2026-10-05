@@ -1,0 +1,120 @@
+* rt_exch.cal: test runtime, start through an exchange.
+*
+* The dead start loads package 0 (words 0-17), a monitor start-up at words
+* 40-77.  It enters XA with the address of the test's package at words 20-37
+* and executes EX.  The test runs until its TEND executes EX (or until an
+* interrupt flag sets); the start-up then resumes and finishes the run.
+*
+*          INCLUDE "rt_exch.cal"
+*          TUSER   1000                  (optional)
+*          TBEGIN
+*          ... the test, ending in TPASS or TFAIL n ...
+*          TEND
+*          ... data ...
+*          END
+*
+* Without TUSER the test runs in monitor mode with base address 0, as under
+* rt_direct.  TUSER ba makes it a user program (monitor mode off) with base
+* address register ba and the largest limit address.  If ba is not 0 the
+* start-up first copies words 100-3777 to (ba * 20) + 100, so the test runs
+* there unchanged with all its addresses relative; it then cannot reach the
+* I/O page (no console macros), and its status word and dump area are at
+* (ba * 20) + 100 and (ba * 20) + 4000.
+*
+* TEND takes the dump if asked, sets XA back to the start-up's package
+* (a pass in user mode), sets A3 = 0 and VL = 1 and executes EX.  A3 and VL
+* share a package word with F, which the start-up reads.  The start-up then
+*
+*   - copies the test's status word to absolute word 100; but if the F field
+*     of the test's package shows anything other than a normal exit the
+*     status becomes 1000 + F (1040 operand range, 1020 program range,
+*     1100 floating point error, 1002 error exit),
+*   - stores ASCII 'CRAYDONE' in absolute word 101,
+*   - writes the exit code to TEST_EXIT (0 if the status is 1, otherwise the
+*     status) and jumps to itself.
+*
+* After the run words 20-37 hold the test's final exchange package.
+*
+* The macros are described in rt_common.cal.
+*
+         INCLUDE "rt_common.cal"
+*
+T$COPY0  =       100                     ; words copied for a base address
+T$COPY1  =       4000                    ; other than 0: 100 to 3777
+*
+* package 0: the start-up
+         ORG     0
+         CON     T$MON*T$P2_24           ; P; A0 = 0
+         CON     0                       ; BA = 0; A1 = 0
+         CON     T$LAMAX*T$P2_28+1*T$P2_24 ; LA; M = monitor mode; A2 = 0
+         CON     0                       ; XA = 0, VL = 0, F = 0; A3 = 0
+         BSSZ    D'12                    ; A4-A7, S0-S7
+*
+* package 1: the test.  XA = 1 brings its exit back to these same words.
+         ORG     20
+         CON     T$ENTRY*4*T$P2_24       ; P = entry parcel; A0 = 0
+         CON     0                       ; BA = 0; A1 = 0
+         CON     T$LAMAX*T$P2_28+1*T$P2_24 ; LA; M = monitor mode; A2 = 0
+         CON     1*T$P2_40               ; XA = 1, VL = 0, F = 0; A3 = 0
+         BSSZ    D'12                    ; A4-A7, S0-S7
+*
+         ORG     40
+T$MON    S1      21,0                    ; BA of the test's package
+         S1      S1>D'28
+         S1      S1<4
+         A1      S1                      ; base word address of the test
+         A0      A1
+         JAZ     T$MGO                   ; 0: the test runs where it is
+         A2      T$COPY0
+         A5      T$COPY1
+T$MCPY   S1      0,A2                    ; copy the test to its field
+         A4      A1+A2
+         0,A4    S1
+         A2      A2+1
+         A0      A2-A5
+         JAM     T$MCPY
+T$MGO    A2      20
+         XA      A2
+         EX                              ; run the test
+*
+* The test has exited.  The exchange restored A1.
+         S1      T$STAT,A1               ; the test's status word
+         S3      23,0                    ; XA, VL, F and A3 of the test
+         S3      S3>D'24
+         S4      <D'9
+         S3      S3&S4                   ; F at the exit
+         S0      S3>1                    ; anything but a normal exit?
+         JSZ     T$MOK
+         S1      1000
+         S1      S1+S3
+T$MOK    T$STAT,0 S1
+         S2      T$MCDN,0
+         T$DONE,0 S2
+         S2      1
+         S0      S1\S2
+         JSN     T$MEX
+         S1      0
+T$MEX    T$EXIT,0 S1
+T$MHNG   J       T$MHNG
+         ORG     77
+T$MCDN   CON     'CRAYDONE'
+*
+         MACRO   TUSER %BA
+         ORG     21
+         CON     (%BA)*T$P2_28           ; BA; A1 = 0
+         CON     T$LAMAX*T$P2_28         ; LA; M = 0: a user program; A2 = 0
+         ENDM
+*
+         MACRO   TBEGIN
+         ORG     T$ENTRY
+         ENDM
+*
+         MACRO   TEND %DUMP
+T$END    %DUMP
+         A3      20
+         XA      A3                      ; back to the start-up's package
+         A3      0
+         VL      1
+         EX
+T$HANG   J       T$HANG
+         ENDM

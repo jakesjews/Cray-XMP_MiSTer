@@ -1,0 +1,93 @@
+* vector: vector load and store (176, 177), integer add and subtract (155,
+* 157), a mask from a test (175) and merges under the mask (146, 147).
+* RUNTIMES: direct exch user reloc
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+         A1      D'8
+         VL      A1
+         A0      VA
+         V1      ,A0,1
+         A0      VB
+         V2      ,A0,1
+         V3      V1+V2
+         A0      VC
+         ,A0,1   V3
+         S1      VC,0
+         CHKS    S1,D'101,2
+         S1      VC+3,0
+         CHKS    S1,D'44,3
+         S1      VC+5,0
+         CHKS    S1,D'120,4
+         S1      VC+10,0                 ; beyond the vector length
+         CHKS    S1,D'12345,5
+* 076 and 077: single elements
+         A2      3
+         S1      V3,A2
+         CHKS    S1,D'44,6
+         S2      D'999
+         A3      D'60
+         V3,A3   S2
+         S1      V3,A3
+         CHKS    S1,D'999,7
+* 157 and 175: where is (V1) less than (V2)?
+         V4      V1-V2
+         VM      V4,M                    ; elements 1, 2, 4, 6 and 7
+         S1      VM
+         CHKS    S1,X'6B00000000000000,10
+         VM      V4,Z                    ; element 5
+         S1      VM
+         CHKS    S1,X'0400000000000000,11
+         VM      V4,P                    ; elements 0, 3 and 5
+         S1      VM
+         CHKS    S1,X'9400000000000000,12
+         VM      V4,N                    ; all but element 5
+         S1      VM
+         CHKS    S1,X'FB00000000000000,13
+* 147: the larger of each pair, (V2) where the mask is one
+         VM      V4,M
+         V5      V2!V1&VM
+         A0      VC
+         ,A0,1   V5
+         S1      VC,0
+         CHKS    S1,D'100,14
+         S1      VC+1,0
+         CHKS    S1,D'20,15
+         S1      VC+2,0
+         CHKS    S1,D'30,16
+         S1      VC+6,0
+         CHKS    S1,D'70,17
+         S1      VC+7,0
+         CHKS    S1,D'80,20
+* 146: a scalar where the mask is one
+         S2      D'7
+         V6      S2!V1&VM
+         A2      1
+         S1      V6,A2
+         CHKS    S1,D'7,21
+         A2      3
+         S1      V6,A2
+         CHKS    S1,D'40,22
+* 176 with an increment of 2, 177 with an increment of -1
+         A1      D'4
+         VL      A1
+         A0      VA
+         A2      2
+         V7      ,A0,A2
+         A0      VC+3
+         A2      -1
+         ,A0,A2  V7
+         S1      VC,0
+         CHKS    S1,D'7,23
+         S1      VC+1,0
+         CHKS    S1,D'5,24
+         S1      VC+2,0
+         CHKS    S1,D'3,25
+         S1      VC+3,0
+         CHKS    S1,D'100,26
+         TPASS
+         TEND
+VA       CON     D'100,D'2,D'3,D'40,D'5,D'60,D'7,D'8
+VB       CON     D'1,D'20,D'30,D'4,D'50,D'60,D'70,D'80
+VC       BSSZ    D'8
+         CON     D'12345
+         END

@@ -1,0 +1,80 @@
+         IDENT     BOOT
+         ORG       O'0
+         ENTRY     RX_SPIN
+*Bootloader code:
+*------------------------
+LD_CMD   =         33
+EX_CMD   =         34
+DP_CMD   =         35
+PBASE    =         D'512
+RX_DAT   =         D'524290
+RX_STAT  =         D'524289
+TX_DAT   =         D'524291
+TX_STAT  =         D'524288
+         CON       10000000000    *Start executing code at parcel 64 - A0=0
+         CON       0              *A1 = 0
+         CON       0              *A2 = 0
+         CON       0              *A3 = 0
+         CON       0              *A4 = 0
+         CON       0              *A5 = 0
+         CON       0              *A6 = 0
+         CON       0              *A7 = 0
+         CON       0              *S0 = 0
+         CON       0              *S1 = 0
+         CON       0              *S2 = 0
+         CON       0              *S3 = 0
+         CON       0              *S4 = 0
+         CON       0              *S5 = 0
+         CON       0              *S6 = 0
+         CON       0              *S7 = 0     
+RX_SPIN  S0        RX_STAT,A0     *A0=0
+         JSZ       RX_SPIN        *spin until S0!=0 - that means data is ready
+         S1        LD_CMD         *set S1 = Load Command
+         S2        RX_DAT,A0      *set S2 = RX_DAT
+         S0        S2-S1          
+         JSZ       STRT_LD
+         S1        EX_CMD         *set S1 = Execute command
+         S0        S2-S1
+         JSZ       STRT_EX
+         S1        DP_CMD         *set S1 = Dump command
+         S0        S2-S1
+         JSZ       STRT_DP
+*Command not decoded - display error and go back to spinning
+         J         RX_SPIN        
+********************************************
+*       Load a New Program                 *
+******************************************** 
+STRT_LD  S0        RX_STAT,A0     *Start receiving a program - get prog length
+         JSZ       STRT_LD
+         A2        RX_DAT,A0      *store prog length in A2
+         A1        PBASE          *set A1 = PBASE (start of program)
+LDPROG   S0        RX_STAT,A0
+         JSZ       LDPROG         *wait for a new word
+         S2        RX_DAT,A0      *grab the new word
+         0,A1      S2             *store S2 to (prog_pointer)
+         A1        A1+1           *prog_pointer++
+         A2        A2-1           *remaining_words--
+         A0        A2             *A0 = remaining_words
+         JAN       LDPROG         *if word remain, keep loading
+*Progam loading complete - output an "OKAY" message
+         J         RX_SPIN        *go back to bootloader start screen
+********************************************
+*      Execute a Program                   *
+********************************************
+STRT_EX  J         RX_SPIN        *Start executing a program
+*
+********************************************
+*      Start a Memory Dump                 *
+********************************************
+STRT_DP  A1        0              *Start dumping memory
+         A2        D'4096
+CHK_TX   A3        TX_STAT,A0     *make sure the transmitter is free
+         JAN       CHK_TX
+         S0        0,A1           *read from the (dump_ptr)
+         TX_DAT,A0 S0             *write that word to serport
+         A1        A1+1           *dump_ptr++
+         A2        A2-1           *dump_cnt--
+         A0        A2             *A0=dump_cnt
+         JAN       CHK_TX         *if dump_cnt!=0, send nxt word
+*Memory Dump complete - output an "OKAY" message
+         J         RX_SPIN        *go back to bootloader start screen

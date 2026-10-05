@@ -39,3 +39,20 @@ c5_pin_model_dump.txt
 *.cdf
 **/.DS_Store
 research
+
+# --- local build and tool output ---
+build/
+build_*.log
+jtag.cdf
+*.sld
+tools/target/
+sim/obj_dir/
+sim/build/
+__pycache__/
+
+# Lint: the Verilator file list is a source; the generated build ID is not.
+!lint/rtl.f
+lint/gen/
+
+# The fixed build ID the core-level simulation uses is a source file.
+!sim/stubs/build_id.v

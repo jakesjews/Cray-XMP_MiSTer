@@ -1,0 +1,84 @@
+* branch: every branch instruction, each condition both ways.
+* 005 J Bjk, 006 J, 007 R, 010-013 on A0, 014-017 on S0.
+* RUNTIMES: direct exch user reloc
+         INCLUDE "rt_direct.cal"
+*
+         MACRO   TAKEN %J,%N             ; the branch %J must be taken
+         LOCAL   %T
+         %J      %T
+         TFAIL   %N
+%T
+         ENDM
+*
+         MACRO   NOTTKN %J,%N            ; the branch %J must not be taken
+         LOCAL   %F,%G
+         %J      %F
+         J       %G
+%F       TFAIL   %N
+%G
+         ENDM
+*
+         TBEGIN
+         A0      0
+         TAKEN   JAZ,2
+         NOTTKN  JAN,3
+         TAKEN   JAP,4                   ; zero counts as positive
+         NOTTKN  JAM,5
+         A0      5
+         NOTTKN  JAZ,6
+         TAKEN   JAN,7
+         TAKEN   JAP,10
+         NOTTKN  JAM,11
+         A0      -1
+         NOTTKN  JAZ,12
+         TAKEN   JAN,13
+         NOTTKN  JAP,14
+         TAKEN   JAM,15
+         A1      10000000                ; 2**21
+         A2      4
+         A0      A1*A2                   ; only the sign bit, 2**23
+         TAKEN   JAN,16
+         TAKEN   JAM,17
+         NOTTKN  JAP,20
+         S0      0
+         TAKEN   JSZ,21
+         NOTTKN  JSN,22
+         TAKEN   JSP,23                  ; zero counts as positive
+         NOTTKN  JSM,24
+         S0      5
+         NOTTKN  JSZ,25
+         TAKEN   JSN,26
+         TAKEN   JSP,27
+         NOTTKN  JSM,30
+         S0      -1
+         NOTTKN  JSZ,31
+         TAKEN   JSN,32
+         NOTTKN  JSP,33
+         TAKEN   JSM,34
+         S0      SB                      ; only the sign bit, 2**63
+         TAKEN   JSN,35
+         TAKEN   JSM,36
+         NOTTKN  JSP,37
+         S0      1
+         S0      S0<D'62                 ; 2**62: positive
+         TAKEN   JSP,40
+         NOTTKN  JSM,41
+* 006: unconditional
+         TAKEN   J,42
+* 005: branch to (Bjk)
+         A1      THERE
+         B63     A1
+         J       B63
+         TFAIL   43
+* 007: return jump: B00 is the address of the parcel after the R
+THERE    A2      0
+         R       SUB
+BACK     A2      A2+1                    ; the subroutine returns here
+         CHKA    A2,D'11,44
+         A3      B0
+         CHKA    A3,BACK,45
+         TPASS
+         TEND
+SUB      A2      D'10
+         J       B0
+         END

@@ -1,49 +1,53 @@
-# Template core for MiSTer
+# Cray-1 for MiSTer
 
-## General description
-This core contains the latest version of framework and will be updated when framework is updated. There will be no releases. This core is only for developers. Besides the framework, core demonstrates the basic usage. New or ported cores should use it as a template.
+This core is a Cray-1 supercomputer: the CPU with its vector registers, a
+million words of memory, and a text console on your display and keyboard. It
+starts in a small monitor where you can look at memory, run the built-in
+demonstration programs and start programs of your own. There is no Cray
+operating system for it; the machine runs one program at a time under the monitor.
 
-It's highly recommended to follow the notes to keep it standardized for easier maintenance and collaboration with other developers.
+## What you need
 
-## Source structure
+- A [MiSTer](https://mister-devel.github.io/MkDocs_MiSTer/) (DE10-Nano). No SDRAM module is needed.
+- A keyboard.
 
-### Legend:
-* `<core_name>` - you have to use the same name where you see this in this manual. Basically it's your core name.
+## Setup
 
-### Standard MiSTer core should have following folders:
-* `sys` - the framework. Basically it's prohibited to change any files in this folder. Framework updates may erase any customization in this folder. All MiSTer cores have to include sys folder as is from this core.
-* `rtl` - the actual source of core. It's up to the developer how to organize the inner structure of this folder. Exception is pll folder/files (see below).
-* `releases` - the folder where rbf files should be placed. format of each rbf is: <core_name>_YYYYMMDD.rbf (YYYYMMDD is date code of release).
+1. Copy `Cray1_YYYYMMDD.rbf` from [releases](releases) to the `_Computer` folder on the SD card.
+2. Start **Cray1** from the Computer menu.
+3. Type `?` and press Enter.
 
-### Other standard files:
-* `<core_name>.qpf`- quartus project file. Copy it as is and then modify the line `PROJECT_REVISION = "<core_name>"` according to your core name.
-* `<core_name>.qsf` - quartus settings file. In most cases you don't need to modify anything inside (although you may wont to adjust some settings in quartus - this is fine, but keep changes minimal). You also need to watch this file before you make a commit. Quartus in some conditions may "spit" all settings from different files into this file so it will become large. If you see this, then simply revert it to original file.
-* `<core_name>.srf` - optional file to disable some warnings which are safe to disable and make message list more clean, so you will have less chance to miss some important warnings. You are free to modify it.
-* `<core_name>.sdc` - optional file for constraints in case if core require some special constraints. You are free to modify it.
-* `<core_name>.sv` - glue logic between framework and core. This is where you adapt core specific signals to framework.
-* `files.qip` - list of all core files. You need to edit it manually to add/remove files. Quartus will use this file but can't edit it. If you add files in Quartus IDE, then they will be added to `<core_name>.qsf` which is recommended manually move them to `files.qip`.
-* `clean.bat` - windows batch file to clean the whole project from temporary files. In most cases you don't need to modify it.
-* `.gitignore` - list of files should be ignored by git, so temporary files wont be included in commits.
-* `jtag.cdf` - it will be produced when you compile the core. By clicking it in Quartus IDE, you will launch programmer where you can send the core to MiSTer over USB blaster cable (see manual for DE10-nano how to connect it). This file normally is not present on cleaned project and not included in commits.
+## The monitor
 
-### PLL:
-Framework implies use of at least one PLL in the core. Framework doesn't contain this PLL but requires it to be placed in `rtl` folder, so `pll` folder and `pll.v`, `pll.qip` files must be present, however PLL settings are up to the core.
+- `1` to `7` run the demonstrations: prime sieve, Mandelbrot set, SAXPY timed
+  with and without the vector registers, matrix product, division, console
+  echo, memory test.
+- `E addr (count)` shows memory. `D addr value ...` changes it.
+- `G addr` starts a program. `C` continues it. `R` shows its registers.
+- **Numbers are octal**, as on the real machine.
+- CTRL-C stops a running program and returns to the monitor.
 
-### Verilog Macros
+## Your own programs
 
-The following macros can be defined and will affect the framework features:
+1. Build the assembler and write a program: see [docs/PROGRAMMING.md](docs/PROGRAMMING.md).
+2. Assemble it into a memory image with the extension `.cry`.
+3. Copy the image to `games/Cray1` on the SD card.
+4. Choose **Load memory image** in the core's menu.
 
-Macro                    |   Effect
--------------------------|---------------------------------
-MISTER_DEBUG_NOHDMI      | Disable HDMI-related modules. Speeds up compilation but only analogue/direct video is available
-MISTER_DUAL_SDRAM        | Changes configuration of FPGA pins to work with dual SDRAM I/O boards
-MISTER_FB                | Allows to use framebuffer from the core
-MISTER_SMALL_VBUF        | Sets a smaller video buffer for the ASCAL
-MISTER_DOWNSCALE_NN      | Ascal's downscale mode
-MISTER_DISABLE_ADAPTIVE  | Disables adaptive scan lines
-MISTER_FB_PALETTE        | Framebuffer palette
+A loaded image starts at once and replaces the monitor. **Reset** in the menu
+brings the monitor back.
 
+## Menu options
 
-# Quartus version
-Cores must be developed in **Quartus v17.0.x**. It's recommended to have updates, so it will be **v17.0.2**. Newer versions won't give any benefits to FPGA used in MiSTer, however they will introduce incompatibilities in project settings and it will make harder to maintain the core and collaborate with others. **So please stick to good old 17.0.x version.** You may use either Lite or Standard license.
+- Aspect ratio
+- Text color: white, green, amber or cyan
+- Font: 8x16 on a 31 kHz raster, or 8x8 on a 15 kHz raster
 
+## Troubleshooting
+
+- `WHAT?`: the monitor did not know the command. Commands are one letter or digit.
+- An address shows unexpected contents: check that the number was typed in octal.
+- A program does not stop on CTRL-C: use Reset in the menu.
+
+How the machine is built, where it differs from a real Cray-1 and how to work
+on the core are in [docs](docs).

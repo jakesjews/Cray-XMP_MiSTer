@@ -1,0 +1,45 @@
+* Demonstration 5: division.  The CRAY-1 has no divide instruction: a
+* quotient is the dividend times the reciprocal of the divisor, and the
+* reciprocal approximation is corrected with one more multiply (hardware
+* reference manual, floating-point arithmetic).
+DIVIDE   SAY     MDV1
+         R       CRLF
+         A5      0
+DV1      S5      KDVT,A5                 ; the dividend
+         S0      S5
+         JSZ     DVX
+         S6      KDVT+1,A5               ; the divisor
+         S1      S5
+         R       PUTDEC
+         SAY     MDV2
+         S1      S6
+         R       PUTDEC
+         SAY     MDV3
+         S1      S5
+         R       FLOAT
+         S5      S1
+         S1      S6
+         R       FLOAT
+         S6      S1
+         S3      /HS6                    ; reciprocal approximation
+         S1      S5*FS3                  ; approximate quotient
+         S2      S6*IS3                  ; correction factor, 2 - divisor * reciprocal
+         S1      S1*FS2                  ; the quotient
+         R       PUTFLT
+         R       CRLF
+         A5      A5+1
+         A5      A5+1
+         J       DV1
+DVX      EX
+         J       DVX
+KDVT     CON     1,D'3
+         CON     2,D'3
+         CON     D'22,7
+         CON     D'355,D'113
+         CON     D'1000,D'8
+         CON     D'65536,D'10
+         CON     D'123456789,D'1000
+         CON     0
+MDV1     DATA    'DIVISION BY RECIPROCAL APPROXIMATION',0
+MDV2     DATA    ' / ',0
+MDV3     DATA    ' = ',0

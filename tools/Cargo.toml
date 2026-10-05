@@ -1,0 +1,18 @@
+# Host-side tools for the Cray-1 core: opcode table, assembler, floating-point
+# library, reference model and test generator.  Standard library only, so the
+# workspace builds offline.
+[workspace]
+resolver = "2"
+members = ["crates/isa", "crates/asm", "crates/fp", "crates/model", "crates/cli"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "GPL-2.0-or-later"
+
+[profile.release]
+opt-level = 3
+debug = 1
+
+[profile.dev]
+opt-level = 1

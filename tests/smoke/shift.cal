@@ -1,0 +1,112 @@
+* shift: masks (042, 043), logical instructions (044-051) and shifts
+* (052-057).
+* RUNTIMES: direct exch user reloc
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+* masks
+         S1      <D'12                   ; twelve ones from the right
+         CHKS    S1,7777,2
+         S1      >D'12                   ; twelve ones from the left
+         CHKS    S1,X'FFF0000000000000,3
+         S1      <D'64
+         CHKS    S1,-1,4
+         S1      >D'64
+         CHKS    S1,-1,5
+         S1      <0
+         CHKS    S1,0,6
+         S1      >D'63
+         CHKS    S1,-2,7
+         S1      <1
+         CHKS    S1,1,10
+* logical
+         S1      PATA,0
+         S2      PATB,0
+         S3      S1&S2
+         CHKS    S3,X'0F0000FF0000F000,11
+         S3      #S2&S1                  ; (S1) and not (S2)
+         CHKS    S3,X'F00F00000F0F0000,12
+         S3      S1\S2
+         CHKS    S3,X'F0FFFF000F0F0F0F,13
+         S3      #S1\S2
+         CHKS    S3,X'0F0000FFF0F0F0F0,14
+         S3      S1!S2
+         CHKS    S3,X'FFFFFFFF0F0FFF0F,15
+         S3      PATA,0
+         S4      <D'32
+         S3      S2!S3&S4                ; the low half of (S2), the high of (S3)
+         CHKS    S3,X'FF0F00FF0000FF0F,16
+* the sign bit as an operand
+         S3      S2&SB
+         CHKS    S3,0,17
+         S3      S1&SB
+         CHKS    S3,X'8000000000000000,20
+         S3      S2!SB
+         CHKS    S3,X'8FF0FFFF0000FF0F,21
+         S3      S1\SB
+         CHKS    S3,X'7F0F00FF0F0FF000,22
+         S3      #SB&S1
+         CHKS    S3,X'7F0F00FF0F0FF000,23
+* single shifts: 052 and 053 into S0, 054 and 055 in place
+         S2      PATC,0
+         S0      S2<4
+         CHKS    S0,X'123456789ABCDEF0,24
+         S0      S2>4
+         CHKS    S0,X'00123456789ABCDE,25
+         S3      S2
+         S3      S3<D'8
+         CHKS    S3,X'23456789ABCDEF00,26
+         S3      S3>D'16
+         CHKS    S3,X'000023456789ABCD,27
+         S3      S2
+         S3      S3<D'63
+         CHKS    S3,X'8000000000000000,30
+         S3      S3>D'63
+         CHKS    S3,1,31
+         S3      S2
+         S3      S3>D'64
+         CHKS    S3,0,32
+* double shifts by (Ak): 056 and 057
+         S4      PATD,0
+         A1      D'8
+         S3      S2
+         S3      S3,S4<A1                ; the high word of (S3,S4) shifted left
+         CHKS    S3,X'23456789ABCDEFFE,33
+         S3      S2
+         S3      S4,S3>A1                ; the low word of (S4,S3) shifted right
+         CHKS    S3,X'100123456789ABCD,34
+         S3      S2
+         S3      S3,S3<A1                ; circular
+         CHKS    S3,X'23456789ABCDEF01,35
+         S3      S3,S3>A1
+         CHKS    S3,X'0123456789ABCDEF,36
+         S3      S3,S4<1
+         CHKS    S3,X'02468ACF13579BDF,37
+         S3      S2
+         S3      S4,S3>1
+         CHKS    S3,X'0091A2B3C4D5E6F7,40
+         A1      D'64
+         S3      S2
+         S3      S3,S4<A1
+         CHKS    S3,X'FEDCBA9876543210,41
+         A1      D'68
+         S3      S2
+         S3      S3,S4<A1
+         CHKS    S3,X'EDCBA98765432100,42
+         A1      D'128
+         S3      S2
+         S3      S3,S4<A1
+         CHKS    S3,0,43
+         A1      D'12
+         S3      S2
+         S3      S3<A1                   ; (Sj) = 0: a single shift
+         CHKS    S3,X'3456789ABCDEF000,44
+         S3      S2
+         S3      S3>A1
+         CHKS    S3,X'0000123456789ABC,45
+         TPASS
+         TEND
+PATA     CON     X'FF0F00FF0F0FF000
+PATB     CON     X'0FF0FFFF0000FF0F
+PATC     CON     X'0123456789ABCDEF
+PATD     CON     X'FEDCBA9876543210
+         END

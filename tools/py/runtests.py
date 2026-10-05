@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Run the simulation test suites.
+
+    runtests.py quick [-j JOBS]   smoke tests under every start-up, the directed tests,
+                                  the self-checking clock test, the floating-point
+                                  reference vectors, 200 random programs
+    runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
+                                  floating-point operation and 10,000 random programs
+
+Needs the host tools (make tools) and the simulations (make sim).  Programs are
+compared with the reference model by difftest.py; see docs/DEVELOPMENT.md.
+"""
+import glob
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PY = sys.executable
+DIFF = os.path.join(ROOT, 'tools/py/difftest.py')
+FPBENCH = os.path.join(ROOT, 'sim/build/fp/Vfp_tb')
+
+
+def smoke_variants(out):
+    """Write each smoke test once for every start-up its RUNTIMES line names."""
+    os.makedirs(out, exist_ok=True)
+    for old in glob.glob(os.path.join(out, '*.cal')):
+        os.remove(old)
+    made = []
+    for path in sorted(glob.glob(os.path.join(ROOT, 'tests/smoke/*.cal'))):
+        src = open(path).read()
+        m = re.search(r'^\* RUNTIMES:(.*)$', src, re.M)
+        name = os.path.basename(path)[:-4]
+        for rt in (m.group(1).split() if m else ['direct']):
+            text = src
+            if rt != 'direct':
+                text = text.replace('rt_direct.cal', 'rt_exch.cal')
+                if rt in ('user', 'reloc'):
+                    base = '0' if rt == 'user' else '1000'
+                    text = re.sub(r'^(\s+INCLUDE\s+"rt_exch\.cal".*)$', r'\1\n         TUSER   ' + base,
+                                  text, count=1, flags=re.M)
+            made.append(os.path.join(out, '%s_%s.cal' % (name, rt)))
+            open(made[-1], 'w').write(text)
+    return made
+
+
+def rtl_only():
+    """Self-checking programs the reference model cannot run (they read the clock)."""
+    print('== self-checking RTL tests', flush=True)
+    asm = os.path.join(ROOT, 'tools/target/release/cray1')
+    cpu = os.path.join(ROOT, 'sim/build/cpu/Vcray_cpu')
+    good, total = 0, 0
+    for cal in sorted(glob.glob(os.path.join(ROOT, 'tests/rtl_only/*.cal'))):
+        img = os.path.join(ROOT, 'build', os.path.basename(cal)[:-4] + '.img')
+        subprocess.run([asm, 'asm', cal, '-I', 'tests/rt', '-o', img], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
+        for mode in (['--mem', '0'], ['--mem', 'rand:1-9'], ['--mem', 'slow'], ['--mem', 'ddr3', '--step']):
+            total += 1
+            r = subprocess.run([cpu, '--image', img, '--cycles', '2000000', '--quiet'] + mode, cwd=ROOT,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if r.returncode == 0:
+                good += 1
+            else:
+                print('FAIL %s %s: exit %d' % (os.path.basename(cal), ' '.join(mode), r.returncode))
+    print('%d runs, %d failed' % (total, total - good), flush=True)
+    return good == total
+
+
+def step(title, cmd):
+    print('== ' + title, flush=True)
+    r = subprocess.run(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    lines = r.stdout.strip().splitlines()
+    print('\n'.join(lines[-6:]), flush=True)
+    return r.returncode == 0 and not any(re.search(r'[1-9]\d* (failed|mismatches)', l) for l in lines[-2:])
+
+
+def main():
+    a = sys.argv[1:]
+    if not a or a[0] not in ('quick', 'full'):
+        sys.exit(__doc__)
+    jobs = a[a.index('-j') + 1] if '-j' in a else str(os.cpu_count() or 4)
+    ok = True
+    smoke = smoke_variants(os.path.join(ROOT, 'build/smoke'))
+    ok &= step('smoke tests, %d start-up variants' % len(smoke),
+               [PY, DIFF, 'file'] + smoke + ['-I', 'tests/rt', '-j', jobs])
+    ok &= step('directed tests',
+               [PY, DIFF, 'file'] + sorted(glob.glob(os.path.join(ROOT, 'tests/directed/*.cal'))) + ['-j', jobs])
+    ok &= rtl_only()
+    ok &= step('floating-point reference vectors', [FPBENCH, 'tests/fp/xmp_ref.vec'])
+    if a[0] == 'quick':
+        ok &= step('200 random programs', [PY, DIFF, 'rand', '1', '200', '-n', '250', '-j', jobs])
+    else:
+        vec = os.path.join(ROOT, 'build/fpvec')
+        ok &= step('generate floating-point vectors',
+                   ['cargo', 'run', '--release', '--quiet', '--manifest-path', 'tools/Cargo.toml', '-p', 'cray1-fp',
+                    '--example', 'gen_vectors', '--', vec, '200000', '1'])
+        for f in sorted(glob.glob(os.path.join(vec, '*.vec'))):
+            ok &= step('floating point: ' + os.path.basename(f), [FPBENCH, f])
+            ok &= step('floating point with gaps: ' + os.path.basename(f), [FPBENCH, f, '--gaps'])
+        ok &= step('10,000 random programs', [PY, DIFF, 'rand', '1', '10000', '-n', '250', '-j', jobs])
+    print('ALL PASSED' if ok else 'FAILED')
+    sys.exit(0 if ok else 1)
+
+
+main()

@@ -1,0 +1,11 @@
+// Verilator arguments for the floating point unit bench.
+--cc --exe --build -j 0
+--top-module fp_tb
+-Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-DECLFILENAME
+-O3 --x-assign unique --x-initial unique
+-CFLAGS "-O2 -std=c++17"
+sim/tb/fp_tb.v
+rtl/cray/fp_add.v
+rtl/cray/fp_mul.v
+rtl/cray/fp_recip.v
+sim/harness/fp_main.cpp

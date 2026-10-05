@@ -1,0 +1,62 @@
+* range: an operand range error and a program range error of a user
+* program, caught by the monitor.
+* The user program (BA = 400, LA = 404: relative words 0 to 77) stores into
+* the last word of its field, then one word beyond it.  The store beyond
+* the limit must not alter memory and must set the operand range flag.  The
+* monitor clears the flag and resumes the program, which branches beyond
+* the limit: the program range flag.
+* The reference model takes the interrupt right after the instruction: the
+* P it saves is the address of the next instruction, and for the fetch
+* beyond the limit the address that could not be fetched.
+* RUNTIMES: direct exch
+         INCLUDE "rt_direct.cal"
+UBASE    =       10000                   ; absolute word address of the field
+UPKG     =       3000                    ; the user's exchange package
+         TBEGIN
+         A1      UPKG
+         XA      A1
+         EX
+* the operand range error
+         S2      UPKG+3,0                ; XA, VL, F and A3
+         CHKS    S2,UPKG/20*T$P2_40+40*T$P2_24,2
+         S2      UPKG,0                  ; P and A0
+         S2      S2>D'24
+         CHKS    S2,UAFTER-UBASE*4,3
+         S2      UBASE+77,0              ; the store inside the field
+         CHKS    S2,D'77,4
+         S2      UBASE+100,0             ; the word beyond it
+         CHKS    S2,D'123456,5
+         S2      UPKG+11,0               ; the user's S1
+         CHKS    S2,D'77,6
+* clear the flag and resume: the program range error
+         S2      UPKG/20
+         S2      S2<D'40
+         UPKG+3,0 S2
+         EX
+         S2      UPKG+3,0
+         CHKS    S2,UPKG/20*T$P2_40+20*T$P2_24,7
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,1000,10              ; the branch address
+         A3      UPKG+2,0
+         CHKA    A3,D'5,11               ; A2: the instruction before the branch
+         TPASS
+         TEND
+*
+         ORG     UPKG
+         CON     (UCODE-UBASE*4)*T$P2_24 ; P, relative to the base
+         CON     UBASE/20*T$P2_28        ; BA
+         CON     (UBASE+100)/20*T$P2_28  ; LA: the field is 10000-10077; M = 0
+         CON     UPKG/20*T$P2_40         ; XA back to this package
+         BSSZ    D'12                    ; A4-A7, S0-S7
+*
+* the user program; its addresses are relative to UBASE
+         ORG     UBASE+10
+UCODE    S1      D'77
+         77,0    S1                      ; the last word of the field
+         100,0   S1                      ; one word beyond: operand range
+UAFTER   A2      5
+         J       1000                    ; word 200: program range
+         ORG     UBASE+100
+         CON     D'123456                ; must survive
+         END

@@ -1,0 +1,116 @@
+         IDENT     T2
+* Scalar stress: dependent chains across the A, S, B and T registers, shifts,
+* branches and memory.  Results are dumped to words 1000 onward.
+TEXIT    =         O'3777762
+DUMP     =         O'1000
+         ORG       0
+         CON       P.START*O'100000000
+         CON       0
+         CON       O'1777776100000000
+         CON       O'0000000030000000000000
+         BSSZ      D'12
+         ORG       O'40
+START    A1        5
+         A2        7
+         A3        A1+A2               12
+         A4        A3*A2               84
+         A5        A4-A1               79
+         S1        A5                  071: (Ak) to Si
+         S2        +A5
+         S3        S1+S2               158
+         S4        S3
+         S4        S4<3                054
+         S0        S3<2                052 result goes to S0, S3 unchanged
+         S5        S0                  (S0 as Sk reads the register only via i; Sk with k=0 is 2**63)
+         S6        S3-S1
+         A6        PS4                 population count
+         A7        ZS4                 leading zeros
+         S7        S4!S6               logical sum
+         DUMP+0,0  A3
+         DUMP+1,0  A4
+         DUMP+2,0  A5
+         DUMP+3,0  A6
+         DUMP+4,0  A7
+         DUMP+5,0  S3
+         DUMP+6,0  S4
+         DUMP+7,0  S5
+         DUMP+10,0 S6
+         DUMP+11,0 S7
+         S5        S0
+         DUMP+12,0 S5
+* T and B registers
+         T17       S3
+         T20       S4
+         S1        T17
+         S2        T20
+         S1        S1+S2
+         DUMP+13,0 S1
+         B21       A4
+         B22       A5
+         A1        B21
+         A2        B22
+         A1        A1+A2
+         DUMP+14,0 A1
+* double shifts followed at once by single shifts
+         S1        K1,0
+         S2        K2,0
+         A1        D'12
+         S1        S1,S2<A1
+         S3        S3>4                055: right 64-jk
+         S2        S1,S2>A1
+         S4        S4<1
+         DUMP+15,0 S1
+         DUMP+16,0 S2
+         DUMP+17,0 S3
+         DUMP+20,0 S4
+* branches: a counted loop and back-to-back branches of the same kind
+         A7        0
+         A6        D'10
+LOOP     A7        A7+A6
+         A6        A6-1
+         A0        A6
+         JAN       LOOP
+         DUMP+21,0 A7                  55
+         A0        0
+         JAZ       LB1
+         A7        0                   skipped
+LB1       JAZ       LB2
+         A7        0                   skipped
+LB2       S0        1
+         JSN       LB3
+         A7        0
+LB3       JSP       LB4
+         A7        0
+LB4       S0        -1
+         JSM       LB5
+         A7        0
+LB5       JSZ       BAD
+         JSP       BAD
+         A0        -1
+         JAM       LB6
+         A7        0
+LB6       JAP       BAD
+         DUMP+22,0 A7                  still 55
+* return jump and jump through B
+         R         SUB
+         DUMP+23,0 A5
+         J         FIN
+BAD      A7        0
+         DUMP+22,0 A7
+         J         FIN
+SUB      A5        A5+1
+         A5        A5+A5
+         J         B00
+FIN      A1        DUMP
+         S1        24,A1               load with index
+         S1        S1+S1
+         25,A1     S1                  store with index
+         A2        21,A1
+         A2        A2+1
+         26,A1     A2
+         A6        0
+         TEXIT,0   A6
+HANG     J         HANG
+K1       CON       O'123456701234567
+K2       CON       O'765432107654321
+         END

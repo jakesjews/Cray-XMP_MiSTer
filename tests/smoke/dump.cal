@@ -1,0 +1,58 @@
+* dump: the DUMPALL macro of the runtime: A, S, VL, VM, B (035), T (037)
+* and V (177) in the dump area at word 4000.
+* RUNTIMES: direct exch user reloc
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+         A1      D'3
+         VL      A1
+         A0      VALS
+         V0      ,A0,1                   ; DUMPALL finds VL by testing V0
+         V1      V0+V0
+         A2      D'63
+         S1      D'6363
+         V7,A2   S1
+         S1      X'A5
+         S1      S1<D'56
+         VM      S1
+         A5      D'55
+         B5      A5
+         B63     A2
+         S5      D'555
+         T5      S5
+         T77     S1
+         A1      D'11
+         A7      D'77
+         S7      D'7777
+         DUMPALL
+         S1      T$DUMP+1,0
+         CHKS    S1,D'11,2               ; A1
+         S1      T$DUMP+7,0
+         CHKS    S1,D'77,3               ; A7
+         S1      T$DUMP+15,0
+         CHKS    S1,D'555,4              ; S5
+         S1      T$DUMP+17,0
+         CHKS    S1,D'7777,5             ; S7
+         S1      T$DUMP+20,0
+         CHKS    S1,D'3,6                ; the vector length
+         S1      T$DUMP+21,0
+         CHKS    S1,X'A500000000000000,7 ; VM
+         S1      T$DUMP+105,0
+         CHKS    S1,D'55,10              ; B05
+         S1      T$DUMP+163,0
+         CHKS    S1,D'63,11              ; B63
+         S1      T$DUMP+205,0
+         CHKS    S1,D'555,12             ; T05
+         S1      T$DUMP+277,0
+         CHKS    S1,X'A500000000000000,13 ; T77
+         S1      T$DUMP+302,0
+         CHKS    S1,D'30,14              ; V0 element 2
+         S1      T$DUMP+401,0
+         CHKS    S1,D'40,15              ; V1 element 1
+         S1      T$DUMP+1277,0
+         CHKS    S1,D'6363,16            ; V7 element 63
+         S1      VM
+         CHKS    S1,X'A500000000000000,17 ; DUMPALL restores VM
+         TPASS
+         TEND
+VALS     CON     D'10,D'20,D'30
+         END

@@ -1,0 +1,68 @@
+* float: floating point add and subtract (062, 063), multiply (064-066),
+* the constants and conversions of 071, and the four-instruction divide of
+* HRM page 3-28 (070, 067, 064, 064).
+* The expected words are those of the reference arithmetic (cray1-fp).
+* RUNTIMES: direct exch user reloc
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+         S1      F1P5,0
+         S2      F2,0
+* add and subtract
+         S3      S1+FS1                  ; 1.5 + 1.5
+         CHKS    S3,X'4002C00000000000,2
+         S4      S3+FS2                  ; 3.0 + 2.0
+         CHKS    S4,X'4003A00000000000,3
+         S5      S4-FS2                  ; 5.0 - 2.0
+         CHKS    S5,X'4002C00000000000,4
+         S5      S3-FS4                  ; 3.0 - 5.0
+         CHKS    S5,X'C002800000000000,5
+         S5      S3-FS3                  ; a zero result is a zero word
+         CHKS    S5,0,6
+* multiply
+         S5      S3*FS2                  ; 3.0 * 2.0
+         CHKS    S5,X'4003C00000000000,7
+         S6      S1*FS1                  ; 1.5 * 1.5
+         CHKS    S6,X'4002900000000000,10
+         S6      S3*RS2                  ; rounded
+         CHKS    S6,X'4003C00000000000,11
+         S6      S3*HS2                  ; half precision
+         CHKS    S6,X'4003C00000000000,12
+* constants of 071
+         S6      0.4                     ; 0.5
+         CHKS    S6,X'4000800000000000,13
+         S6      1.
+         CHKS    S6,X'4001800000000000,14
+         S6      2.
+         CHKS    S6,X'4002800000000000,15
+         S6      4.
+         CHKS    S6,X'4003800000000000,16
+         S6      0.6                     ; 0.75 * 2**48
+         CHKS    S6,X'4030C00000000000,17
+* an integer made floating: unnormalized by 071, normalized by 062
+         A1      5
+         S6      +FA1
+         CHKS    S6,X'4030000000000005,20
+         S6      +FS6
+         CHKS    S6,X'4003A00000000000,21
+         A1      -5
+         S6      +FA1
+         CHKS    S6,X'C030000000000005,22
+         S6      +FS6
+         CHKS    S6,X'C003A00000000000,23
+         S7      -FS6                    ; the normalized negative
+         CHKS    S7,X'4003A00000000000,24
+* 6.0 / 3.0 in four instructions (page 3-28)
+         S6      /HS3                    ; the reciprocal approximation of 3.0
+         S7      S6*IS3                  ; 2 - approximation * 3.0
+         S4      S5*FS6                  ; 6.0 * approximation
+         S4      S7*FS4                  ; times the correction
+         CHKS    S4,QUOT,25
+* the floating point mode flag can be set and cleared by any program
+         EFI
+         DFI
+         TPASS
+         TEND
+F1P5     CON     X'4001C00000000000      ; 1.5
+F2       CON     X'4002800000000000      ; 2.0
+QUOT     =       X'4002800000000000      ; 6.0 / 3.0 by the four instructions
+         END

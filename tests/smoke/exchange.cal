@@ -1,0 +1,87 @@
+* exchange: a round trip into a user program with a base address.
+* The test, in monitor mode, enters XA with the address of a package at
+* word 3000 and exits (004).  The package describes a user program at
+* absolute word 10000 (BA = 400, LA = 404) that adds two words of its field
+* and exits.  The test then checks its own registers, the result, and the
+* user's package: P one parcel past the exit, the normal exit flag, the
+* user's registers.  It clears the flag and exits again; the user program
+* resumes after its own exit.
+* RUNTIMES: direct exch
+         INCLUDE "rt_direct.cal"
+UBASE    =       10000                   ; absolute word address of the field
+UPKG     =       3000                    ; the user's exchange package
+         TBEGIN
+         A1      UPKG
+         A2      D'222
+         A7      D'777
+         S1      D'1111
+         S7      D'7777
+         B5      A2                      ; B, T and V are not exchanged
+         XA      A1
+         EX
+* back in the monitor: the exchange restored the registers
+         CHKA    A1,UPKG,2
+         CHKA    A2,D'222,3
+         CHKA    A7,D'777,4
+         CHKS    S1,D'1111,5
+         CHKS    S7,D'7777,6
+         A3      B5
+         CHKA    A3,D'77,7               ; the user program changed B5
+* the result, at its absolute address
+         S2      UDATA+2,0
+         CHKS    S2,D'300,10
+* the user's package
+         S2      UPKG,0                  ; P and A0
+         S3      S2
+         S3      S3>D'24
+         CHKS    S3,UEXIT-UBASE*4+1,11   ; one parcel past the EX, relative
+         S2      S2<D'40
+         CHKS    S2,0,12                 ; A0 = 0
+         S2      UPKG+1,0                ; BA and A1
+         CHKS    S2,UBASE/20*T$P2_28,13
+         S2      UPKG+2,0                ; LA, M and A2
+         CHKS    S2,(UBASE+100)/20*T$P2_28,14
+         S2      UPKG+3,0                ; XA, VL, F and A3
+         CHKS    S2,UPKG/20*T$P2_40+3*T$P2_33+1*T$P2_24,15
+         A3      UPKG+5,0
+         CHKA    A3,D'99,16              ; A5
+         S2      UPKG+13,0
+         CHKS    S2,D'300,17             ; S3
+* clear the normal exit flag and exit again: the user program resumes
+         S2      UPKG+3,0
+         S3      1
+         S3      S3<D'24
+         S2      #S3&S2
+         UPKG+3,0 S2
+         EX
+         S2      UDATA+2,0
+         CHKS    S2,D'301,20
+         CHKA    A7,D'777,21
+         TPASS
+         TEND
+*
+         ORG     UPKG
+         CON     (UCODE-UBASE*4)*T$P2_24 ; P, relative to the base
+         CON     UBASE/20*T$P2_28        ; BA
+         CON     (UBASE+100)/20*T$P2_28  ; LA: the field is 10000-10077; M = 0
+         CON     UPKG/20*T$P2_40+3*T$P2_33 ; XA back to this package; VL = 3
+         BSSZ    D'12                    ; A4-A7, S0-S7
+*
+* the user program; its addresses are relative to UBASE
+         ORG     UBASE+10
+UEXIT    EX
+         S1      1                       ; resumed by the second exchange
+         S3      S3+S1
+         UDATA-UBASE+2,0 S3
+         EX
+UCODE    S1      UDATA-UBASE,0           ; execution starts here
+         S2      UDATA-UBASE+1,0
+         S3      S1+S2
+         UDATA-UBASE+2,0 S3
+         A5      D'99
+         A6      D'77
+         B5      A6
+         J       UEXIT-UBASE*4           ; a branch inside the field
+         ORG     UBASE+40
+UDATA    CON     D'100,D'200,0
+         END

@@ -1,0 +1,21 @@
+* hello: console output and input through the I/O page.
+* Prints a line of text, prints a number in octal, then echoes whatever
+* input characters are waiting.
+* RUNTIMES: direct exch user
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+         PUTS    MSG
+         PUTNL
+         S1      1234567
+         PUTOCT
+         PUTNL
+ECHO     S0      T$CSTA,0                ; bit 2**0: an input character waits
+         S0      S0<D'63
+         JSP     DONE
+         S1      T$CDAT,0
+         PUTC
+         J       ECHO
+DONE     TPASS
+         TEND
+MSG      DATA    'HELLO, CRAY-1'
+         END

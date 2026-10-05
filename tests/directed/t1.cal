@@ -1,0 +1,32 @@
+         IDENT     T1
+* Direct start: exchange package at words 0-17 (monitor mode), code at word 40.
+CON      =         O'3777761           console data register
+TEXIT    =         O'3777762           test exit register
+         ORG       0
+         CON       P.START*O'100000000                 word 0: P (bits 45:24), A0
+         CON       0                                   word 1: BA, A1
+         CON       O'1777776100000000                  word 2: LA max, M = monitor
+         CON       O'0000000030000000000000            word 3: XA = 1, VL = 64
+         BSSZ      D'12
+         ORG       O'40
+START    A1        5
+         A2        A1+A1
+         O'1000,0  A2
+         A3        O'117
+         CON,0     A3
+         A3        O'113
+         CON,0     A3
+* complement immediates
+         A4        #O'1234567
+         O'1001,0  A4
+         S1        #O'1234567
+         O'1002,0  S1
+* special register values: (Ak)=1 when k=0, (Sk)=2**63 when k=0, (Sj)=0 when j=0
+         A5        A1+1
+         O'1003,0  A5
+         S2        SB
+         O'1004,0  S2
+         A6        0
+         TEXIT,0   A6
+HANG     J         HANG
+         END

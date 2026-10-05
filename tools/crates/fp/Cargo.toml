@@ -1,0 +1,10 @@
+[package]
+name = "cray1-fp"
+description = "Bit-exact Cray floating-point add, multiply and reciprocal approximation, with a test-vector generator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "cray1_fp"
+path = "src/lib.rs"

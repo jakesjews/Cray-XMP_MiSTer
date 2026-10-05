@@ -1,0 +1,171 @@
+`verilator_config
+
+// MiSTer module/file naming, explicitly unused outputs, FPGA power-up values,
+// and local names do not need style diagnostics. Keep functional checks enabled.
+lint_off -rule DECLFILENAME
+lint_off -rule PINCONNECTEMPTY
+lint_off -rule PROCASSINIT
+lint_off -rule SIMILARNAME
+lint_off -rule VARHIDDEN
+
+// Only waive the HPS ports this core does not use. Name each port so that
+// accidentally dropping a required connection still produces PINMISSING.
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_0'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_1'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_2'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_3'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_4'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_5'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_l_analog_0'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_l_analog_1'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_l_analog_2'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_l_analog_3'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_l_analog_4'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_l_analog_5'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_r_analog_0'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_r_analog_1'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_r_analog_2'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_r_analog_3'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_r_analog_4'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_r_analog_5'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_0_rumble'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_1_rumble'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_2_rumble'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_3_rumble'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_4_rumble'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'joystick_5_rumble'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'paddle_0'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'paddle_1'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'paddle_2'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'paddle_3'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'paddle_4'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'paddle_5'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'spinner_0'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'spinner_1'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'spinner_2'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'spinner_3'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'spinner_4'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'spinner_5'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_kbd_clk_out'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_kbd_data_out'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_kbd_clk_in'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_kbd_data_in'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_kbd_led_status'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_kbd_led_use'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_mouse_clk_out'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_mouse_data_out'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_mouse_clk_in'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_mouse_data_in'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_mouse'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ps2_mouse_ext'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'forced_scandoubler'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'video_rotated'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'new_vmode'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'status_in'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'status_set'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'info_req'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'info'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'img_mounted'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'img_readonly'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'img_size'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'sd_lba'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'sd_blk_cnt'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'sd_rd'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'sd_wr'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'sd_ack'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'sd_buff_addr'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'sd_buff_dout'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'sd_buff_din'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'sd_buff_wr'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_index'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_wr'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_addr'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_dout'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_upload'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_upload_req'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_upload_index'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_din'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_rd'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_file_ext'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'ioctl_wait'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'sdram_sz'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'RTC'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'TIMESTAMP'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'uart_mode'"
+lint_off -rule PINMISSING -file "Cray1.sv" -match "*Instance has missing pin: 'uart_speed'"
+
+// MiSTer provides wider controls than this core consumes: of the status word
+// only the reset, colour, font and aspect ratio bits, and of the buttons only
+// the user button.
+lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Bits of signal are not used: 'status'[127:123,120:15,13:5,2:1]*"
+lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Bits of signal are not used: 'buttons'[0]*"
+
+// The memory self-test build (SHELL_TEST) replaces the machine and has no use
+// for the dead start choice or the console input tap.
+lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Signal is not used: 'rom_boot'*"
+lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Signal is not used: 'con_in_data'*"
+lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Signal is not used: 'con_in_stb'*"
+
+// The text area is 384 lines at most, so the tenth bit of the line number is
+// only set outside it. A character cell is fetched once per column; the pixel
+// within the cell comes from the shift register, not from these low bits.
+lint_off -rule UNUSEDSIGNAL -file "rtl/terminal/term_video.v" -match "*Bits of signal are not used: 'ly'[9]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/terminal/term_video.v" -match "*Bits of signal are not used: 'fx'[2:0]*"
+
+// The channel and inter-CPU signals are only connected in the X-MP build
+// (XMP = 1); the CRAY-1 build ties those ports off.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'dma_*'*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'intercpu_*'*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'cln'*"
+
+// A vector length of 0 and of 100 octal both mean 64 elements, so the top bit
+// of VL does not change the count. The base address is a 22-bit word address
+// carried in a 24-bit register.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/mem_fu.v" -match "*Bits of signal are not used: 'i_vector_length'[6]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/mem_fu.v" -match "*Bits of signal are not used: 'i_data_base_addr'[23:22]*"
+
+// The low bit of a logical opcode picks the scalar or the vector operand,
+// which is done before the unit. The double shifts keep one half of a
+// 128-bit shift.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/vector_logical.v" -match "*Bits of signal are not used: 'op'[0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/vector_shift.v" -match "*Bits of signal are not used: 'dbl_l'[63:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/vector_shift.v" -match "*Bits of signal are not used: 'dbl_r'[127:64]*"
+
+// Floating point: the arithmetic the manual describes cuts sums and products
+// off at fixed bit positions, so the low-order bits below are formed and then
+// dropped on purpose. The seed table entries are at most 255.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_mul.v" -match "*Bits of signal are not used: 's4_out'[6:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'q'[31:8]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'a1_wide'[27:24,5:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 's6_coef'[47,10:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 's8_sum'[2:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'rounded'[1:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'a2'[63:47,14:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'exp_out'[15]*"
+
+// Keep the MiSTer framework out of lint diagnostics while using its real
+// module interfaces for elaboration. Generic lint_off covers lint/style
+// warnings; the named diagnostics below need explicit exclusions.
+lint_off -file "sys/*"
+lint_off -rule TIMESCALEMOD -file "sys/*"
+lint_off -rule SIMILARNAME -file "sys/*"
+lint_off -rule PROCASSWIRE -file "sys/*"
+lint_off -rule UNOPTFLAT -file "sys/*"
+
+// Focus lint on project RTL. The cray-1x CPU sources stay loaded so that
+// connections from project RTL are checked, but their lint warnings are
+// suppressed, including in locally repaired code.
+lint_off -file "rtl/cray/cray-1x/*"
+lint_off -file "rtl/cray/cray-1x/xmp/*"
+// With Verilator 5.052 a plain -file waiver does not reach these three; one
+// with a message match does.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/*" -match "*"
+lint_off -rule UNUSEDPARAM -file "rtl/cray/cray-1x/*" -match "*"
+lint_off -rule EOFNEWLINE -file "rtl/cray/cray-1x/*" -match "*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/*" -match "*"
+lint_off -rule UNUSEDPARAM -file "rtl/cray/cray-1x/xmp/*" -match "*"
+lint_off -rule EOFNEWLINE -file "rtl/cray/cray-1x/xmp/*" -match "*"
+
+// The PLL is a port-only boundary, not a behavioral model.
+lint_off -file "lint/pll.sv"
+lint_off -rule TIMESCALEMOD -file "lint/pll.sv"

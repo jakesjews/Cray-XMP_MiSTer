@@ -1,0 +1,35 @@
+* rtc: the real-time clock, 0014 and 072.
+* The reference model cannot predict a clock, so this test checks itself
+* and runs on the RTL only.  In monitor mode the clock is set to a value
+* and read twice: both readings must be at or above that value, the second
+* above the first, and no more than 1000 (decimal) clock periods later.
+* Then the clock is cleared (j = 0) and must read small again.
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+         S1      KSET,0
+         RT      S1                      ; 0014: clock = (S1)
+         S2      RT                      ; 072
+         S3      RT
+         S0      S2-S1
+         JSP     OK1
+         TFAIL   2                       ; first reading below the value set
+OK1      S0      S3-S2
+         JSN     OK2
+         TFAIL   3                       ; the clock did not move
+OK2      JSP     OK3
+         TFAIL   4                       ; the clock went backwards
+OK3      S4      D'1000
+         S5      S3-S2
+         S0      S4-S5
+         JSP     OK4
+         TFAIL   5                       ; two readings too far apart
+OK4      RT      S0                      ; j = 0: clear the clock
+         S2      RT
+         S4      D'1000
+         S0      S4-S2
+         JSP     OK5
+         TFAIL   6                       ; the clock was not cleared
+OK5      TPASS
+         TEND
+KSET     CON     X'0000123456789ABC
+         END
