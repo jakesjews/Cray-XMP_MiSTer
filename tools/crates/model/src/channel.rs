@@ -89,7 +89,9 @@ impl Machine {
         c.active = true;
         c.count = 0;
         c.word = 0;
-        if n % 2 == 0 {
+        if n % 2 == 1 {
+            self.loop_waiting[n / 2] = false;
+        } else {
             // a Ready that was held is answered now
             if let Some(parcel) = self.channels[n].held.take() {
                 self.channel_accept(n, parcel);
@@ -106,6 +108,7 @@ impl Machine {
         c.count = 0;
         if n % 2 == 1 {
             c.master_clear = k1;
+            self.loop_waiting[n / 2] = false;
         } else if k1 {
             c.held = None;
         }

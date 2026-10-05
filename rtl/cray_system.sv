@@ -80,7 +80,18 @@ module cray_system #(
 		.o_mem_addr (cpu_addr),
 		.o_mem_wdata(cpu_wdata),
 		.i_mem_ack  (cpu_ack),
-		.i_mem_rdata(cpu_rdata)
+		.i_mem_rdata(cpu_rdata),
+
+		// no devices on the 6 Mbyte channels of the X-MP setting
+		.i_ch_in_ready      (4'b0),
+		.i_ch_in_data       (64'b0),
+		.o_ch_in_resume     (),
+		.i_ch_in_disconnect (4'b0),
+		.o_ch_out_ready     (),
+		.o_ch_out_data      (),
+		.i_ch_out_resume    (4'b0),
+		.o_ch_out_disconnect(),
+		.o_ch_out_mc        ()
 	);
 
 	// ---- dead start ----

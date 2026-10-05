@@ -27,6 +27,7 @@ set_global_assignment -name VERILOG_FILE rtl/cray/fp_mul.v
 set_global_assignment -name VERILOG_FILE rtl/cray/fp_recip.v
 set_global_assignment -name VERILOG_FILE rtl/cray/v_optrack.v
 set_global_assignment -name VERILOG_FILE rtl/cray/v_regfile.v
+set_global_assignment -name VERILOG_FILE rtl/cray/xmp_channels.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/a_regfile.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/a_res_lut.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/a_scheduler.v

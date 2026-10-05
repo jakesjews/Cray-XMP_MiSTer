@@ -275,6 +275,8 @@ fn run(o: &Options) -> Result<u8, String> {
         .load_image(&image)
         .map_err(|e| format!("{}: {}", o.image, e))?;
     machine.push_input(&o.input);
+    // as in the simulation: each output channel cabled to its input channel
+    machine.set_channel_loopback(o.cpu == Cpu::Xmp);
     let trace = match &o.trace {
         Some(path) => Some(BufWriter::new(
             File::create(path).map_err(|e| format!("{}: {}", path, e))?,

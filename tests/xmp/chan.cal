@@ -1,0 +1,288 @@
+* chan: the 6 Mbyte channels of the X-MP, 10 to 17 octal (CSM-0111000 pages
+* 2-15 to 2-19, 5-9 and 5-37), in monitor mode, with each output channel
+* cabled to the input channel of its pair.  The program waits for a channel
+* by reading the number of the channel that asks, so it does not depend on
+* how long a transfer takes.  Where a Ready must have arrived before the
+* next order, it waits far longer than the slowest memory needs.
+         MACHINE XMP
+         INCLUDE "rt_xmp.cal"
+         INCLUDE "rt_xuser.cal"
+UPKG     =       3000
+FIOI     =       4                       ; flag bit 37
+*
+* wait until the lowest numbered channel that asks is %N.  Clobbers A0, A6, A7.
+         MACRO   WAITCI %N
+         LOCAL   %LP
+%LP      A7      CI
+         A6      %N
+         A0      A7-A6
+         JAN     %LP
+         ENDM
+*
+         MACRO   DELAY
+         LOCAL   %LP
+         A6      D'500
+%LP      A6      A6-1
+         A0      A6
+         JAN     %LP
+         ENDM
+*
+* start channel (%CH) from the address %FROM, to stop before %TO.  Clobbers A3, A4.
+         MACRO   START %CH,%FROM,%TO
+         A3      %FROM
+         A4      %TO
+         CL,%CH  A4
+         CA,%CH  A3
+         ENDM
+*
+         TBEGIN
+         A1      10                      ; an input channel
+         A2      11                      ; and the output channel cabled to it
+* at the start no channel asks and the addresses are zero
+         A5      CI
+         CHKA    A5,0,2
+         A5      CA,A1
+         CHKA    A5,0,3
+         A5      CE,A2
+         CHKA    A5,0,4
+* three words
+         START   A1,DST,DST+3
+         START   A2,KSRC,KSRC+3
+         WAITCI  10
+         A5      CA,A1
+         CHKA    A5,DST+3,5
+         CI,A1
+         WAITCI  11
+         A5      CA,A2
+         CHKA    A5,KSRC+3,6
+         A5      CE,A1
+         CHKA    A5,0,7
+         CI,A2
+         A5      CI
+         CHKA    A5,0,10
+         A5      CA,A1                   ; the addresses stay
+         CHKA    A5,DST+3,11
+* the output channel first: its Ready is held until the input channel is
+* activated
+         START   A2,KSRC+3,KSRC+5
+         DELAY
+         A5      CI
+         CHKA    A5,0,12
+         START   A1,DST+4,DST+6
+         WAITCI  10
+         CI,A1
+         WAITCI  11
+         CI,A2
+* less than the input buffer takes: the Disconnect ends the input
+         START   A1,DST+6,DST+12
+         START   A2,KSRC+5,KSRC+7
+         WAITCI  10
+         A5      CA,A1
+         CHKA    A5,DST+10,13
+         CI,A1
+         WAITCI  11
+         CI,A2
+* more than the input buffer takes: the input channel stops at its limit,
+* the Ready that follows is held, and a second buffer takes the rest
+         START   A1,DST+12,DST+14
+         START   A2,KSRC+7,KSRC+13
+         WAITCI  10
+         A5      CA,A1
+         CHKA    A5,DST+14,14
+         CI,A1
+         A5      CI                      ; the output channel is not done
+         CHKA    A5,0,15
+         START   A1,DST+14,DST+16
+         WAITCI  10
+         CI,A1
+         WAITCI  11
+         A5      CA,A2
+         CHKA    A5,KSRC+13,16
+         CI,A2
+* MC on an input channel forgets a held Ready: the transfer after it starts
+* with its own first parcel
+         START   A2,KSRC+13,KSRC+15
+         DELAY
+         MC,A1
+         CI,A2
+         START   A1,DST+16,DST+17
+         START   A2,KSRC+15,KSRC+16
+         WAITCI  10
+         CI,A1
+         WAITCI  11
+         MC,A2                           ; clears the flag as CI does
+         A5      CI
+         CHKA    A5,0,17
+         CI,A2
+* 0012 stops an active input channel: a Ready that comes then is held
+         START   A1,DST+24,DST+26
+         CI,A1
+         START   A2,KSRC+23,KSRC+24
+         DELAY
+         A5      CI
+         CHKA    A5,0,34
+         A5      CA,A1
+         CHKA    A5,DST+24,35
+         START   A1,DST+24,DST+25
+         WAITCI  10
+         CI,A1
+         WAITCI  11
+         CI,A2
+* only the low four bits of (Aj) name the channel, and 0 to 7 name none.
+* Channel 15 gets an address of its own first: its Ready goes out and is
+* held by channel 14.
+         A5      15
+         START   A5,KSRC,KSRC+1
+         DELAY
+         CI,A5
+         A3      14
+         MC,A3
+         A3      5
+         A4      DST
+         CL,A3   A4
+         CA,A3   A4
+         CI,A3
+         A5      CA,A3
+         CHKA    A5,0,20
+         A5      CE,A3
+         CHKA    A5,0,21
+         A3      15
+         A5      CA,A3
+         CHKA    A5,KSRC+1,36
+         A5      36                      ; channel 16
+         START   A5,DST+17,DST+21
+         A5      37                      ; channel 17
+         START   A5,KSRC+16,KSRC+20
+* two pairs at work: the lowest numbered channel that asks is reported
+         START   A1,DST+21,DST+22
+         START   A2,KSRC+20,KSRC+21
+         WAITCI  10
+         CI,A1
+         WAITCI  11
+         CI,A2
+         WAITCI  16
+         A3      16
+         A5      CA,A3
+         CHKA    A5,DST+21,22
+         CI,A3
+         WAITCI  17
+         A3      17
+         CI,A3
+         A5      CI
+         CHKA    A5,0,23
+* j = 0 names no channel
+         A4      DST
+         CL,A0   A4
+         CA,A0   A4
+         CI,A0
+         A5      CA,A1
+         CHKA    A5,DST+22,24
+* A channel that asks sets the I/O interrupt flag of a program outside
+* monitor mode.  One that finished before the exchange:
+         START   A1,DST+22,DST+23
+         START   A2,KSRC+21,KSRC+22
+         WAITCI  10
+         UGO     KPL
+         UFLAG   S2
+         CHKS    S2,FIOI,25
+         A1      10
+         A2      11
+         CI,A1
+         WAITCI  11
+         UGO     KPL                     ; the output channel still asks
+         UFLAG   S2
+         CHKS    S2,FIOI,26
+         A2      11
+         CI,A2
+* and one that finishes while the program runs
+         A1      10
+         START   A1,DST+23,DST+24
+         START   A2,KSRC+22,KSRC+23
+         UGO     KPL
+         UFLAG   S2
+         CHKS    S2,FIOI,27
+         A1      10
+         A2      11
+         WAITCI  10
+         CI,A1
+         WAITCI  11
+         CI,A2
+* outside monitor mode the orders do nothing
+         UGO     KPU
+         UFLAG   S2
+         CHKS    S2,1,30                 ; a normal exit
+         A1      10
+         A5      CA,A1
+         CHKA    A5,DST+24,31
+         A5      CI
+         CHKA    A5,0,32
+* what arrived
+         A3      0
+CMP      S1      DST,A3
+         S2      KEXP,A3
+         S0      S1\S2
+         JSN     BAD
+         A3      A3+1
+         A4      D'21
+         A0      A3-A4
+         JAN     CMP
+         J       GOOD
+BAD      TFAIL   33
+GOOD     TPASS
+         TEND    DUMPAS
+*
+* user programs
+UL       J       UL
+UU       A1      10
+         A4      DST
+         CL,A1   A4
+         CA,A1   A4
+         CI,A1
+         EX
+*
+KPL      CON     UL*T$P2_24
+KPU      CON     UU*T$P2_24
+         UDATA
+KSRC     CON     X'0123456789ABCDEF      ; three words
+         CON     X'1111222233334444
+         CON     X'FFFFFFFFFFFFFFFF
+         CON     X'8000000000000001      ; held Ready
+         CON     X'5555AAAA5555AAAA
+         CON     X'0001000200030004      ; short
+         CON     X'0005000600070008
+         CON     X'A000000000000007      ; long
+         CON     X'A000000000000010
+         CON     X'A000000000000011
+         CON     X'A000000000000012
+         CON     X'DEADDEADDEADDEAD      ; abandoned
+         CON     X'DEADDEADDEADDEAD
+         CON     X'0F0F0F0F0F0F0F0F      ; after MC
+         CON     X'1600000000000016      ; channels 16 and 17
+         CON     X'1700000000000017
+         CON     X'2000000000000020      ; beside them on 10 and 11
+         CON     X'2100000000000021      ; the interrupt flag
+         CON     X'2200000000000022
+         CON     X'2300000000000023      ; after 0012 on an active channel
+KEXP     CON     X'0123456789ABCDEF
+         CON     X'1111222233334444
+         CON     X'FFFFFFFFFFFFFFFF
+         CON     0
+         CON     X'8000000000000001
+         CON     X'5555AAAA5555AAAA
+         CON     X'0001000200030004
+         CON     X'0005000600070008
+         CON     0
+         CON     0
+         CON     X'A000000000000007
+         CON     X'A000000000000010
+         CON     X'A000000000000011
+         CON     X'A000000000000012
+         CON     X'0F0F0F0F0F0F0F0F
+         CON     X'1600000000000016
+         CON     X'1700000000000017
+         CON     X'2000000000000020
+         CON     X'2100000000000021
+         CON     X'2200000000000022
+         CON     X'2300000000000023
+DST      BSSZ    D'24
+         END

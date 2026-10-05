@@ -42,6 +42,7 @@ rtl/cray/fp_mul.v
 rtl/cray/fp_recip.v
 rtl/cray/v_optrack.v
 rtl/cray/v_regfile.v
+rtl/cray/xmp_channels.v
 
 // The cray-1x CPU sources this core is built on (vendored, with local repairs).
 rtl/cray/cray-1x/a_regfile.v

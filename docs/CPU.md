@@ -126,8 +126,8 @@ CPUs) did not work and has been removed.
   CRAY-1 S and X-MP manuals have it. The 1980 change packet says 30.
 - **Interrupts are precise.** The exchange happens right after the instruction
   that raised the flag. The manual allows a few more parcels to issue.
-- **No I/O channels.** 0010 to 0012 do nothing. 033 reads zero. The I/O
-  interrupt flag never sets.
+- **No I/O channels on the CRAY-1 setting.** 0010 to 0012 do nothing. 033
+  reads zero. The I/O interrupt flag never sets. The X-MP setting has them.
 - **No memory errors.** The memory error flag and the error fields of the
   exchange package are always zero.
 - **Encodings the 1982 manual leaves undefined.** 0014jk with k = 1, 2 or 3
@@ -189,7 +189,7 @@ beyond a CRAY-1 (the study is in `research/cos-cray1/`, the specification in
 `research/notes/machine-spec.md`). The reference is the CRAY X-MP Series
 Model 14 mainframe reference manual, CSM-0111000. It is simulated and tested
 against the reference model. No MiSTer build uses it yet: COS also needs the
-I/O channels and I/O processors, which do not exist here.
+I/O Subsystem with its I/O processors, which does not exist here.
 
 What changes with `XMP = 1`:
 
@@ -222,13 +222,27 @@ What changes with `XMP = 1`:
   and 0022.
 - **No recursion.** A vector register used as operand and result of one
   instruction is read element by element before it is written.
+- **Channels.** Four pairs of 6 Mbyte channels, 10 to 17 octal, the even
+  ones input and the odd ones output (`rtl/cray/xmp_channels.v`). In monitor
+  mode 0011 enters a limit address, 0010 a current address and starts the
+  channel, 0012 clears its flags and stops it; 0012j1 also raises the Master
+  Clear line of an output channel or forgets a held Ready of an input
+  channel. 033 reads the lowest numbered channel that asks for an interrupt,
+  a current address, or the error flag, which is always zero. Only the low
+  four bits of the channel number count, and 0 to 7 name no channel. A
+  channel moves 16-bit parcels, four to a word, to or from absolute
+  addresses. An input channel stops at its limit or at the device's
+  Disconnect and holds a Ready that finds it stopped. A channel that asks
+  sets the I/O interrupt flag outside monitor mode. No device is connected
+  yet; the simulation cables each output channel to the input of its pair.
 - 0021 to 0027 and 073i01 wait for results still on their way, so that a
   floating-point error is counted under the modes its instruction saw. This
   holds for 0021 and 0022 on the CRAY-1 setting as well.
 
 Not there: the X-MP's 24-bit constant `Ah exp` (01hijkm with the high bit of
 i), `Ai VL` (023i01), the second vector logical unit, gather and scatter, the
-interrupt monitor mode, the X-MP's rule for VL, and channels.
+interrupt monitor mode, the X-MP's rule for VL, the 100 Mbyte channels and
+channel parity.
 
 ## Clocks
 

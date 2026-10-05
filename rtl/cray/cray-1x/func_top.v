@@ -33,7 +33,18 @@ module func_top (
 	i_single_step,
 	i_mcu_int,
 	i_ibuf_busy,
-	o_ibuf_hold
+	o_ibuf_hold,
+	//6 Mbyte channels (X-MP)
+	o_ch_set_ca,
+	o_ch_set_cl,
+	o_ch_clear,
+	o_ch_k1,
+	o_ch_num,
+	o_ch_addr,
+	i_ch_ca,
+	i_ch_err,
+	i_ch_int_num,
+	i_ch_int
 );
 
 
@@ -66,9 +77,19 @@ module func_top (
 	output wire o_mem_wr_en;
 	input wire i_mem_ack;
 
-	//I/O interface
+	//I/O interface: orders to the 6 Mbyte channels of the X-MP (module xmp_channels),
+	//valid in the clock after their instruction issues, and what 033 reads back
+	output wire o_ch_set_ca;  // 0010: enter the current address and activate
+	output wire o_ch_set_cl;  // 0011: enter the limit address
+	output wire o_ch_clear;  // 0012: clear the flags and stop
+	output wire o_ch_k1;  // 0012j1
+	output wire [2:0] o_ch_num;  // channel number less 10 octal, also for the read
+	output wire [21:0] o_ch_addr;
+	input wire [21:0] i_ch_ca;  // current address of channel o_ch_num
+	input wire i_ch_err;  // its error flag
+	input wire [3:0] i_ch_int_num;  // the lowest numbered channel asking for an interrupt, or 0
+	input wire i_ch_int;  // some channel asks
 
-	//inter-CPU communications
 
 	output wire [31:0] o_debug;
 	input wire i_debug_full;
@@ -179,6 +200,7 @@ module func_top (
 	wire [63:0] shr_s;  // the result of a 072 form, two clocks after it issues
 	wire [63:0] status_reg;  // 073i01, during the clock after it issues
 	wire        ts_hold;  // the test and set in CIP finds its semaphore set
+	wire [23:0] ch_a;  // the result of 033, four clocks after it issues
 
 	//Exchange Package logic
 	// exchange sequencer interface
@@ -656,8 +678,9 @@ module func_top (
 			//Memory Error - set when a correctable or uncorrectable memory error occurs and the
 			//corresponding enable memory error mode bit is set in the M register
 			flag_me  <= 1'b0;
-			//I/O Interrupt flag - set when a 6 Mbyte channel or the 1250 Mbyte channel completes a transfer
-			flag_ioi <= 1'b0;  //no channels yet
+			//I/O Interrupt flag - set while a 6 Mbyte channel holds its interrupt request
+			//(the CRAY-1 setting has no channels)
+			flag_ioi <= mode_mm ? 1'b0 : (flag_ioi || i_ch_int);
 			//Error Exit - set by an error exit instruction (000)
 			flag_eex <= mode_mm ? 1'b0 : (((cip[15:9] == 7'o000) && cip_vld && issue_vld) || flag_eex);
 			//Normal Exit - set by a normal exit instruction (004)
@@ -828,7 +851,7 @@ module func_top (
 				ABUS_S_POP:    a_wr_data = a_poplz_out;
 				ABUS_A_ADD:    a_wr_data = a_add_out;
 				ABUS_A_MULT:   a_wr_data = a_mul_out;
-				ABUS_CHANNEL:  a_wr_data = 24'b0;  //033: no channels yet
+				ABUS_CHANNEL:  a_wr_data = ch_a;  //033
 				ABUS_MEM:      a_wr_data = data_from_mem_to_regs[23:0];
 				ABUS_INTERCPU: a_wr_data = shr_a;
 				default:       a_wr_data = 24'b0;
@@ -1512,6 +1535,58 @@ localparam VLOG      = 3'b000,   //vector logical
 			assign shr_a      = 24'b0;
 			assign shr_s      = 64'b0;
 			assign status_reg = 64'b0;
+		end
+	endgenerate
+
+	/////////////////////////////////////////////////////////
+	//   X-MP: orders to the 6 Mbyte channels, and 033     //
+	/////////////////////////////////////////////////////////
+	//  0010jk  CA,Aj Ak    0011jk  CL,Aj Ak    0012j0  CI,Aj    0012j1  MC,Aj
+	//act in monitor mode when j is not 0 and the low four bits of (Aj) name a channel
+	//from 10 to 17 octal (CSM-0111000 pages 5-9 and 5-37).  An order reaches the
+	//channels the clock after its instruction issues.  033 reads them in that same
+	//later clock, so a 033 right behind a 0012 sees what the 0012 did:
+	//  033i0x  Ai CI       033ij0  Ai CA,Aj    033ij1  Ai CE,Aj
+	//The result is due four clocks after issue.
+	generate
+		if (XMP) begin : g_chan
+			reg set_ca, set_cl, clear, k1;
+			reg [ 2:0] num;
+			reg [21:0] addr;
+			reg rd_int, rd_none, rd_err;
+			reg [23:0] rd1, rd2, rd3;
+			wire order = cip_issue && mode_mm && (cip[15:9] == 7'o001) && (cip_j != 3'd0) && a_j_data[3];
+
+			always @(posedge clk) begin
+				set_ca <= !rst && order && (cip[8:6] == 3'd0);
+				set_cl <= !rst && order && (cip[8:6] == 3'd1);
+				clear <= !rst && order && (cip[8:6] == 3'd2);
+				k1 <= (cip_k == 3'd1);
+				num <= a_j_data[2:0];
+				addr <= a_k_data[21:0];
+				rd_int <= (cip_j == 3'd0);
+				rd_none <= !a_j_data[3];
+				rd_err <= cip_k[0];
+				rd1 <= rd_int ? {20'b0, i_ch_int_num} : rd_none ? 24'b0 : rd_err ? {23'b0, i_ch_err} : {2'b0, i_ch_ca};
+				rd2 <= rd1;
+				rd3 <= rd2;
+			end
+
+			assign o_ch_set_ca = set_ca;
+			assign o_ch_set_cl = set_cl;
+			assign o_ch_clear  = clear;
+			assign o_ch_k1     = k1;
+			assign o_ch_num    = num;
+			assign o_ch_addr   = addr;
+			assign ch_a        = rd3;
+		end else begin : g_no_chan
+			assign o_ch_set_ca = 1'b0;
+			assign o_ch_set_cl = 1'b0;
+			assign o_ch_clear  = 1'b0;
+			assign o_ch_k1     = 1'b0;
+			assign o_ch_num    = 3'b0;
+			assign o_ch_addr   = 22'b0;
+			assign ch_a        = 24'b0;
 		end
 	endgenerate
 

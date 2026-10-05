@@ -114,6 +114,13 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/terminal/term_video.v" -match "*Bits of s
 // Only the memory unit works ahead of the multiplexer; the instruction buffers
 // wait for each acknowledge and have no use for take.
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Bits of signal are not used: 'mux_take'[0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Bits of signal are not used: 'mux_take'[2,0]*"
+
+// The 6 Mbyte channels exist only in the X-MP setting. In the CRAY-1 build
+// their orders, the values 033 reads back and the device lines go nowhere.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'i_ch_*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'ch_*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'i_ch_*"
 
 // A vector length of 0 and of 100 octal both mean 64 elements, so the top bit
 // of VL does not change the count. The base address is a 22-bit word address

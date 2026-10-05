@@ -65,12 +65,21 @@ int main(int argc, char **argv) {
     top->i_mcu_int = 0;
     top->i_mem_ack = 0;
     top->i_mem_rdata = 0;
+    top->i_ch_in_ready = 0;
+    top->i_ch_in_data = 0;
+    top->i_ch_in_disconnect = 0;
+    top->i_ch_out_resume = 0;
 
     long t = 0;
     for (; t < cycles && !mem.exited && !Verilated::gotFinish(); t++) {
         if (t == 8) top->rst = 0;
         if (ctrl_c.count(t)) mem.ctrl_c();
         top->i_mcu_int = mem.con_int_req;
+        // X-MP: each output channel is cabled to the input channel of its pair
+        top->i_ch_in_ready = top->o_ch_out_ready;
+        top->i_ch_in_data = top->o_ch_out_data;
+        top->i_ch_in_disconnect = top->o_ch_out_disconnect;
+        top->i_ch_out_resume = top->o_ch_in_resume;
         bool req = top->o_mem_req, we = top->o_mem_we, burst = top->o_mem_burst;
         uint32_t addr = top->o_mem_addr; uint64_t wdata = top->o_mem_wdata;
         top->clk = 1; top->eval();
