@@ -4,13 +4,15 @@
     runtests.py quick [-j JOBS]   smoke tests under every start-up, the directed tests,
                                   the self-checking clock and interrupt tests, the
                                   floating-point reference vectors, 200 random programs;
-                                  then the X-MP mode: its tests and 100 random programs
+                                  then the X-MP mode: its tests and 100 random programs;
+                                  then the I/O Processor: 400 random programs
     runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
                                   floating-point operation, 10,000 random programs and
                                   2,000 for the X-MP mode; then, if the COS 1.17
                                   software is there (CRAY1_SYSTEM, or the directory
                                   research/Cray 1 Disk Image from Youtube), the system
-                                  model dead starts it and runs a job
+                                  model dead starts it and runs a job, and the I/O
+                                  Processor follows the kernel's boot step by step
 
 Needs the host tools (make tools) and the simulations (make sim).  Programs are
 compared with the reference model by difftest.py; see docs/DEVELOPMENT.md.
@@ -24,6 +26,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PY = sys.executable
 DIFF = os.path.join(ROOT, 'tools/py/difftest.py')
+IOP = os.path.join(ROOT, 'tools/py/ioptest.py')
 FPBENCH = os.path.join(ROOT, 'sim/build/fp/Vfp_tb')
 SYS = os.path.join(ROOT, 'tools/target/release/cray1-sys')
 SYSTEM = os.environ.get('CRAY1_SYSTEM', os.path.join(ROOT, 'research/Cray 1 Disk Image from Youtube'))
@@ -99,6 +102,7 @@ def main():
     xmp = sorted(glob.glob(os.path.join(ROOT, 'tests/xmp/*.cal')))
     ok &= step('X-MP mode: %d tests' % len(xmp), [PY, DIFF, 'file'] + xmp + ['-I', 'tests/rt', '-j', jobs])
     ok &= step('X-MP mode: 100 random programs', [PY, DIFF, 'rand', '1', '100', '-n', '250', '--xmp', '-j', jobs])
+    ok &= step('I/O Processor: 400 random programs', [PY, IOP, 'rand', '1', '200', '-j', jobs])
     if a[0] == 'quick':
         ok &= step('200 random programs', [PY, DIFF, 'rand', '1', '200', '-n', '250', '-j', jobs])
     else:
@@ -112,9 +116,11 @@ def main():
         ok &= step('10,000 random programs', [PY, DIFF, 'rand', '1', '10000', '-n', '250', '-j', jobs])
         ok &= step('X-MP mode: 2,000 random programs',
                    [PY, DIFF, 'rand', '1001', '3000', '-n', '250', '--xmp', '-j', jobs])
+        ok &= step('I/O Processor: 4,000 random programs', [PY, IOP, 'rand', '201', '2200', '-j', jobs])
         if os.path.exists(os.path.join(SYSTEM, 'boot_tape.tap')):
             ok &= step('system model: COS 1.17 dead starts and runs a job',
                        [SYS, SYSTEM, '--script', 'tests/sys/cos.script', '--quiet'])
+            ok &= step('I/O Processor: the kernel boots on each of the three', [PY, IOP, 'kernel', SYSTEM])
     print('ALL PASSED' if ok else 'FAILED')
     sys.exit(0 if ok else 1)
 

@@ -11,6 +11,7 @@ programs, see [PROGRAMMING.md](PROGRAMMING.md).
 - `rtl/cray/`: CPU modules written for this core.
 - `rtl/cray/cray-1x/`: CPU modules that started in the cray-1x project. That
   project is no longer maintained, so they are maintained here like the rest.
+- `rtl/ios/`: the I/O Subsystem. So far the I/O Processor, which no build uses yet.
 - `rtl/terminal/`, `rtl/console_io.v`, `rtl/mister/`: console, serial port, DDR3 memory port.
 - `rtl/boot/`: the monitor ROM. `monitor.mem` is built from `software/monitor/`.
 - `sys/`: the MiSTer framework, an unmodified copy of
@@ -111,6 +112,8 @@ sim/build/fp/Vfp_tb tests/fp/xmp_ref.vec
   saves a frame of video. Run it from `rtl/terminal` so the font files are found.
   The machine has its own clock; `--cpu-ratio R` sets how many of its cycles
   run per video clock cycle.
+- `sim/build/iop/Viop_cpu RECORD` is the I/O Processor following a record of
+  the reference model's steps; `tools/py/ioptest.py` makes the records.
 
 ## Tests
 
@@ -151,6 +154,29 @@ time, and a second random seed. All five must agree with the model.
 Random programs do not use the exits, the monitor instructions, channel
 status or the clocks, and they index memory through A0 to A5 and A7.
 The smoke tests and the monitor cover exits, exchanges and range errors.
+
+### The I/O Processor
+
+`rtl/ios/iop_cpu.v` is checked against the model `tools/crates/ios/src/iop.rs`
+step by step. The model runs a program and writes a record: Local Memory,
+then for every instruction or interrupt what its channels answered and what
+the registers held afterwards (`replay.rs` has the format). The simulation
+is given the same memory and the same answers, and must take the same
+interrupts, send the same functions, end every step with the same registers,
+and finish with the same memory, operand registers and exit stack.
+
+```sh
+python3 tools/py/ioptest.py rand 1 200     # random programs, two kinds, and a directed one
+python3 tools/py/ioptest.py kernel         # the real kernel's boot on each of the three processors
+```
+
+- A random program is either all random parcels, which reaches every
+  operation code, or mostly register work with functions on the processor's
+  own channels and frequent interrupts. Half way through each there is a
+  Master Clear and a second dead start.
+- `kernel` needs the COS 1.17 software (see "The system model"). The system
+  model boots it and the simulation follows one processor: 150 million steps
+  for the MIOP, 55 million each for the other two.
 
 ## Testing on a MiSTer
 

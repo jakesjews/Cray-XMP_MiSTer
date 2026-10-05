@@ -21,6 +21,7 @@ use crate::devices::{BlockMultiplexer, CentralMemory, Console, Dd29, HighSpeed, 
 use crate::expander::{Clock, Expander};
 use crate::image::{Image, Tape};
 use crate::iop::{Channels, Iop};
+use crate::replay::Recorder;
 use cray1_isa::Cpu;
 use cray1_model::{Machine, StepResult};
 use std::io::Write;
@@ -48,6 +49,9 @@ const CPU_MASTER_CLEAR: u16 = 1 << 15;
 pub struct Timing {
     /// One step of the CPU model.
     pub cpu_step: u32,
+    /// The time an I/O Processor takes for an instruction, in percent of
+    /// the real one's (100 or more).  Its real-time clock keeps real time.
+    pub iop_percent: u32,
     /// A word of a Buffer Memory copy: 16,384 words take about 2 ms
     /// [HW 5-17].
     pub mos_word: u32,
@@ -78,6 +82,7 @@ impl Default for Timing {
     fn default() -> Timing {
         Timing {
             cpu_step: 4,
+            iop_percent: 100,
             mos_word: 10,
             high_speed_word: 7,
             link_parcel: 27,
@@ -96,11 +101,37 @@ impl Default for Timing {
 }
 
 impl Timing {
+    /// Set a time by the name of its field.  False if there is no such
+    /// field.
+    pub fn set(&mut self, name: &str, value: u32) -> bool {
+        let field = match name {
+            "cpu_step" => &mut self.cpu_step,
+            "iop_percent" => &mut self.iop_percent,
+            "mos_word" => &mut self.mos_word,
+            "high_speed_word" => &mut self.high_speed_word,
+            "link_parcel" => &mut self.link_parcel,
+            "console_character" => &mut self.console_character,
+            "key" => &mut self.key,
+            "expander_function" => &mut self.expander_function,
+            "expander_tape" => &mut self.expander_tape,
+            "expander_disk" => &mut self.expander_disk,
+            "expander_clock" => &mut self.expander_clock,
+            "disk_select" => &mut self.disk_select,
+            "disk_seek" => &mut self.disk_seek,
+            "disk_sector" => &mut self.disk_sector,
+            "multiplexer_delay" => &mut self.multiplexer_delay,
+            _ => return false,
+        };
+        *field = value;
+        true
+    }
+
     /// Every channel operation is over as soon as it is asked for, as in
     /// the cray-sim simulator: for comparing with a boot recorded there.
     pub fn instant() -> Timing {
         Timing {
             cpu_step: 4,
+            iop_percent: 100,
             mos_word: 0,
             high_speed_word: 0,
             link_parcel: 0,
@@ -663,6 +694,8 @@ pub struct System {
     clock: u64,
     side: Side,
     log: Option<Box<dyn Write>>,
+    /// The IOP whose steps are recorded, and the record.
+    replay: Option<(usize, Recorder)>,
 }
 
 impl System {
@@ -765,6 +798,7 @@ impl System {
                 actions: Vec::new(),
             },
             log: None,
+            replay: None,
         };
         system.dead_start(0, false);
         system
@@ -782,6 +816,34 @@ impl System {
         self.log = log;
     }
 
+    /// Record every step of IOP `n` on `out`, in the form of the module
+    /// `replay`, from now until `end_replay`.  The processor should not
+    /// have run yet.
+    pub fn set_replay(&mut self, n: usize, out: Box<dyn Write>) {
+        let mut recorder = Recorder::new(out);
+        recorder.sync(&self.iop[n]);
+        self.replay = Some((n, recorder));
+    }
+
+    /// End the record, with the state the processor is in.  Returns the
+    /// number of steps recorded.
+    pub fn end_replay(&mut self) -> u64 {
+        match self.replay.take() {
+            Some((n, mut recorder)) => {
+                recorder.finish(&self.iop[n]);
+                recorder.steps()
+            }
+            None => 0,
+        }
+    }
+
+    /// Steps recorded so far.
+    pub fn replay_steps(&self) -> u64 {
+        self.replay
+            .as_ref()
+            .map_or(0, |(_, recorder)| recorder.steps())
+    }
+
     /// Master Clear IOP `n` and load it from Buffer Memory.
     fn dead_start(&mut self, n: usize, short: bool) {
         self.iop[n].master_clear();
@@ -797,6 +859,12 @@ impl System {
             short,
         );
         l.dirty = true;
+        if let Some((recorded, recorder)) = &mut self.replay {
+            if *recorded == n {
+                recorder.master_clear();
+                recorder.sync(&self.iop[n]);
+            }
+        }
     }
 
     /// One instruction, or one interrupt, of IOP `n`.
@@ -810,44 +878,57 @@ impl System {
             self.time[n] += QUANTUM;
             return;
         }
-        match &mut self.log {
-            None => self.time[n] += iop.step(side) as u64,
-            Some(log) => {
-                let (p, a, held) = (iop.p(), iop.a(), iop.held());
-                let parcel = iop.memory()[p as usize];
-                let (f, d) = (parcel >> 9, parcel & 0o777);
-                let channel = if f < 0o160 { d } else { iop.b() };
-                let request = iop.interrupt_request(side);
-                let before = iop.counters();
-                self.time[n] += iop.step(side) as u64;
-                let after = iop.counters();
-                if after.interrupts != before.interrupts {
-                    let _ = writeln!(
-                        log,
-                        "I {} {:04x} {:02o} {}",
-                        n,
-                        p,
-                        request.unwrap_or(0),
-                        held as u8
-                    );
-                } else if f >= 0o140 && after.instructions != before.instructions {
-                    let function = f & 0o17;
-                    let value = if (0o10..=0o13).contains(&function) {
-                        iop.a()
-                    } else {
-                        0
-                    };
-                    let (busy, done) = match channel {
-                        0..=4 => (false, iop.done(channel)),
-                        5..=0o47 => (side.busy(channel as u8), side.done(channel as u8)),
-                        _ => (false, false),
-                    };
-                    let _ = writeln!(
-                        log,
-                        "F {} {:04x} {:02o} {:02o} {:04x} {:04x} {}{}",
-                        n, p, channel, function, a, value, busy as u8, done as u8
-                    );
-                }
+        // a slower processor: the rest of the instruction's time passes
+        // with nothing happening
+        let slower = (side.timing.iop_percent.max(100) - 100) as u64;
+        let mut took = |iop: &mut Iop, clock_periods: u32| {
+            let rest = clock_periods as u64 * slower / 100;
+            iop.advance(rest as u32);
+            self.time[n] += clock_periods as u64 + rest;
+        };
+        // what the function log needs from before the step
+        let (p, a, held) = (iop.p(), iop.a(), iop.held());
+        let parcel = iop.memory()[p as usize];
+        let (f, d) = (parcel >> 9, parcel & 0o777);
+        let channel = if f < 0o160 { d } else { iop.b() };
+        let request = match self.log {
+            Some(_) => iop.interrupt_request(side),
+            None => None,
+        };
+        let before = iop.counters();
+        let clock_periods = match &mut self.replay {
+            Some((recorded, recorder)) if *recorded == n => recorder.step(iop, side),
+            _ => iop.step(side),
+        };
+        took(iop, clock_periods);
+        if let Some(log) = &mut self.log {
+            let after = iop.counters();
+            if after.interrupts != before.interrupts {
+                let _ = writeln!(
+                    log,
+                    "I {} {:04x} {:02o} {}",
+                    n,
+                    p,
+                    request.unwrap_or(0),
+                    held as u8
+                );
+            } else if f >= 0o140 && after.instructions != before.instructions {
+                let function = f & 0o17;
+                let value = if (0o10..=0o13).contains(&function) {
+                    iop.a()
+                } else {
+                    0
+                };
+                let (busy, done) = match channel {
+                    0..=4 => (false, iop.done(channel)),
+                    5..=0o47 => (side.busy(channel as u8), side.done(channel as u8)),
+                    _ => (false, false),
+                };
+                let _ = writeln!(
+                    log,
+                    "F {} {:04x} {:02o} {:02o} {:04x} {:04x} {}{}",
+                    n, p, channel, function, a, value, busy as u8, done as u8
+                );
             }
         }
         while let Some(action) = self.side.actions.pop() {
@@ -855,6 +936,11 @@ impl System {
                 Action::MasterClear(to) => {
                     self.iop[to].master_clear();
                     self.side.master_clear(to);
+                    if let Some((recorded, recorder)) = &mut self.replay {
+                        if *recorded == to {
+                            recorder.master_clear();
+                        }
+                    }
                 }
                 Action::DeadStart(to, short) => {
                     self.time[to] = self.time[to].max(self.time[n]);
@@ -903,6 +989,10 @@ impl System {
             }
             if side.local[0].flags[CIA].busy || side.local[0].flags[COA].busy {
                 side.link(self.iop[0].memory_mut(), self.clock);
+                // parcels from the mainframe came into Local Memory
+                if let Some((0, recorder)) = &mut self.replay {
+                    recorder.sync(&self.iop[0]);
+                }
             }
         }
     }

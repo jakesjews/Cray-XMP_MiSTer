@@ -97,6 +97,7 @@ mod disasm;
 mod expander;
 mod image;
 mod iop;
+pub mod replay;
 mod screen;
 mod system;
 

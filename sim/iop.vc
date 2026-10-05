@@ -1,0 +1,8 @@
+// Verilator arguments for the I/O Processor against a record of the reference model (module iop_cpu).
+--cc --exe --build -j 0
+--top-module iop_cpu
+-Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-DECLFILENAME -Wno-EOFNEWLINE
+-O3 --x-assign unique --x-initial unique
+-CFLAGS "-O2 -std=c++17"
+rtl/ios/iop_cpu.v
+sim/harness/iop_main.cpp

@@ -3,7 +3,8 @@
 //!
 //! ```text
 //! cray1-sys SYSTEM [--script FILE] [--ms N] [--clock YYMMDD,HHMMSS] [--log FILE]
-//!           [--poke PARCEL=VALUE]... [--two-iops] [--instant] [--quiet]
+//!           [--poke PARCEL=VALUE]... [--two-iops] [--instant] [--timing NAME=N]...
+//!           [--quiet]
 //! ```
 //!
 //! * `SYSTEM`: a directory with the software as the cray-sim project
@@ -33,6 +34,12 @@
 //! * `--two-iops`: leave out the XIOP.
 //! * `--instant`: every channel operation takes no time, as in the
 //!   cray-sim simulator.
+//! * `--replay IOP,STEPS,FILE`: record the first STEPS steps (or more, to
+//!   the end of a millisecond) of an I/O Processor in FILE, for checking
+//!   the hardware description of the processor (`make -C sim iop`).
+//! * `--timing NAME=N`: one of the times of `Timing` (`system.rs`), in
+//!   clock periods of 12.5 ns: `disk_sector=400000` is a disk that takes
+//!   5 ms for a sector.
 //! * `--quiet`: do not copy the kernel console to standard output.
 //!
 //! The exit status is 0 if the script ran to its end, 1 if a wait gave up
@@ -49,7 +56,7 @@ use std::process::ExitCode;
 /// Clock periods of 12.5 ns in a millisecond.
 const MILLISECOND: u64 = 80_000;
 
-const USAGE: &str = "usage: cray1-sys SYSTEM [--script FILE] [--ms N] [--wait SECONDS] [--clock YYMMDD,HHMMSS] [--log FILE] [--poke PARCEL=VALUE]... [--two-iops] [--instant] [--quiet]";
+const USAGE: &str = "usage: cray1-sys SYSTEM [--script FILE] [--ms N] [--wait SECONDS] [--clock YYMMDD,HHMMSS] [--log FILE] [--poke PARCEL=VALUE]... [--two-iops] [--instant] [--timing NAME=N]... [--quiet]";
 
 struct Options {
     system: PathBuf,
@@ -61,6 +68,8 @@ struct Options {
     pokes: Vec<(usize, u16)>,
     two_iops: bool,
     instant: bool,
+    timing: Vec<(String, u32)>,
+    replay: Option<(usize, String, u64)>,
     quiet: bool,
 }
 
@@ -75,6 +84,8 @@ fn options() -> Result<Options, String> {
         pokes: Vec::new(),
         two_iops: false,
         instant: false,
+        timing: Vec::new(),
+        replay: None,
         quiet: false,
     };
     let mut system = None;
@@ -114,6 +125,24 @@ fn options() -> Result<Options, String> {
             }
             "--two-iops" => o.two_iops = true,
             "--instant" => o.instant = true,
+            "--replay" => {
+                let text = value("--replay")?;
+                let mut parts = text.splitn(3, ',');
+                let parsed = (|| {
+                    let iop = parts.next()?.parse().ok().filter(|&n: &usize| n < 4)?;
+                    let steps = parts.next()?.parse().ok()?;
+                    Some((iop, parts.next()?.to_string(), steps))
+                })();
+                o.replay = Some(parsed.ok_or("--replay takes IOP,STEPS,FILE")?);
+            }
+            "--timing" => {
+                let text = value("--timing")?;
+                let parsed = text
+                    .split_once('=')
+                    .and_then(|(name, v)| Some((name.to_string(), v.parse().ok()?)));
+                o.timing
+                    .push(parsed.ok_or("--timing takes NAME=CLOCK-PERIODS")?);
+            }
             "--quiet" => o.quiet = true,
             _ if arg.starts_with("--") => return Err(format!("{} is not an option", arg)),
             _ if system.is_none() => system = Some(PathBuf::from(arg)),
@@ -158,7 +187,22 @@ fn build(o: &Options) -> Result<System, String> {
     if o.instant {
         config.timing = Timing::instant();
     }
+    for (name, value) in &o.timing {
+        if !config.timing.set(name, *value) {
+            return Err(format!(
+                "`{}` is not a time: see Timing in tools/crates/ios/src/system.rs",
+                name
+            ));
+        }
+    }
     let mut system = System::new(config);
+    if let Some((iop, path, _)) = &o.replay {
+        let file = std::fs::File::create(path).map_err(|e| format!("{}: {}", path, e))?;
+        system.set_replay(
+            *iop,
+            Box::new(std::io::BufWriter::with_capacity(1 << 20, file)),
+        );
+    }
     if let Some(path) = &o.log {
         let file = std::fs::File::create(path).map_err(|e| format!("{}: {}", path, e))?;
         system.set_log(Some(Box::new(std::io::BufWriter::new(file))));
@@ -197,6 +241,8 @@ fn printable(bytes: &[u8]) -> String {
 
 struct Runner {
     system: System,
+    /// The number of steps after which the record of an IOP ends.
+    replay_steps: Option<u64>,
     /// How much of the kernel console has been copied out.
     shown: usize,
     quiet: bool,
@@ -206,6 +252,13 @@ impl Runner {
     /// Let a millisecond pass.
     fn tick(&mut self) {
         self.system.run(MILLISECOND);
+        if self
+            .replay_steps
+            .is_some_and(|steps| self.system.replay_steps() >= steps)
+        {
+            self.replay_steps = None;
+            eprintln!("cray1-sys: {} steps recorded", self.system.end_replay());
+        }
         if !self.quiet {
             let output = self.system.console(0, 3);
             if output.len() > self.shown {
@@ -384,6 +437,7 @@ fn main() -> ExitCode {
     };
     let mut runner = Runner {
         system,
+        replay_steps: o.replay.as_ref().map(|r| r.2),
         shown: 0,
         quiet: o.quiet,
     };
@@ -398,6 +452,7 @@ fn main() -> ExitCode {
         runner.tick();
     }
     runner.system.set_log(None);
+    runner.system.end_replay();
     runner.report();
     if runner.system.cpu_stopped().is_some() {
         status = 1;
