@@ -13,7 +13,6 @@ SOURCES = [
     "rtl",
     "sim",
     ":(exclude)sys/**",
-    ":(exclude)rtl/cray/cray-1x/**",
     ":(exclude)rtl/pll.v",
     ":(exclude)rtl/pll/**",
     ":(exclude)sim/obj_dir/**",

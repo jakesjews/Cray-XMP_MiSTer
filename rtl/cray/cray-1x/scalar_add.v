@@ -13,33 +13,37 @@
 //
 //The functional time is 3 clock periods.
 
-module scalar_add(i_sk,i_sj,i_instr,clk,o_result);
+module scalar_add (
+	i_sk,
+	i_sj,
+	i_instr,
+	clk,
+	o_result
+);
 
-input wire [63:0] i_sk;       
-input wire [63:0] i_sj;            
+	input wire [63:0] i_sk;
+	input wire [63:0] i_sj;
 
-output reg [63:0] o_result;
-input wire clk;
-input wire [6:0] i_instr;
+	output reg [63:0] o_result;
+	input wire clk;
+	input wire [6:0] i_instr;
 
-reg [6:0] instr;
-reg [63:0] sk_0;   //operand 1 
-reg [63:0] sj_0;   //operand 2
-reg [63:0] temp_result;
+	reg [ 6:0] instr;
+	reg [63:0] sk_0;  //operand 1 
+	reg [63:0] sj_0;  //operand 2
+	reg [63:0] temp_result;
 
-always@(posedge clk)
-   begin
-      //grab new values
-      sk_0[63:0] <= i_sk[63:0];
-      sj_0[63:0] <= i_sj[63:0];
-      instr[6:0] <= i_instr[6:0];
-   end
+	always @(posedge clk) begin
+		//grab new values
+		sk_0[63:0] <= i_sk[63:0];
+		sj_0[63:0] <= i_sj[63:0];
+		instr[6:0] <= i_instr[6:0];
+	end
 
-   
-always@(posedge clk)
-   begin 
-      temp_result[63:0] <= (instr[6:0]==7'b0110000) ? (sk_0[63:0] + sj_0[63:0]) : (sj_0[63:0] + ~sk_0[63:0] + 64'h000001);  
-      o_result <= temp_result;
-   end
+
+	always @(posedge clk) begin
+		temp_result[63:0] <= (instr[6:0]==7'b0110000) ? (sk_0[63:0] + sj_0[63:0]) : (sj_0[63:0] + ~sk_0[63:0] + 64'h000001);
+		o_result <= temp_result;
+	end
 
 endmodule

@@ -143,6 +143,56 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal 
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'a2'[63:47,14:0]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'exp_out'[15]*"
 
+// ---- The CPU sources that came from cray-1x ----
+
+// cray_types.vh is a shared header of bus-select constants. Each module that
+// includes it uses the ones for its own bus.
+lint_off -rule UNUSEDPARAM -file "rtl/cray/cray-1x/cray_types.vh" -match "*"
+
+// The lookup tables and the branch unit take the whole instruction parcel;
+// not every field decides every answer. The A scheduler has the ports of the
+// S scheduler but no use for the second-parcel flag.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/a_res_lut.v" -match "*Bits of signal are not used: 'i_cip'[8:3]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/s_res_lut.v" -match "*Bits of signal are not used: 'i_cip'[8:6]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/brancher.v" -match "*Bits of signal are not used: 'i_cip'[8]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/a_scheduler.v" -match "*Signal is not used: 'i_lip_vld'*"
+
+// 023 takes the low 24 bits of (Sj). The last stage of the population count
+// only adds bits 42 to 63. The double shifts keep one half of a 128-bit shift.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/imm_gen.v" -match "*Bits of signal are not used: 'i_sj'[63:24]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/scalar_pop_lz.v" -match "*Bits of signal are not used: 'sj2'[41:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/scalar_shift.v" -match "*Bits of signal are not used: 'result_d1_l'[63:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/scalar_shift.v" -match "*Bits of signal are not used: 'result_d1_r'[127:64]*"
+
+// Two inputs of func_top that nothing reads: the instruction buffer's
+// whole-word output and a debug input, both from upstream.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'i_word_nxt'*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'i_debug_full'*"
+
+// Start bit 6 of the vector scheduler belongs to the vector population count,
+// an X-MP unit that is not built. The six vector unit trackers have the same
+// outputs: only the shift unit needs first and last, only the logical unit
+// the last result (for the VM test), and the logical and integer add units
+// have no use for the valid flag.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'vfu_start'[6]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_valid'[2,0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_first'[5:2,0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_last'[5:2,0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_out_last'[5:1]*"
+
+// X-MP channels and inter-CPU instructions (XMP = 1, not verified). A channel
+// number is the low 6 bits of (Aj) and channel addresses are narrower than
+// the registers that carry them. The monitor mode of each CPU is registered
+// but nothing checks it yet.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/dma_fu.v" -match "*Bits of signal are not used: 'int_aj'[23:6]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/dma_fu.v" -match "*Bits of signal are not used: 'int_ak'[23]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/dma_fu.v" -match "*Bits of signal are not used: 'in_flight_addr'[22]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/intercpu_comms.v" -match "*Signal is not used: 'intercpu_mon_mode_*'*"
+
+// The X-MP vector population count is not instantiated by any build. Its
+// last stage only adds bits 48 to 63.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/vector_pop_parity.v" -match "*Bits of signal are not used: 'vj3'[47:0]*"
+
 // Keep the MiSTer framework out of lint diagnostics while using its real
 // module interfaces for elaboration. Generic lint_off covers lint/style
 // warnings; the named diagnostics below need explicit exclusions.
@@ -151,20 +201,6 @@ lint_off -rule TIMESCALEMOD -file "sys/*"
 lint_off -rule SIMILARNAME -file "sys/*"
 lint_off -rule PROCASSWIRE -file "sys/*"
 lint_off -rule UNOPTFLAT -file "sys/*"
-
-// Focus lint on project RTL. The cray-1x CPU sources stay loaded so that
-// connections from project RTL are checked, but their lint warnings are
-// suppressed, including in locally repaired code.
-lint_off -file "rtl/cray/cray-1x/*"
-lint_off -file "rtl/cray/cray-1x/xmp/*"
-// With Verilator 5.052 a plain -file waiver does not reach these three; one
-// with a message match does.
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/*" -match "*"
-lint_off -rule UNUSEDPARAM -file "rtl/cray/cray-1x/*" -match "*"
-lint_off -rule EOFNEWLINE -file "rtl/cray/cray-1x/*" -match "*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/*" -match "*"
-lint_off -rule UNUSEDPARAM -file "rtl/cray/cray-1x/xmp/*" -match "*"
-lint_off -rule EOFNEWLINE -file "rtl/cray/cray-1x/xmp/*" -match "*"
 
 // The PLL is a port-only boundary, not a behavioral model.
 lint_off -file "lint/pll.sv"

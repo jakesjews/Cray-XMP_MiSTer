@@ -9,7 +9,8 @@ programs, see [PROGRAMMING.md](PROGRAMMING.md).
 - `Cray1.sv`: the MiSTer `emu` wrapper. `files.qip` lists what Quartus builds.
 - `rtl/cray_system.sv`: the machine as the wrapper sees it. CPU, dead start, I/O page.
 - `rtl/cray/`: CPU modules written for this core.
-- `rtl/cray/cray-1x/`: CPU modules from the cray-1x project, with repairs. Vendored.
+- `rtl/cray/cray-1x/`: CPU modules that started in the cray-1x project. That
+  project is no longer maintained, so they are maintained here like the rest.
 - `rtl/terminal/`, `rtl/console_io.v`, `rtl/mister/`: console, serial port, DDR3 memory port.
 - `rtl/boot/`: the monitor ROM. `monitor.mem` is built from `software/monitor/`.
 - `sys/`: the MiSTer framework, an unmodified copy of
@@ -145,14 +146,13 @@ The project scope is the `Cray1.sv` wrapper and the Verilog and SystemVerilog
 sources under `rtl/` and `sim/`, including new, untracked files. Ignored files
 are excluded.
 
-Vendored files are never formatted, to keep readable diffs against upstream:
+Vendored files are never formatted:
 
 - `sys/`, the MiSTer framework
-- `rtl/cray/cray-1x/`, the cray-1x CPU sources, including the local repairs
 - `rtl/pll.v` and `rtl/pll/`, generated IP
 
-Naming one of them is rejected: `make format FILES='rtl/cray/cray-1x/func_top.v'`
-changes nothing.
+Naming one of them is rejected: `make format FILES='sys/hps_io.sv'` changes
+nothing.
 
 The configuration is the one the Apple III core uses: tab indentation,
 aligned declarations, ports and assignments, a 120-column target, settings in
@@ -169,12 +169,13 @@ With Verilator on `PATH`:
 make lint
 ```
 
-This writes a fixed build ID to `lint/gen/` and runs Verilator three times
+This writes a fixed build ID to `lint/gen/` and runs Verilator four times
 with `--lint-only -Wall -f lint/rtl.f`:
 
 - the `emu` top, as built for the MiSTer
 - the `emu` top with `SHELL_TEST` defined, the memory self-test build
 - `cray_cpu` with `XMP=1`, so the X-MP paths keep compiling
+- `vector_pop_parity`, an X-MP module that no build instantiates
 
 `lint/rtl.f` lists the sources from `files.qip`; update both when adding a
 synthesis source. `.v` files are parsed as Verilog 2005, as Quartus does.
@@ -183,13 +184,33 @@ Warnings are fatal. The policy and the waivers are in `lint/exclusions.vlt`:
 
 - File naming, shadowing, declaration initialisers and explicitly empty port
   connections are not checked anywhere.
-- `sys/`, `rtl/cray/cray-1x/` and the PLL stub are loaded so that connections
-  from project RTL are checked, but their own diagnostics are suppressed.
-- Project RTL has waivers only for reviewed cases, each with its reason: the
-  `hps_io` ports this core does not use, named one by one; signals only the
-  X-MP build uses; bits the floating-point arithmetic forms and then drops.
+- `sys/` and the PLL stub are loaded so that connections from project RTL are
+  checked, but their own diagnostics are suppressed.
+- Everything else, the cray-1x sources included, has waivers only for
+  reviewed cases, each with its reason: the `hps_io` ports this core does not
+  use, named one by one; signals only the X-MP build uses; bits the
+  floating-point arithmetic forms and then drops; ports and instruction
+  fields a module takes but does not need.
 
 Lint uses a port-only PLL stub, so it does not check Intel primitives or
 timing. Validated with Verilator 5.052.
 
 The host tools are not covered by `make lint` or `make format`.
+
+## Proving that an edit changes nothing
+
+With Yosys on `PATH`:
+
+```sh
+python3 tools/py/equiv.py                 # every RTL file that differs from HEAD
+python3 tools/py/equiv.py --rev HEAD~1 rtl/cray/cray-1x/func_top.v
+```
+
+For each module in a changed file, Yosys compares the working tree with the
+named revision: the same outputs, the same next state of every register and
+the same values sent to every submodule, for all inputs. A module with an
+`XMP` parameter is checked for both settings. Use it after reformatting or a
+lint clean-up, where the simulations cannot reach, such as the X-MP paths.
+
+It needs ports, registers and submodule instances to keep their names, and it
+does not look inside submodules; their files are checked on their own.

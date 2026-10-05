@@ -8,8 +8,9 @@ Reference Manual, publication 2240004 revision C.
 
 The CPU started as the X-MP generation of Chris Fenton's CRAY-1 for FPGAs, from
 the cray-1x project (googlecode trunk r257, `Verilog/xmp`). Those sources are in
-`rtl/cray/cray-1x/` and keep their original formatting so they can be compared
-with upstream.
+`rtl/cray/cray-1x/`. Upstream is no longer maintained, so they are maintained
+here, formatted and linted like the rest. The first commit of this core has
+them with the repairs below but still in the upstream layout.
 
 The upstream CPU did not run programs correctly as found. What this core keeps
 from it, with repairs:
@@ -47,6 +48,11 @@ Repairs to the upstream files:
   monitor-mode gating of the clock and XA instructions, the floating-point
   mode flag, field protection and the range flags, a 22-bit P, the console
   interrupt, and a new vector section.
+- Lint clean-up across the files: signals and registers nothing read were
+  removed and operand widths made explicit. Each module was proven equivalent
+  to its form before the clean-up with `tools/py/equiv.py`.
+- `xmp/intercpu_comms`: the issue signal of the fourth CPU tested the third
+  CPU's instruction type. Fixed; like the rest of the X-MP code it is untested.
 
 A parameter `XMP` selects the machine. `XMP = 0` is the CRAY-1 and is the only
 setting that has been verified. `XMP = 1` keeps the X-MP additions of the
@@ -145,4 +151,4 @@ vector from a real machine covers.
 ## Resources
 
 Quartus 17.0 for the DE10-Nano: about 19,000 ALMs (45%), 121 memory blocks,
-36 DSP blocks. Timing is met; the 29.4 MHz clock path is good for about 48 MHz.
+36 DSP blocks. Timing is met; the 29.4 MHz clock path is good for about 50 MHz.

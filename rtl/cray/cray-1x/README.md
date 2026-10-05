@@ -1,20 +1,14 @@
-# cray-1x CPU sources
+# CPU sources from cray-1x
 
-These files come from the cray-1x project, Chris Fenton's CRAY-1 and X-MP for
-FPGAs (googlecode trunk r257, directory `Verilog/xmp`). They are the base the
-CPU of this core is built on.
+These files started as the X-MP generation of Chris Fenton's CRAY-1 for
+FPGAs, from the cray-1x project (googlecode trunk r257, directory
+`Verilog/xmp`). That project is no longer maintained, so the files are
+maintained here like the rest of the core: `make format` formats them and
+`make lint` checks them.
 
-Carrying repairs made for this core, described in `docs/CPU.md`:
-`a_regfile.v`, `brancher.v`, `func_top.v`, `i_buf.v`, `imm_gen.v`,
-`s_regfile.v`, `s_res_lut.v`, `s_scheduler.v`, `scalar_pop_lz.v`,
-`scalar_shift.v`, `v_scheduler.v`.
+What was repaired and cleaned up is described in `docs/CPU.md`. The first
+commit of this core has the files as they came, with the repairs but in the
+upstream layout, for comparing with the originals.
 
-Unchanged apart from line endings: `a_res_lut.v`, `a_scheduler.v`,
-`addr_add.v`, `b_regfile.v`, `cray_types.vh`, `fast_addr_mult.v`, `lz_sub.v`,
-`s_const_gen.v`, `scalar_add.v`, `scalar_logical.v`, `t_regfile_hard.v` and
-everything in `xmp/`. The `xmp/` modules are only instantiated with `XMP = 1`,
-and `vector_pop_parity.v` is not built at all.
-
-The files keep their upstream layout so they can be compared with the
-originals (`diff -w --strip-trailing-cr`). `make format` and `make lint` leave
-them alone; see `docs/DEVELOPMENT.md`.
+`xmp/` holds the modules that are only used with `XMP = 1`.
+`xmp/vector_pop_parity.v` is not instantiated by any build.

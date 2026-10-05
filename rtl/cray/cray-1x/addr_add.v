@@ -10,23 +10,29 @@
 //The functional unit time is two clock periods
 
 
-module addr_add(i_ak,i_aj,i_instr,clk,o_result);
+module addr_add (
+	i_ak,
+	i_aj,
+	i_instr,
+	clk,
+	o_result
+);
 
-input wire [23:0] i_ak;       
-input wire [23:0] i_aj;            
+	input wire [23:0] i_ak;
+	input wire [23:0] i_aj;
 
-output reg [23:0] o_result;
-input wire clk;
-input wire [6:0] i_instr;
+	output reg [23:0] o_result;
+	input wire clk;
+	input wire [6:0] i_instr;
 
-reg [23:0] ak, aj;
-reg [6:0] instr;
-//now compute the result   
-always@(posedge clk) begin 
-   ak <= i_ak;
-   aj <= i_aj;
-   instr <= i_instr;
-   o_result[23:0] <= (instr[6:0]==7'b0011000) ? (ak[23:0] + aj[23:0]) : (aj[23:0] + ~ak[23:0] + 24'h000001); 
-end
+	reg [23:0] ak, aj;
+	reg [6:0] instr;
+	//now compute the result   
+	always @(posedge clk) begin
+		ak             <= i_ak;
+		aj             <= i_aj;
+		instr          <= i_instr;
+		o_result[23:0] <= (instr[6:0] == 7'b0011000) ? (ak[23:0] + aj[23:0]) : (aj[23:0] + ~ak[23:0] + 24'h000001);
+	end
 
 endmodule

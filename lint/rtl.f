@@ -70,4 +70,7 @@ rtl/cray/cray-1x/xmp/intercpu_sm_mux.v
 rtl/cray/cray-1x/xmp/intercpu_st_mux.v
 rtl/cray/cray-1x/xmp/slow_ch_rx.v
 rtl/cray/cray-1x/xmp/slow_ch_tx.v
+// Not in files.qip: the X-MP vector population count, which no build
+// instantiates. Listed so that make lint can check it on its own.
+rtl/cray/cray-1x/xmp/vector_pop_parity.v
 Cray1.sv

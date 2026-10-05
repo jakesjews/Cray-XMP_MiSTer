@@ -6,7 +6,7 @@ VERILATOR ?= verilator
 help:
 	@echo "make format        Format project RTL and testbenches in place"
 	@echo "make format-check  Check formatting without changing files"
-	@echo "make lint          Lint the emu top, the self-test build and the X-MP CPU setting with Verilator"
+	@echo "make lint          Lint the emu top, the self-test build and the X-MP modules with Verilator"
 	@echo "make lint-prepare  Prepare dependencies for a direct Verilator invocation"
 	@echo "make tools         Build the assembler and the reference model (tools/target/release)"
 	@echo "make sim           Build the CPU, floating-point and whole-core simulations (sim/build)"
@@ -22,6 +22,7 @@ lint: lint-prepare
 	$(VERILATOR) --lint-only -Wall --top-module emu -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module emu +define+SHELL_TEST -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module cray_cpu -GXMP=1 -f lint/rtl.f
+	$(VERILATOR) --lint-only -Wall --top-module vector_pop_parity -f lint/rtl.f
 
 lint-prepare:
 	@mkdir -p lint/gen
