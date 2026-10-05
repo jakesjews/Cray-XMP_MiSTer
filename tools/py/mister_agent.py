@@ -23,6 +23,7 @@ import fcntl
 import mmap
 import os
 import select
+import struct
 import sys
 import termios
 import time
@@ -207,7 +208,79 @@ def cmd_batch(args):
         sys.exit(1)
 
 
-COMMANDS = {'batch': cmd_batch, 'run': cmd_run, 'peek': cmd_peek, 'poke': cmd_poke, 'fill': cmd_fill, 'load': cmd_load,
+# ---- key presses through a virtual keyboard (Linux uinput) ----
+# Main_MiSTer picks the device up like any USB keyboard, so the keys take the
+# same road into the core as a real one: Main, hps_io, ps2_key.
+UI_SET_EVBIT, UI_SET_KEYBIT, UI_DEV_CREATE, UI_DEV_DESTROY = 0x40045564, 0x40045565, 0x5501, 0x5502
+EV_SYN, EV_KEY = 0, 1
+KEY_CTRL, KEY_SHIFT = 29, 42
+NAMED = {'enter': 28, 'esc': 1, 'tab': 15, 'backspace': 14, 'space': 57, 'up': 103, 'down': 108, 'left': 105,
+         'right': 106, 'f12': 88, 'delete': 111}
+PLAIN = dict(zip('1234567890-=', range(2, 14)))
+PLAIN.update(zip('qwertyuiop[]', range(16, 28)))
+PLAIN.update(zip('asdfghjkl;\'`', range(30, 42)))
+PLAIN.update(zip('\\zxcvbnm,./', range(43, 54)))
+PLAIN.update({' ': 57, '\r': 28, '\n': 28, '\t': 15, '\x08': 14})
+SHIFTED = dict(zip('!@#$%^&*()_+', range(2, 14)))
+SHIFTED.update(zip('{}', (26, 27)))
+SHIFTED.update(zip(':"~', (39, 40, 41)))
+SHIFTED.update(zip('|', (43,)))
+SHIFTED.update(zip('<>?', (51, 52, 53)))
+
+
+def key_steps(text):
+    """(key code, shift, ctrl) for each key press named by `text`: characters,
+    \\r \\n \\t \\xHH (control characters are typed with CTRL) and {name} for a
+    special key such as {f12}, {enter}, {esc}, {up}, {down}."""
+    text = text.encode().decode('unicode_escape')
+    out, i = [], 0
+    while i < len(text):
+        c = text[i]
+        if c == '{' and '}' in text[i:] and text[i + 1:text.index('}', i)].lower() in NAMED:
+            j = text.index('}', i)
+            out.append((NAMED[text[i + 1:j].lower()], False, False))
+            i = j + 1
+            continue
+        i += 1
+        if c in PLAIN: out.append((PLAIN[c], False, False))
+        elif c in SHIFTED: out.append((SHIFTED[c], True, False))
+        elif c.lower() in PLAIN and c.isupper(): out.append((PLAIN[c.lower()], True, False))
+        elif 1 <= ord(c) <= 26: out.append((PLAIN[chr(ord(c) + 96)], False, True))
+        else: sys.exit('no key for character %r' % c)
+    return out
+
+
+def cmd_keys(args):
+    """keys TEXT [--gap SEC]: type TEXT on a virtual keyboard."""
+    gap = float(args[args.index('--gap') + 1]) if '--gap' in args else 0.06
+    steps = key_steps(args[0])
+    fd = os.open('/dev/uinput', os.O_WRONLY | os.O_NONBLOCK)
+    fcntl.ioctl(fd, UI_SET_EVBIT, EV_KEY)
+    for code in range(1, 120):
+        fcntl.ioctl(fd, UI_SET_KEYBIT, code)
+    # struct uinput_user_dev: name, bus/vendor/product/version, ff effects, 4 x 64 axis limits
+    os.write(fd, struct.pack('80sHHHHi', b'Cray1 test keyboard', 3, 0x1209, 0xC1A1, 1, 0) + bytes(4 * 64 * 4))
+    fcntl.ioctl(fd, UI_DEV_CREATE)
+    time.sleep(3.0)                           # Main_MiSTer needs a moment to open the new device
+
+    def emit(code, value):
+        os.write(fd, struct.pack('llHHi', 0, 0, EV_KEY, code, value) + struct.pack('llHHi', 0, 0, EV_SYN, 0, 0))
+        time.sleep(gap / 2)
+
+    for code, shift, ctrl in steps:
+        if ctrl: emit(KEY_CTRL, 1)
+        if shift: emit(KEY_SHIFT, 1)
+        emit(code, 1)
+        emit(code, 0)
+        if shift: emit(KEY_SHIFT, 0)
+        if ctrl: emit(KEY_CTRL, 0)
+        time.sleep(gap)
+    time.sleep(0.3)
+    fcntl.ioctl(fd, UI_DEV_DESTROY)
+    os.close(fd)
+
+
+COMMANDS = {'keys': cmd_keys, 'batch': cmd_batch, 'run': cmd_run, 'peek': cmd_peek, 'poke': cmd_poke, 'fill': cmd_fill, 'load': cmd_load,
             'dump': cmd_dump, 'uart': cmd_uart}
 
 if __name__ == '__main__':

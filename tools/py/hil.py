@@ -9,6 +9,8 @@
                                    memory from Linux, release, print console output
   hil.py batch DIR [--timeout SEC] run a directory made by mkbatch.py and compare memory
   hil.py uart SEC [--break] [--send TEXT] [--until TEXT]
+  hil.py keys TEXT [--gap SEC]     type on a virtual keyboard: characters, \\r, \\xHH for
+                                   control keys, {f12} {enter} {esc} {up} {down} for others
   hil.py peek WORD [COUNT] | poke WORD HEX... | fill WORD COUNT HEX
   hil.py dump FILE WORD COUNT      copy a memory range to a local file
   hil.py shot OUT.png              take a screenshot (needs direct video off)
@@ -176,7 +178,7 @@ def main():
     elif c == 'shot': cmd_shot(args)
     elif c == 'direct-video': cmd_direct_video(args)
     elif c == 'dump': cmd_dump(args)
-    elif c in ('uart', 'peek', 'poke', 'fill'):
+    elif c in ('uart', 'peek', 'poke', 'fill', 'keys'):
         push_agent()
         agent([c] + args)
     elif c == 'sh': ssh(' '.join(args))

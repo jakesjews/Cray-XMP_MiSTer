@@ -45,6 +45,14 @@ WAIT2    S0      CSTA,0
          S0      S0<D'62
          JSP     WAIT2
          CDAT,0  S1
+         S2      15                      ; after a return, start a new line
+         S0      S1\S2
+         JSN     ECHO
+         S1      12
+WAIT3    S0      CSTA,0
+         S0      S0<D'62
+         JSP     WAIT3
+         CDAT,0  S1
          J       ECHO
 *
 TEXT     DATA    'HELLO FROM A CRAY-1.  TYPE SOMETHING: ',0
