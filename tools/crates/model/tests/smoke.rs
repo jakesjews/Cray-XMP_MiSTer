@@ -167,6 +167,7 @@ fn every_smoke_test_is_run() {
             "chan.cal",
             "dump.cal",
             "exchange.cal",
+            "exitflag.cal",
             "float.cal",
             "hello.cal",
             "int.cal",
@@ -213,6 +214,11 @@ fn smoke_branch() {
 #[test]
 fn smoke_chan() {
     pass("chan", &["direct", "exch", "user"]);
+}
+
+#[test]
+fn smoke_exitflag() {
+    pass("exitflag", &["direct"]);
 }
 
 #[test]

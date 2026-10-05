@@ -181,12 +181,13 @@ fn add_range_error_follows_the_larger_incoming_exponent() {
 }
 
 #[test]
-fn add_range_error_when_the_sum_carries_out_of_57777() {
-    // XMP page 4-24 note: a final exponent of 060000 is also flagged. The CRAY-1 manual
-    // names only the incoming exponent.
+fn a_sum_that_carries_out_of_57777_is_not_an_add_range_error() {
+    // The CRAY-1 manual names only the incoming exponent as the add unit's range error
+    // (page 3-21, the same in revisions C, E and F). The X-MP also flags a final exponent of
+    // 060000 (XMP page 4-24); this library follows the CRAY-1.
     assert_eq!(
         fadd(w(0o57777, HALF), w(0o57777, HALF)),
-        err(w(0o60000, HALF))
+        ok(w(0o60000, HALF))
     );
     assert_eq!(
         fadd(w(0o57777, HALF), w(0o57776, HALF)),

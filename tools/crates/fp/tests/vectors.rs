@@ -189,9 +189,11 @@ fn add_corner_set_covers_the_listed_cases() {
         && coef(v.b) != 0
         && exp(v.a) >= 0o20000
         && v.a != v.b ^ (1 << 63)));
-    assert!(results
-        .iter()
-        .any(|v| v.flags == FLAG_RANGE_ERROR && exp(v.a) < 0o60000 && exp(v.b) < 0o60000));
+    // a carry out of in-range operands reaches 060000 without the error (CRAY-1 rule)
+    assert!(results.iter().any(|v| v.flags == 0
+        && exp(v.result) == 0o60000
+        && exp(v.a) < 0o60000
+        && exp(v.b) < 0o60000));
     assert!(results
         .iter()
         .any(|v| v.flags == FLAG_RANGE_ERROR && exp(v.a) >= 0o60000));

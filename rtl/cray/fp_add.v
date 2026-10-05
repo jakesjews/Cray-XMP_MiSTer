@@ -144,8 +144,10 @@ module fp_add (
 			o_result    <= s5_operand_ovf ? {1'b0, EXP_OVERFLOW, 48'd0} : 64'd0;
 			o_range_err <= s5_operand_ovf;
 		end else if (result_ovf) begin
+			// The error is the incoming exponent's (manual 3-21).  A carry that takes
+			// in-range operands to 060000 is delivered without it.
 			o_result    <= {s5_neg, EXP_OVERFLOW, s5_coef};
-			o_range_err <= 1'b1;
+			o_range_err <= s5_operand_ovf;
 		end else if (result_unf) begin
 			o_result    <= 64'd0;
 			o_range_err <= 1'b0;

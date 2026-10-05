@@ -70,6 +70,9 @@ about it has been tested. The X-MP vector population count is not built.
   does not change memory.
 - Interrupt flags: normal exit, error exit, program range, operand range,
   floating-point error and console interrupt. They set only outside monitor mode.
+- Floating-point range errors as on manual page 3-21. For the add unit that
+  is an incoming exponent of 60000 octal or more; a carry that takes in-range
+  operands to 60000 is delivered without the error.
 - Vector operations with the result register also an operand behave as the
   manual describes on pages 3-14 to 3-16.
 - 1,048,576 words of memory, held in the MiSTer's DDR3.
@@ -120,6 +123,29 @@ memory and operators work through front-end computers. This core adds:
 - **Dead start.** A reset copies the monitor from a ROM into memory from word
   0 and exchanges to the package at word 0. After a memory image has been
   loaded from the menu, the image is started instead.
+
+## Compared with Cray-on-FPGA
+
+Zorislav Shoyat's Cray-on-FPGA is another rework of the same cray-1x sources,
+for a Xilinx board. Every behavioural change it makes was checked against this
+core. It turned up no fault here at the CRAY-1 setting beyond one in the
+simulator's single-step mode, where an exit with a result still in flight was
+taken before its flag was set; that is fixed. Several of its changes differ
+from the manual (exit flags set in monitor mode, a vector length of 64 for
+`VL 1`, a result register that is also an operand read element by element),
+and it still has upstream faults repaired here, so nothing was taken from it.
+
+What it and the review showed about the X-MP paths, none of which the CRAY-1
+build uses, and all of which wait for the X-MP work:
+
+- 174ij1 and 174ij2, the vector population counts, start a unit that is not
+  built. With `XMP = 1` the result register would stay reserved for good.
+- The inter-CPU module registers each CPU's monitor mode and never checks it.
+- Reading the interrupting channel with 033 clears every pending channel
+  interrupt, not only the one reported.
+- The floating-point status bit, bidirectional memory mode (0025, 0026) and
+  002700 are carried through the exchange package or not decoded, and do nothing.
+- The X-MP add unit also reports an out-of-range result; this one does not.
 
 ## Memory
 

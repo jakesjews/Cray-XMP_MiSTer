@@ -1,0 +1,49 @@
+* exitflag: a user program exits with a result still in flight.
+* The normal exit flag must be in its package (manual 4-13).
+* RUNTIMES: direct
+         INCLUDE "rt_direct.cal"
+UPKG     =       3000
+         TBEGIN
+         A1      UPKG
+         XA      A1
+         EX
+         S3      UPKG+3,0
+         S3      S3<D'31
+         S3      S3>D'55
+         CHKS    S3,1,2                  ; F = normal exit
+         A3      UPKG+3,0
+         CHKA    A3,D'15,3
+* the same with an error exit, nothing in flight
+         S2      UPKG+3,0
+         S3      <D'9
+         S3      S3<D'24
+         S2      #S3&S2
+         UPKG+3,0 S2
+         EX
+         S3      UPKG+3,0
+         S3      S3<D'31
+         S3      S3>D'55
+         CHKS    S3,2,4                  ; F = error exit
+         TPASS
+         TEND
+         ORG     UPKG
+         CON     UCODE*T$P2_24
+         CON     0
+         CON     T$LAMAX*T$P2_28
+         CON     UPKG/20*T$P2_40
+         BSSZ    D'12
+         ORG     10000
+UCODE    A1      3
+         A2      5
+         A3      A1*A2
+         EX
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         ERR
+         END

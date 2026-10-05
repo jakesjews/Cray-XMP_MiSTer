@@ -416,7 +416,9 @@ module func_top (
 
 	// An exit is taken as soon as it is the current instruction.  An interrupt is
 	// taken between instructions, and never while a memory instruction is under way.
-	assign x_take_exit = x_run && exchange_type;
+	// (When single stepping it waits like any other instruction, so that it issues,
+	// and sets its flag, in the clock it is taken.)
+	assign x_take_exit = x_run && exchange_type && ok_to_run;
 	assign x_take_int  = x_run && signal_interrupt && !exchange_type && mem_idle;
 	assign x_request   = x_take_exit || x_take_int;
 

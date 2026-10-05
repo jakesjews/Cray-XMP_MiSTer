@@ -17,9 +17,12 @@ use crate::{pack, unpack, FpResult, EXP_MIN, EXP_OVERFLOW, SIGN_BIT};
 ///    adds one to the exponent. Otherwise the sum is shifted left until bit 47 is set and the
 ///    exponent is reduced by the shift count.
 /// 4. A zero coefficient or a result exponent below `020000` gives an all-zero word with no
-///    error. An operand exponent of `060000` or above, or a result exponent that reaches
-///    `060000`, sets `range_error` and forces the result exponent to `060000`; the computed
-///    coefficient and sign are kept.
+///    error. An operand exponent of `060000` or above sets `range_error` and forces the
+///    result exponent to `060000`; the computed coefficient and sign are kept. A carry that
+///    takes the exponent of in-range operands to `060000` leaves that exponent in the result
+///    without the error: the CRAY-1 manual (revisions C, E and F alike) names only "the
+///    larger incoming exponent" as the add unit's range error. The X-MP also reports the
+///    out-of-range result (HR-0097B); that is not done here.
 ///
 /// See the crate documentation for which of these points are confirmed by reference
 /// vectors and which are taken from the manuals only.
@@ -69,7 +72,7 @@ pub fn fadd(a: u64, b: u64) -> FpResult {
     if operand_overflow || exp >= i32::from(EXP_OVERFLOW) {
         return FpResult {
             value: pack(negative, EXP_OVERFLOW, mag),
-            range_error: true,
+            range_error: operand_overflow,
         };
     }
     if exp < i32::from(EXP_MIN) {
