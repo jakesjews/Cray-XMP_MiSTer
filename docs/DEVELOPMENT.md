@@ -11,7 +11,9 @@ programs, see [PROGRAMMING.md](PROGRAMMING.md).
 - `rtl/cray/`: CPU modules written for this core.
 - `rtl/cray/cray-1x/`: CPU modules that started in the cray-1x project. That
   project is no longer maintained, so they are maintained here like the rest.
-- `rtl/ios/`: the I/O Subsystem. So far the I/O Processor, which no build uses yet.
+- `rtl/ios/`: the I/O Subsystem. So far the I/O Processors with their Local
+  Memories, clocks, Buffer Memory channels, the channels between them and
+  the consoles; no build uses it yet.
 - `rtl/terminal/`, `rtl/console_io.v`, `rtl/mister/`: console, serial port, DDR3 memory port.
 - `rtl/boot/`: the monitor ROM. `monitor.mem` is built from `software/monitor/`.
 - `sys/`: the MiSTer framework, an unmodified copy of
@@ -114,6 +116,10 @@ sim/build/fp/Vfp_tb tests/fp/xmp_ref.vec
   run per video clock cycle.
 - `sim/build/iop/Viop_cpu RECORD` is the I/O Processor following a record of
   the reference model's steps; `tools/py/ioptest.py` makes the records.
+- `sim/build/ios/Vios KERNEL TAPE` is the I/O Subsystem (`rtl/ios/ios.v`:
+  three I/O Processors and their consoles) booting its kernel, with stand-ins
+  for Buffer Memory and the tape. `--type TEXT=KEYS` presses keys on the
+  operator's console when it has shown TEXT.
 
 ## Tests
 
@@ -177,6 +183,19 @@ python3 tools/py/ioptest.py kernel         # the real kernel's boot on each of t
 - `kernel` needs the COS 1.17 software (see "The system model"). The system
   model boots it and the simulation follows one processor: 150 million steps
   for the MIOP, 55 million each for the other two.
+- `python3 tools/py/ioptest.py boot` runs the three processors together as
+  hardware, each with its Local Memory, real-time clock, Buffer Memory channel,
+  its channels to the others and its console. The MIOP is dead started from
+  Buffer Memory, loads its overlays from tape, dead starts the BIOP and the
+  XIOP and asks for the date and the time, which the test types; the BIOP
+  and the XIOP say who they are on their own consoles. Buffer Memory and the
+  tape are stand-ins in the test bench; no other device exists yet.
+- `python3 tools/py/ioptest.py selftest` runs `tests/ios/selftest.py`, a
+  program for the I/O Processors that takes the kernel's place, on the system
+  model and on the same hardware. It checks what the kernel's start does not
+  depend on: the real-time clock, the order in which channels that ask for an
+  interrupt are reported, and that a word from each processor reaches each
+  other one. Each processor writes its verdict on its console.
 
 ## Testing on a MiSTer
 

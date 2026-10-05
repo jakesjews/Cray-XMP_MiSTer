@@ -5,14 +5,16 @@
                                   the self-checking clock and interrupt tests, the
                                   floating-point reference vectors, 200 random programs;
                                   then the X-MP mode: its tests and 100 random programs;
-                                  then the I/O Processor: 400 random programs
+                                  then the I/O Processor: 400 random programs, and
+                                  the self-check of three of them together
     runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
                                   floating-point operation, 10,000 random programs and
                                   2,000 for the X-MP mode; then, if the COS 1.17
                                   software is there (CRAY1_SYSTEM, or the directory
                                   research/Cray 1 Disk Image from Youtube), the system
-                                  model dead starts it and runs a job, and the I/O
-                                  Processor follows the kernel's boot step by step
+                                  model dead starts it and runs a job, the I/O
+                                  Processor follows the kernel's boot step by step,
+                                  and the three I/O Processors together boot it
 
 Needs the host tools (make tools) and the simulations (make sim).  Programs are
 compared with the reference model by difftest.py; see docs/DEVELOPMENT.md.
@@ -103,6 +105,7 @@ def main():
     ok &= step('X-MP mode: %d tests' % len(xmp), [PY, DIFF, 'file'] + xmp + ['-I', 'tests/rt', '-j', jobs])
     ok &= step('X-MP mode: 100 random programs', [PY, DIFF, 'rand', '1', '100', '-n', '250', '--xmp', '-j', jobs])
     ok &= step('I/O Processor: 400 random programs', [PY, IOP, 'rand', '1', '200', '-j', jobs])
+    ok &= step('I/O Processors together: self-check', [PY, IOP, 'selftest'])
     if a[0] == 'quick':
         ok &= step('200 random programs', [PY, DIFF, 'rand', '1', '200', '-n', '250', '-j', jobs])
     else:
@@ -121,6 +124,7 @@ def main():
             ok &= step('system model: COS 1.17 dead starts and runs a job',
                        [SYS, SYSTEM, '--script', 'tests/sys/cos.script', '--quiet'])
             ok &= step('I/O Processor: the kernel boots on each of the three', [PY, IOP, 'kernel', SYSTEM])
+            ok &= step('I/O Processors together: the kernel boots', [PY, IOP, 'boot', SYSTEM])
     print('ALL PASSED' if ok else 'FAILED')
     sys.exit(0 if ok else 1)
 

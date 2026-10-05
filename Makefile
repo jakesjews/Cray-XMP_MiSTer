@@ -6,7 +6,7 @@ VERILATOR ?= verilator
 help:
 	@echo "make format        Format project RTL and testbenches in place"
 	@echo "make format-check  Check formatting without changing files"
-	@echo "make lint          Lint the emu top, the self-test build, the X-MP setting and the I/O Processor with Verilator"
+	@echo "make lint          Lint the emu top, the self-test build, the X-MP setting and the I/O Processors with Verilator"
 	@echo "make lint-prepare  Prepare dependencies for a direct Verilator invocation"
 	@echo "make tools         Build the assembler and the reference model (tools/target/release)"
 	@echo "make sim           Build the CPU, floating-point, whole-core and I/O Processor simulations (sim/build)"
@@ -22,7 +22,7 @@ lint: lint-prepare
 	$(VERILATOR) --lint-only -Wall --top-module emu -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module emu +define+SHELL_TEST -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module cray_cpu -GXMP=1 -f lint/rtl.f
-	$(VERILATOR) --lint-only -Wall --top-module iop_cpu lint/exclusions.vlt rtl/ios/iop_cpu.v
+	$(VERILATOR) --lint-only -Wall --top-module ios lint/exclusions.vlt rtl/ios/iop_cpu.v rtl/ios/iop.v rtl/ios/ios_core.v rtl/ios/ios_console.v rtl/ios/ios.v
 
 lint-prepare:
 	@mkdir -p lint/gen
@@ -32,7 +32,7 @@ tools:
 	cargo build --release --examples --bins --manifest-path tools/Cargo.toml
 
 sim:
-	$(MAKE) -C sim cpu cpu-xmp fp emu iop
+	$(MAKE) -C sim cpu cpu-xmp fp emu iop ios
 
 rom: tools
 	@mkdir -p build

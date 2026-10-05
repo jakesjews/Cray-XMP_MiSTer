@@ -32,6 +32,7 @@
 //! * `--log FILE`: write every channel function and interrupt to FILE.
 //! * `--poke`: change a parcel of the kernel (hexadecimal) before it runs.
 //! * `--two-iops`: leave out the XIOP.
+//! * `--without IOP.CHANNEL`: leave a channel (octal) with nothing on it.
 //! * `--instant`: every channel operation takes no time, as in the
 //!   cray-sim simulator.
 //! * `--replay IOP,STEPS,FILE`: record the first STEPS steps (or more, to
@@ -70,6 +71,7 @@ struct Options {
     instant: bool,
     timing: Vec<(String, u32)>,
     replay: Option<(usize, String, u64)>,
+    without: Vec<(usize, u8)>,
     quiet: bool,
 }
 
@@ -86,6 +88,7 @@ fn options() -> Result<Options, String> {
         instant: false,
         timing: Vec::new(),
         replay: None,
+        without: Vec::new(),
         quiet: false,
     };
     let mut system = None;
@@ -125,6 +128,18 @@ fn options() -> Result<Options, String> {
             }
             "--two-iops" => o.two_iops = true,
             "--instant" => o.instant = true,
+            "--without" => {
+                let text = value("--without")?;
+                let parsed = text.split_once('.').and_then(|(iop, channel)| {
+                    let iop = iop.parse().ok().filter(|&n: &usize| n < 4)?;
+                    Some((
+                        iop,
+                        u8::from_str_radix(channel, 8).ok().filter(|&c| c < 0o50)?,
+                    ))
+                });
+                o.without
+                    .push(parsed.ok_or("--without takes IOP.CHANNEL, the channel in octal")?);
+            }
             "--replay" => {
                 let text = value("--replay")?;
                 let mut parts = text.splitn(3, ',');
@@ -184,6 +199,7 @@ fn build(o: &Options) -> Result<System, String> {
         config.poke_kernel(parcel, value);
     }
     config.iops[3] = !o.two_iops;
+    config.without = o.without.clone();
     if o.instant {
         config.timing = Timing::instant();
     }

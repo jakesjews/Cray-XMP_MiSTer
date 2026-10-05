@@ -2,7 +2,7 @@
 ROOT  := $(abspath ..)
 BUILD := $(ROOT)/sim/build
 
-.PHONY: emu cpu cpu-xmp fp iop clean
+.PHONY: emu cpu cpu-xmp fp iop ios clean
 
 # Core-level simulation of the MiSTer wrapper
 emu: $(BUILD)/emu/Vemu
@@ -29,6 +29,11 @@ $(BUILD)/fp/Vfp_tb: $(ROOT)/sim/fp.vc $(ROOT)/sim/harness/fp_main.cpp $(ROOT)/si
 iop: $(BUILD)/iop/Viop_cpu
 $(BUILD)/iop/Viop_cpu: $(ROOT)/sim/iop.vc $(ROOT)/sim/harness/iop_main.cpp $(wildcard $(ROOT)/rtl/ios/*.v)
 	mkdir -p $(BUILD)/iop && cd $(ROOT) && verilator -f sim/iop.vc --Mdir $(BUILD)/iop -o Viop_cpu
+
+# The I/O Subsystem booting its kernel
+ios: $(BUILD)/ios/Vios
+$(BUILD)/ios/Vios: $(ROOT)/sim/ios.vc $(ROOT)/sim/harness/ios_main.cpp $(wildcard $(ROOT)/rtl/ios/*.v)
+	mkdir -p $(BUILD)/ios && cd $(ROOT) && verilator -f sim/ios.vc --Mdir $(BUILD)/ios -o Vios
 
 clean:
 	rm -rf $(BUILD)

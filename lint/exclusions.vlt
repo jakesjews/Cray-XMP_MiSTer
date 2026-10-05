@@ -188,6 +188,10 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of
 lint_off -rule UNUSEDSIGNAL -file "rtl/ios/iop_cpu.v" -match "*Bits of signal are not used: 'turned_r'[33:17]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/ios/iop_cpu.v" -match "*Bits of signal are not used: 'turned_l'[16:0]*"
 
+// Bit 2 of the control register one I/O Processor holds over another is the
+// dead dump, which nothing here does.
+lint_off -rule UNUSEDSIGNAL -file "rtl/ios/ios_core.v" -match "*Bits of signal are not used: 'over_*'[2]*"
+
 // Keep the MiSTer framework out of lint diagnostics while using its real
 // module interfaces for elaboration. Generic lint_off covers lint/style
 // warnings; the named diagnostics below need explicit exclusions.

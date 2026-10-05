@@ -648,6 +648,9 @@ pub struct Config {
     pub clock: Option<(String, String)>,
     /// Which of the four IOPs exist.
     pub iops: [bool; 4],
+    /// Channels to leave with nothing on them: the IOP and the channel
+    /// number.  For finding out what the software does without a device.
+    pub without: Vec<(usize, u8)>,
     pub timing: Timing,
 }
 
@@ -663,6 +666,7 @@ impl Config {
             buffer_memory_words: 1 << 22,
             clock: None,
             iops: [true, true, false, true],
+            without: Vec::new(),
             timing: Timing::default(),
         }
     }
@@ -763,6 +767,9 @@ impl System {
             );
             local[1].kind[channel as usize] = Kind::Disk(disks.len());
             disks.push(Dd29::new(image));
+        }
+        for (n, channel) in config.without {
+            local[n].kind[channel as usize] = Kind::Empty;
         }
         let mut cpu = Machine::for_cpu(Cpu::Xmp);
         cpu.set_system();

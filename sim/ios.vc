@@ -1,0 +1,13 @@
+// Verilator arguments for the I/O Subsystem booting its kernel (module ios).
+--cc --exe --build -j 0
+--top-module ios
+-GRAW_REQUEST_0=40'h0000008000
+-Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-DECLFILENAME -Wno-EOFNEWLINE -Wno-PINCONNECTEMPTY
+-O3 --x-assign unique --x-initial unique
+-CFLAGS "-O2 -std=c++17"
+rtl/ios/iop_cpu.v
+rtl/ios/iop.v
+rtl/ios/ios_core.v
+rtl/ios/ios_console.v
+rtl/ios/ios.v
+sim/harness/ios_main.cpp
