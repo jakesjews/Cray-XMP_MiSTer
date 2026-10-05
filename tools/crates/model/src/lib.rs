@@ -189,12 +189,14 @@
 //! Everything else is as on the CRAY-1, including VL, the programmable
 //! clock and the floating point arithmetic.
 
+mod channel;
 mod event;
 mod exec;
 mod machine;
 pub mod report;
 pub mod vector;
 
+pub use channel::ChannelState;
 pub use event::{Event, Observer};
 pub use exec::{CONST_0_5, CONST_0_75_2_48, CONST_1_0, CONST_2_0, CONST_4_0, FP_PROFILE};
 pub use machine::{

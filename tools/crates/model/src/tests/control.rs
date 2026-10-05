@@ -656,3 +656,106 @@ fn run_stops_at_the_step_limit() {
     assert_eq!(m.steps(), 100);
     assert_eq!(RunResult::Limit.exit_status(), 2);
 }
+
+/// `monitor_then_user` in timed mode at one clock period a step, with a user
+/// program at word 300 that counts in A1 for ever.
+fn timed(source: &str) -> Machine {
+    let mut m = monitor_then_user(source);
+    m.load_words(0o300, &words(&cal("A1 A1+1; J 1400")))
+        .unwrap();
+    m.set_timing(1);
+    m
+}
+
+#[test]
+fn timed_mode_clocks() {
+    // The real-time clock counts clock periods (page 3-34): entered by 0014,
+    // read by 072.  Here a step is three of them.
+    let mut m = monitor_cal("RT S1; S2 RT; S3 RT; RT S0; S4 RT");
+    m.set_timing(3);
+    m.set_s(1, Some(1000));
+    assert_eq!(m.rtc(), Some(0));
+    steps(&mut m, 5);
+    assert_eq!((m.s(2), m.s(3), m.s(4)), (Some(1003), Some(1006), Some(3)));
+    assert_eq!(m.time(), 15);
+
+    // The programmable clock (rev F pages 4-10 and 6-24).  PCI in the step
+    // at time 1 with an interval of 20: the countdown is zero 20 clock
+    // periods on and the request is made in the next, at time 22.  The user
+    // program has run steps 4 to 21 by then: nine times round its loop.
+    let mut m = timed("PCI S1; ECI; EX; CCI; DCI; A2 3");
+    m.set_s(1, Some(20));
+    steps(&mut m, 21);
+    assert_eq!((m.monitor_mode(), m.a(1), m.f()), (false, Some(9), 0));
+    steps(&mut m, 1);
+    assert!(m.monitor_mode());
+    assert_eq!(package_fields(&m, 0).6, flag::PROGRAMMABLE_CLOCK);
+    assert_eq!(m.mem(1).unwrap() & 0xff_ffff, 9, "A1 of the program");
+    // the request stays until 0014j5; the monitor goes on undisturbed
+    steps(&mut m, 3);
+    assert_eq!((m.a(2), m.f()), (Some(3), 0));
+
+    // A request made in monitor mode is held and taken by the first step
+    // outside it, before an instruction runs.
+    let mut m = timed("PCI S1; ECI; A2 1; A2 2; A2 3; A2 4; EX");
+    m.set_s(1, Some(2));
+    steps(&mut m, 7);
+    assert_eq!((m.monitor_mode(), m.f()), (false, 0));
+    steps(&mut m, 1);
+    assert!(m.monitor_mode());
+    assert_eq!(package_fields(&m, 0).6, flag::PROGRAMMABLE_CLOCK);
+    assert_eq!(m.mem(1).unwrap() & 0xff_ffff, 0);
+
+    // Not enabled: the countdown runs but no request is made.  Disabling
+    // does not take back a request; clearing does.
+    let mut m = timed("PCI S1; EX");
+    m.set_s(1, Some(2));
+    steps(&mut m, 40);
+    assert!(!m.monitor_mode());
+    let mut m = timed("PCI S1; ECI; A2 1; A2 2; A2 3; DCI; EX");
+    m.set_s(1, Some(2));
+    steps(&mut m, 8);
+    assert!(m.monitor_mode());
+    let mut m = timed("PCI S1; ECI; A2 1; A2 2; A2 3; DCI; CCI; EX");
+    m.set_s(1, Some(2));
+    steps(&mut m, 40);
+    assert!(!m.monitor_mode());
+}
+
+#[test]
+fn requests_from_outside() {
+    // The MCU interrupt (flag bit 32) and the I/O interrupt (bit 37) set
+    // outside monitor mode only.  The MCU request is one event, kept until
+    // its flag sets; the I/O request is a level.
+    let mut m = timed("A2 1; A2 2; EX; A2 3; A2 4");
+    m.request_mcu_interrupt();
+    steps(&mut m, 3);
+    assert_eq!((m.monitor_mode(), m.f()), (false, 0));
+    steps(&mut m, 1);
+    assert!(m.monitor_mode());
+    assert_eq!(package_fields(&m, 0).6, flag::MCU_INTERRUPT);
+    assert_eq!(
+        m.mem(1).unwrap() & 0xff_ffff,
+        0,
+        "taken before the first instruction"
+    );
+    // taken once: the monitor clears the flag in the package and resumes
+    let word3 = m.mem(3).unwrap() & !(0o777 << 24);
+    m.store(3, Some(word3));
+    let mut m2 = timed("EX");
+    m2.set_io_request(true);
+    steps(&mut m2, 2);
+    assert!(m2.monitor_mode());
+    assert_eq!(package_fields(&m2, 0).6, flag::IO_INTERRUPT);
+    // In the untimed model a request works the same way.
+    let mut m = monitor_then_user("EX");
+    m.request_mcu_interrupt();
+    steps(&mut m, 2);
+    assert_eq!(package_fields(&m, 0).6, flag::MCU_INTERRUPT);
+    // dead start: the next step exchanges with the package at word 0 again
+    assert!(m.running());
+    m.dead_start();
+    assert!(!m.running());
+    steps(&mut m, 1);
+    assert!(m.running());
+}

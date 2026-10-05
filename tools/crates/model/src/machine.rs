@@ -281,6 +281,27 @@ pub struct Machine {
     exit: Option<u64>,
     /// The console interrupt is enabled (bit 0 of the last write to CON_STAT).
     console_interrupt_enabled: bool,
+    /// Timed mode: the clock periods one step takes; `None` is the untimed
+    /// model that differential testing uses.
+    pub(crate) clock_step: Option<u32>,
+    /// Timed mode: clock periods since the machine was made.
+    pub(crate) time: u64,
+    /// Timed mode: the real-time clock reads `time + rtc_offset`.
+    pub(crate) rtc_offset: u64,
+    /// Timed mode: the interrupt interval register II, and the time at which
+    /// the countdown next passes through zero.
+    pub(crate) clock_interval: u32,
+    pub(crate) clock_next: u64,
+    /// Timed mode: the programmable clock interrupt request.
+    pub(crate) clock_request: bool,
+    /// A request of the maintenance control unit that has not raised its flag yet.
+    pub(crate) mcu_request: bool,
+    /// Some channel has its interrupt request set.
+    pub(crate) io_request: bool,
+    /// X-MP: the 6 Mbyte channels 10 to 17 octal.
+    pub(crate) channels: [crate::channel::Channel; 8],
+    pub(crate) channel_loopback: bool,
+    pub(crate) loop_waiting: [bool; 4],
     /// Programmable clock: 0014j6 has enabled the interrupt request.
     pub(crate) clock_enabled: bool,
     /// Programmable clock: the request may be set (it sets when the
@@ -352,6 +373,17 @@ impl Machine {
             halted: None,
             exit: None,
             console_interrupt_enabled: false,
+            clock_step: None,
+            time: 0,
+            rtc_offset: 0,
+            clock_interval: 0,
+            clock_next: 0,
+            clock_request: false,
+            mcu_request: false,
+            io_request: false,
+            channels: Default::default(),
+            channel_loopback: false,
+            loop_waiting: [false; 4],
             clock_enabled: false,
             clock_request_possible: false,
             want_exchange: false,
@@ -528,9 +560,101 @@ impl Machine {
         self.f
     }
     /// The real-time clock.  It counts clock periods, which an instruction
-    /// level model cannot predict: always `None`.
+    /// level model cannot predict: `None`, except in timed mode.
     pub fn rtc(&self) -> Option<u64> {
-        None
+        self.clock_step
+            .map(|_| self.time.wrapping_add(self.rtc_offset))
+    }
+
+    // ---- timed mode and requests from outside, for whole-system runs
+
+    /// Switch to timed mode: every step (instruction or exchange) takes
+    /// `clock_periods`.  The real-time clock and the programmable clock then
+    /// count, a programmable clock interrupt is taken when it falls due, and
+    /// `ErrorKind::TimeDependent` no longer arises.  The count per step is a
+    /// stand-in for the machine's real timing: results that depend on the
+    /// clock are only as good as it is.
+    pub fn set_timing(&mut self, clock_periods: u32) {
+        self.clock_step = Some(clock_periods.max(1));
+        // the countdown and the interval are zero at dead start: due at once
+        self.clock_next = self.time;
+    }
+    /// Clock periods since the machine was made (timed mode).
+    pub fn time(&self) -> u64 {
+        self.time
+    }
+    /// Let `clock_periods` go by without a step, for example while the CPU
+    /// is held by a master clear (timed mode).
+    pub fn advance(&mut self, clock_periods: u64) {
+        self.time += clock_periods;
+        self.clock_tick();
+    }
+    /// The maintenance control unit asks for its interrupt (flag bit 32).
+    /// The request is kept until the flag sets, which is at the next step
+    /// outside monitor mode.
+    pub fn request_mcu_interrupt(&mut self) {
+        self.mcu_request = true;
+    }
+    /// The level of the channels' interrupt request (flag bit 37): the flag
+    /// sets at every step outside monitor mode while it is true.
+    pub fn set_io_request(&mut self, level: bool) {
+        self.io_request = level;
+    }
+    /// True if the dead start exchange has been done and the machine has not
+    /// stopped with an exit or a test error.
+    pub fn running(&self) -> bool {
+        self.started && self.halted.is_none()
+    }
+    /// Master clear and dead start: the next step exchanges with the package
+    /// at word 0.  Registers keep what they hold; a halt is forgotten.
+    pub fn dead_start(&mut self) {
+        self.started = false;
+        self.halted = None;
+        self.exit = None;
+        self.want_exchange = false;
+        self.f = 0;
+        self.m = 0;
+    }
+
+    /// Programmable clock: the countdown passes through zero every interval
+    /// + 1 clock periods and, if enabled, sets the request (rev F page 6-24).
+    fn clock_tick(&mut self) {
+        if self.clock_step.is_some() && self.time >= self.clock_next {
+            if self.clock_enabled {
+                self.clock_request = true;
+            }
+            let period = self.clock_interval as u64 + 1;
+            self.clock_next += ((self.time - self.clock_next) / period + 1) * period;
+        }
+    }
+
+    /// One step's worth of time, and the flags the pending requests raise
+    /// outside monitor mode.
+    fn requests(&mut self) {
+        if let Some(step) = self.clock_step {
+            self.time += step as u64;
+            self.clock_tick();
+        }
+        if self.channel_loopback {
+            self.channel_loop();
+        }
+        if self.monitor_mode() {
+            return;
+        }
+        let mut raised = 0;
+        if self.clock_request {
+            raised |= flag::PROGRAMMABLE_CLOCK;
+        }
+        if self.mcu_request {
+            raised |= flag::MCU_INTERRUPT;
+            self.mcu_request = false;
+        }
+        if self.io_request || self.channel_interrupt() {
+            raised |= flag::IO_INTERRUPT;
+        }
+        if raised != 0 {
+            self.set_f(self.f | raised);
+        }
     }
     /// True if the active exchange package is in monitor mode.
     pub fn monitor_mode(&self) -> bool {
@@ -788,7 +912,7 @@ impl Machine {
                 (self.console_interrupt_enabled as u64) << 2 | 2 | !self.input.is_empty() as u64,
             ),
             CON_DATA => Some(self.input.pop_front().unwrap_or(0) as u64),
-            CYCLES => None,
+            CYCLES => self.clock_step.map(|_| self.time),
             _ => Some(0),
         }
     }
@@ -1101,10 +1225,11 @@ impl Machine {
             self.xa = 0;
             return self.exchange(true);
         }
+        self.requests();
         if self.interrupt_pending() {
             return self.exchange(false);
         }
-        if self.clock_request_possible && !self.monitor_mode() {
+        if self.clock_step.is_none() && self.clock_request_possible && !self.monitor_mode() {
             return Err(self.error(
                 ErrorKind::TimeDependent,
                 "a program outside monitor mode while the programmable clock interrupt request may be set",

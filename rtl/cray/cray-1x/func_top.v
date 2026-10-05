@@ -1469,19 +1469,19 @@ localparam VLOG      = 3'b000,   //vector logical
 
 			wire        clustered = (cln != 2'd0);
 			wire [ 4:0] reg_n = {cln, cip[5:3]};
-			wire [ 4:0] sem_n = 5'd31 - cip[4:0];
+			wire [31:0] sem_bit = 32'h80000000 >> cip[4:0];  //the semaphore jk names
 			wire        is_ts = (cip[15:6] == 10'o0034);
 			wire [31:0] sem_now = sm[cln];
 
-			assign ts_hold = cip_vld && is_ts && clustered && sem_now[sem_n];
+			assign ts_hold = cip_vld && is_ts && clustered && (|(sem_now & sem_bit));
 
 			always @(posedge clk) begin
 				if (cip_issue && clustered) begin
 					if ((cip[15:9] == 7'o027) && (cip[2:0] == 3'd7)) sb[reg_n] <= a_i_data;
 					if ((cip[15:9] == 7'o073) && (cip[2:0] == 3'd3)) st[reg_n] <= s_i_data;
 					if ((cip[15:9] == 7'o073) && (cip[5:0] == 6'o02)) sm[cln] <= s_i_data[63:32];
-					if (cip[15:6] == 10'o0036) sm[cln][sem_n] <= 1'b0;
-					if (is_ts || (cip[15:6] == 10'o0037)) sm[cln][sem_n] <= 1'b1;
+					else if (cip[15:6] == 10'o0036) sm[cln] <= sem_now & ~sem_bit;
+					else if (is_ts || (cip[15:6] == 10'o0037)) sm[cln] <= sem_now | sem_bit;
 				end
 				a_r <= clustered ? sb[reg_n] : 24'b0;
 				//072i00 is still the real-time clock

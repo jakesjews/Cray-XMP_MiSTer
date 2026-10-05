@@ -61,6 +61,8 @@ pub enum Op {
     ClockPass,
     /// 0015xx to 0017xx: pass
     MonitorPass,
+    /// X-MP 0012j1: clear channel (Aj) flags and set its device master clear
+    ChanMc,
     /// X-MP 0014j3: cluster number <- j
     SetCln,
     /// X-MP 0023xx: set the operand range interrupt mode flag
@@ -717,6 +719,7 @@ pub static FORMS: &[Form] = &[
     base(SetCa, "0010jk", "CA,Aj", "Ak", "4-8", "Set the channel (Aj) current address to (Ak) and begin the I/O sequence").f(MONITOR).r(&[Aj, Ak]),
     spec(SetCa, "001000", "PASS", "", "4-8", "Pass (0010jk is a no-op when j = 0)").f(X),
     base(SetCl, "0011jk", "CL,Aj", "Ak", "4-8", "Set the channel (Aj) limit address to (Ak)").f(MONITOR).r(&[Aj, Ak]),
+    base(ChanMc, "0012j1", "MC,Aj", "", "X 5-9", "Clear channel (Aj) flags; set device master clear (output) or clear a held ready (input)").f(MONITOR | XM).r(&[Aj]),
     base(ClearCi, "0012jx", "CI,Aj", "", "4-8", "Clear channel (Aj) interrupt flag").f(MONITOR).r(&[Aj]),
     base(SetXa, "0013jx", "XA", "Aj", "4-8", "Enter XA register with (Aj)").f(MONITOR).r(&[Aj]).w(&[Xa]),
     base(SetRt, "0014j0", "RT", "Sj", "4-8", "Enter real-time clock register with (Sj)").f(MONITOR).r(&[Sj]).w(&[Rtc]),

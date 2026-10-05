@@ -743,7 +743,8 @@ fn xmp_rows() {
     let op = |cpu: Cpu, p0: u16| decode_cpu(cpu, p0, None).op;
     // (X-MP spelling, parcel, X-MP instruction, CRAY-1 instruction)
     let rows = [
-        ("CLN", "2", 0o001423u16, Op::SetCln, Op::ClockPass),
+        ("MC,A2", "", 0o001221u16, Op::ChanMc, Op::ClearCi),
+        ("CLN", "2", 0o001423, Op::SetCln, Op::ClockPass),
         ("ERI", "", 0o002300, Op::Eri, Op::Undefined),
         ("DRI", "", 0o002400, Op::Dri, Op::Undefined),
         ("DBM", "", 0o002500, Op::Dbm, Op::Undefined),

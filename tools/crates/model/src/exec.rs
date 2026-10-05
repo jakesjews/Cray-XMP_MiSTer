@@ -218,8 +218,28 @@ impl Machine {
         match d.op {
             // ---- 000 to 004 (pages 4-7 to 4-13)
             Op::Err => self.exit_instruction(flag::ERROR_EXIT),
-            // no channels are attached; a pass outside monitor mode anyway
-            Op::SetCa | Op::SetCl | Op::ClearCi | Op::ClockPass | Op::MonitorPass => {}
+            // The CRAY-1 setting has no channels attached.  On the X-MP these
+            // work channels 10 to 17 (see `channel`); a pass outside monitor
+            // mode, with j = 0, and for any other channel number.
+            Op::SetCa | Op::SetCl | Op::ClearCi | Op::ChanMc => {
+                if monitor && self.cpu == Cpu::Xmp && d.j != 0 {
+                    let number = self.need(self.aj(d), "Aj (channel number)")?;
+                    if let Some(n) = self.channel_index(number) {
+                        match d.op {
+                            Op::SetCa => {
+                                let ak = self.need(self.ak(d), "Ak (channel address)")?;
+                                self.channel_activate(n, ak);
+                            }
+                            Op::SetCl => {
+                                let ak = self.need(self.ak(d), "Ak (channel limit)")?;
+                                self.channels[n].cl = ak & 0x3f_ffff;
+                            }
+                            _ => self.channel_clear(n, d.op == Op::ChanMc),
+                        }
+                    }
+                }
+            }
+            Op::ClockPass | Op::MonitorPass => {}
             Op::SetXa => {
                 if monitor {
                     // bits 2**11 to 2**4 of (Aj); cleared if j = 0 (page 4-8)
@@ -230,17 +250,31 @@ impl Machine {
             Op::SetRt => {
                 if monitor {
                     let value = self.sj(d);
+                    if self.clock_step.is_some() {
+                        let value = self.need(value, "Sj entered into the real-time clock")?;
+                        self.rtc_offset = value.wrapping_sub(self.time);
+                    }
                     self.emit(Event::Rtc(value));
                 }
             }
             // ---- the programmable clock (rev F pages 4-10 and 6-23).  The
             // interval and the countdown are clock period counts and are not
             // modelled; what is kept is whether a request may be set.
-            Op::SetPci => {}
+            Op::SetPci => {
+                if monitor && self.clock_step.is_some() {
+                    // the interval and the countdown take the low 32 bits;
+                    // the countdown reaches zero that many clock periods on
+                    // and the request is made in the one after
+                    let value = self.need(self.sj(d), "Sj entered into the interrupt interval")?;
+                    self.clock_interval = value as u32;
+                    self.clock_next = self.time + self.clock_interval as u64 + 1;
+                }
+            }
             Op::Cci => {
                 if monitor {
                     // while enabled the next request can follow at once
                     self.clock_request_possible = self.clock_enabled;
+                    self.clock_request = false;
                 }
             }
             Op::Eci => {
@@ -463,8 +497,22 @@ impl Machine {
                 };
                 self.set_a(i, value);
             }
-            // no channels: no interrupt request, current address 0, no error
-            Op::ChanInt | Op::ChanAddr | Op::ChanErr => self.set_a(i, Some(0)),
+            // 033.  No channels on the CRAY-1 setting: no interrupt request,
+            // current address 0, no error.  Not privileged.
+            Op::ChanInt => self.set_a(i, Some(self.channel_interrupting())),
+            Op::ChanAddr | Op::ChanErr => {
+                let value = if self.cpu == Cpu::Xmp {
+                    let number = self.need(self.aj(d), "Aj (channel number)")?;
+                    match self.channel_index(number) {
+                        Some(n) if d.op == Op::ChanAddr => self.channels[n].ca,
+                        Some(n) => self.channels[n].error as u32,
+                        None => 0,
+                    }
+                } else {
+                    0
+                };
+                self.set_a(i, Some(value));
+            }
 
             // ---- 034 to 037: block transfers (pages 4-29, 4-30)
             Op::BLoad => self.block_load(d, false)?,
@@ -581,7 +629,7 @@ impl Machine {
             Op::SConst2 => self.set_s(i, Some(CONST_2_0)),
             Op::SConst4 => self.set_s(i, Some(CONST_4_0)),
             // the clock counts clock periods: not predictable at this level
-            Op::SFromRt => self.set_s(i, None),
+            Op::SFromRt => self.set_s(i, self.rtc()),
             Op::SFromVm => self.set_s(i, self.vm),
             Op::SFromT => self.set_s(i, self.t[jk]),
             Op::TFromS => self.set_t(jk, self.s[i]),
