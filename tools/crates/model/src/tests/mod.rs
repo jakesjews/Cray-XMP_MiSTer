@@ -13,6 +13,7 @@ mod memory;
 mod scalar;
 mod undefined;
 mod vectors;
+mod xmp;
 
 /// Word address the test code is loaded at.
 pub(crate) const CODE: u32 = 0o200;

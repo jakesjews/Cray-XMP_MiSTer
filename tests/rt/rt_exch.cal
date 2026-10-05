@@ -37,6 +37,7 @@
 *
 * The macros are described in rt_common.cal.
 *
+T$IO     =       3777760
          INCLUDE "rt_common.cal"
 *
 T$COPY0  =       100                     ; words copied for a base address

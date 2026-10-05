@@ -172,6 +172,7 @@ fn every_smoke_test_is_run() {
             "hello.cal",
             "int.cal",
             "mem.cal",
+            "pop.cal",
             "range.cal",
             "recur.cal",
             "shift.cal",
@@ -215,6 +216,11 @@ fn smoke_branch() {
 #[test]
 fn smoke_chan() {
     pass("chan", &["direct", "exch", "user"]);
+}
+
+#[test]
+fn smoke_pop() {
+    pass("pop", ALL);
 }
 
 #[test]
@@ -578,4 +584,44 @@ fn binary_exit_statuses() {
             .code(),
         Some(66)
     );
+}
+
+/// The programs of `tests/xmp` are for the machine with the X-MP features
+/// (their `MACHINE XMP` line says so to the assembler, and the assembler to
+/// us).  Each must pass on the model.
+#[test]
+fn xmp_tests() {
+    let dir = tests_dir().join("xmp");
+    let rt = tests_dir().join("rt");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|n| n.ends_with(".cal"))
+        .collect();
+    names.sort();
+    assert_eq!(names, ["shared.cal", "xpkg.cal"], "tests/xmp changed");
+    for name in names {
+        let source = std::fs::read_to_string(dir.join(&name)).unwrap();
+        let mut include = |file: &str, _from: &str| -> Result<(String, String), String> {
+            let path = rt.join(file);
+            std::fs::read_to_string(&path)
+                .map(|text| (path.display().to_string(), text))
+                .map_err(|e| e.to_string())
+        };
+        let assembly = cray1_asm::assemble(&name, &source, &mut include);
+        let messages: Vec<String> = assembly.diagnostics.iter().map(|d| d.to_string()).collect();
+        assert!(messages.is_empty(), "{}:\n{}", name, messages.join("\n"));
+        assert_eq!(assembly.machine, cray1_isa::Cpu::Xmp, "{}", name);
+        let mut machine = Machine::for_cpu(assembly.machine);
+        machine.load_image(&assembly.image()).unwrap();
+        let result = machine.run(MAX_STEPS);
+        assert_eq!(result, RunResult::Exit(0), "{}", name);
+        assert_eq!(machine.mem(STATUS_WORD), Some(1), "{}", name);
+        assert_eq!(machine.mem(DONE_WORD), Some(CRAYDONE), "{}", name);
+        // the same image is not a CRAY-1 program
+        let mut other = Machine::new();
+        if other.load_image(&assembly.image()).is_ok() {
+            assert_ne!(other.run(MAX_STEPS), RunResult::Exit(0), "{}", name);
+        }
+    }
 }

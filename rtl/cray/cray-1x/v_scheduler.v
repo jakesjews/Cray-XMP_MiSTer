@@ -43,11 +43,11 @@ module v_scheduler (
 	reg [7:0] vk_one_hot;
 	reg [7:0] vfu_one_hot;
 	reg vi_en, vj_en, vk_en;
-	wire v_type;
-	wire issue_vld;  //it's okay to issue the instruction
-	//On a CRAY-1 every 174ijx is the reciprocal; the X-MP uses k = 1 and 2 for population counts
-	parameter XMP = 0;
-	wire [15:0] dec_cip = (!XMP && (i_cip[15:9] == 7'o174)) ? {i_cip[15:3], 3'b000} : i_cip;
+	wire        v_type;
+	wire        issue_vld;  //it's okay to issue the instruction
+	//174ij1 and 174ij2 are the population count and its parity; any other 174ijk is the reciprocal
+	wire        rcpl = (i_cip[15:9] == 7'o174) && (i_cip[2:0] != 3'd1) && (i_cip[2:0] != 3'd2);
+	wire [15:0] dec_cip = rcpl ? {i_cip[15:3], 3'b000} : i_cip;
 
 
 

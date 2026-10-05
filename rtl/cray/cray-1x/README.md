@@ -10,5 +10,5 @@ What was repaired and cleaned up is described in `docs/CPU.md`. The first
 commit of this core has the files as they came, with the repairs but in the
 upstream layout, for comparing with the originals.
 
-`xmp/` holds the modules that are only used with `XMP = 1`.
-`xmp/vector_pop_parity.v` is not instantiated by any build.
+The upstream directory of X-MP modules (I/O channels, the registers shared by
+four CPUs) is gone: what the X-MP setting needs is built into `func_top.v`.

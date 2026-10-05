@@ -1,0 +1,47 @@
+* rt_user.cal: run short user programs from a test in monitor mode.
+* Include after rt_direct.cal.  The test must define
+*
+*     UPKG       word address of the user exchange package (a multiple of 20)
+*
+* and for each user program a word with its entry, UP1 being its label:
+*
+*     KP1      CON     UP1*T$P2_24
+*
+* UGO KP1 writes a fresh package at UPKG (P from KP1, base address 0, the
+* largest limit address, monitor mode off, A2 = U$A2, everything else of
+* words 0 to 3 zero, exchange address back to UPKG) and exchanges to it.
+* The test goes on behind the UGO when the program exits or is
+* interrupted; UPKG then holds the program's package.  Clobbers nothing of
+* the test's: the exchange restores its A and S registers.
+*
+* UFLAG Sr leaves the F register of that package in Sr.
+*
+U$A2     =       D'3000                  ; A2 of every user program
+         MACRO   UGO %KP
+         U$S7,0  S7
+         U$A7,0  A7
+         S7      %KP,0
+         UPKG,0  S7
+         S7      0
+         UPKG+1,0 S7
+         S7      U$W2,0
+         UPKG+2,0 S7
+         S7      U$W3,0
+         UPKG+3,0 S7
+         A7      UPKG
+         XA      A7
+         S7      U$S7,0
+         A7      U$A7,0
+         EX
+         ENDM
+         MACRO   UFLAG %REG
+         %REG    UPKG+3,0
+         %REG    %REG<D'31               ; F is bits 31 to 39 from the left
+         %REG    %REG>D'55
+         ENDM
+         MACRO   UDATA
+U$S7     CON     0
+U$A7     CON     0
+U$W2     CON     T$LAMAX*T$P2_28+U$A2
+U$W3     CON     UPKG/20*T$P2_40
+         ENDM

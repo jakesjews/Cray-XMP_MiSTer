@@ -100,8 +100,13 @@ module mem_fu (
 	o_range_err
 );
 
-	parameter        V_READ_WAIT = 2;          // clocks from asking a V register for an element to its data
-	parameter [17:0] SINGLE_LINE = 18'h0FFFF;  // a 16-word line never read as a burst: the core's I/O page
+	parameter V_READ_WAIT = 2;  // clocks from asking a V register for an element to its data
+	// XMP = 1: the X-MP's rules for the data field (CSM-0111000 pages 3-19 to 3-21).
+	// Only the low 22 bits of an address count, memory has four million words, and a
+	// load from outside the field delivers zero.
+	parameter XMP = 0;
+	// a 16-word line never read as a burst: the core's I/O page at the top of memory
+	localparam [17:0] SINGLE_LINE = XMP ? 18'h3FFFF : 18'h0FFFF;
 
 	//system signals
 	input wire clk;
@@ -350,7 +355,9 @@ module mem_fu (
 	assign o_b_rd_addr = reg_idx;
 	assign o_t_rd_addr = reg_idx;
 
-	always @(posedge clk) if (i_mem_ack) o_mem_data <= i_mem_rd_data;
+	always @(posedge clk)
+		if (i_mem_ack) o_mem_data <= i_mem_rd_data;
+		else if (XMP && (state == RD) && out_of_field) o_mem_data <= 64'b0;
 
 	//What the transfer under way is, latched when it started.
 	reg r_v, r_to_b, r_to_t, r_from_b, r_from_t, r_scalar, r_from_s, r_vstore;
@@ -384,16 +391,18 @@ module mem_fu (
 	// Memory port and issue
 	//-----------------------------------------------------------------
 	// The field: absolute address = address + base, valid below the limit and below
-	// the top of memory (one million words).
-	reg [21:0] base;
-	reg [20:0] limit;
+	// the top of memory (one million words, four million on the X-MP).  The X-MP
+	// uses the low 22 bits of the address and a 24-bit base.
+	reg [23:0] base;
+	reg [22:0] limit;
 	always @(posedge clk) begin
-		base  <= i_data_base_addr[21:0];
-		limit <= (|i_data_limit_addr[23:20]) ? 21'h100000 : {1'b0, i_data_limit_addr[19:0]};
+		base <= XMP ? i_data_base_addr : {2'b0, i_data_base_addr[21:0]};
+		if (XMP) limit <= (|i_data_limit_addr[23:22]) ? 23'h400000 : {1'b0, i_data_limit_addr[21:0]};
+		else limit <= (|i_data_limit_addr[23:20]) ? 23'h100000 : {3'b0, i_data_limit_addr[19:0]};
 	end
 
-	wire [24:0] absolute = {1'b0, address} + {3'b0, base};
-	wire        out_of_field = (absolute >= {4'b0, limit});
+	wire [24:0] absolute = {1'b0, XMP ? {2'b0, address[21:0]} : address} + {1'b0, base};
+	wire        out_of_field = (absolute >= {2'b0, limit});
 
 	// A burst pays off with three elements in the line: the element in hand and
 	// two more, the second of them still short of the end of the line.
@@ -424,9 +433,11 @@ module mem_fu (
 	reg signed [31:0] span;  // from the first address to the last
 	reg               fits;  // a vector transfer with both ends in the field
 
+	// On the X-MP addresses wrap at 22 bits; a transfer that would is not let go.
 	wire signed [32:0] last_rel = $signed({9'b0, address}) + $signed({span[31], span});
-	wire        [32:0] last_abs = $unsigned(last_rel) + {11'b0, base};
-	wire               last_in = !last_rel[32] && (last_abs < {12'b0, limit});
+	wire        [32:0] last_abs = $unsigned(last_rel) + {9'b0, base};
+	wire               wraps = XMP && ((|address[23:22]) || (|last_rel[31:22]));
+	wire               last_in = !last_rel[32] && !wraps && (last_abs < {10'b0, limit});
 
 	always @(posedge clk)
 		if (rst || (state == IDLE)) begin

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Constrained-random CAL test programs for differential testing.
 
-    randprog.py SEED [-n INSTRUCTIONS] [-o OUT.cal] [--no-vector] [--no-float] [--no-mem]
+    randprog.py SEED [-n INSTRUCTIONS] [-o OUT.cal] [--no-vector] [--no-float] [--no-mem] [--xmp]
 
 A program loads every register from a seeded data pool, runs a random body and
 then stores all registers to a dump area, so the whole machine state ends up in
@@ -16,6 +16,12 @@ Constraints that keep a program meaningful:
   - floating point interrupts are left off, so any bit pattern may be an operand
 
 Reserved registers: A6 loop counter, A7 sandbox base.
+
+--xmp writes a program for the machine with the X-MP features (MACHINE XMP):
+the X-MP exchange package, cluster 1, and in the body the shared registers,
+semaphores and status register as well.  A test and set only ever follows
+the clearing of its semaphore: the program runs in monitor mode, where a set
+semaphore would hold it for good.
 """
 import random
 import sys
@@ -28,10 +34,10 @@ MASK64 = (1 << 64) - 1
 
 
 class Gen:
-    def __init__(self, seed, n, vector=True, floating=True, memory=True):
+    def __init__(self, seed, n, vector=True, floating=True, memory=True, xmp=False):
         self.r = random.Random(seed)
         self.n = n
-        self.vector, self.floating, self.memory = vector, floating, memory
+        self.vector, self.floating, self.memory, self.xmp = vector, floating, memory, xmp
         self.lines = []
         self.label_n = 0
         self.pending_label = ''
@@ -98,15 +104,36 @@ class Gen:
     def preamble(self):
         e = self.emit
         e('IDENT', 'RAND')
-        self.lines.append("TEXIT    =         O'3777762")
-        e('ORG', '0')
-        e('CON', "P.START*O'100000000")
-        e('CON', '0')
-        e('CON', "O'1777776100000000")
-        e('CON', "O'0000000030000000000000")
-        e('BSSZ', "D'12")
+        if self.xmp:
+            e('MACHINE', 'XMP')
+            self.lines.append("TEXIT    =         O'17777762")
+            e('ORG', '0')
+            e('CON', "P.START*O'100000000")
+            e('CON', '0')
+            e('CON', "O'7777774100000000")           # the largest ILA, monitor mode
+            e('CON', "O'0000000030000000000000")
+            e('CON', "O'100000000")                  # DBA 0, cluster 1
+            e('CON', "O'7777774000000000")           # the largest DLA
+            e('BSSZ', "D'10")
+        else:
+            self.lines.append("TEXIT    =         O'3777762")
+            e('ORG', '0')
+            e('CON', "P.START*O'100000000")
+            e('CON', '0')
+            e('CON', "O'1777776100000000")
+            e('CON', "O'0000000030000000000000")
+            e('BSSZ', "D'12")
         e('ORG', "O'40")
         first = True
+        if self.xmp:
+            # the shared registers of cluster 1, through S1 and A1
+            for j in range(8):
+                e('S1', "O'%o,0" % self.pool(), 'START' if first else ''); first = False
+                e('ST%d' % j, 'S1')
+                e('A1', "O'%o,0" % self.pool())
+                e('SB%d' % j, 'A1')
+            e('S1', "O'%o,0" % self.pool())
+            e('SM', 'S1')
         # every register from the pool
         for i in range(8):
             e('S%d' % i, "O'%o,0" % self.pool(), 'START' if first else ''); first = False
@@ -138,7 +165,7 @@ class Gen:
         elif k == 2: e('A%d' % i, 'S%d' % self.sreg())
         elif k == 3: e('A%d' % i, 'B%02o' % self.breg())
         elif k == 4: e('B%02o' % self.breg(), 'A%d' % self.aany())
-        elif k == 5: e('A%d' % i, 'PS%d' % self.sreg())
+        elif k == 5: e('A%d' % i, r.choice(['PS%d', 'QS%d']) % self.sreg())
         elif k == 6: e('A%d' % i, 'ZS%d' % self.sreg())
         elif k in (7, 8): e('A%d' % i, 'A%d%sA%d' % (self.aany(), r.choice('+-'), self.aany()))
         else: e('A%d' % i, 'A%d*A%d' % (self.aany(), self.aany()))
@@ -237,7 +264,7 @@ class Gen:
         elif c == 13: e('V%d' % i, 'V%d%sV%d' % (j, r.choice('+-'), k))
         elif c == 14 and self.floating: e('V%d' % i, 'S%d%sV%d' % (s, r.choice(['+F', '-F', '*F', '*H', '*R', '*I']), k))
         elif c == 15 and self.floating: e('V%d' % i, 'V%d%sV%d' % (j, r.choice(['+F', '-F', '*F', '*H', '*R', '*I']), k))
-        elif c == 16 and self.floating: e('V%d' % i, '/HV%d' % j)
+        elif c == 16: e('V%d' % i, r.choice(['/HV%d', 'PV%d', 'QV%d'] if self.floating else ['PV%d', 'QV%d']) % j)
         elif c == 17: e('VM', 'V%d,%s' % (j, r.choice('ZNPM')))
         elif c in (18, 19):
             a = r.randrange(1, 6)
@@ -265,17 +292,42 @@ class Gen:
         elif c == 1: parcel(0o026, self.areg(), self.sreg(), x())          # Ai PSj
         elif c == 2: parcel(0o027, self.areg(), self.sreg(), x())          # Ai ZSj
         elif c == 3: parcel(0o073, self.sreg(), x(), x())                  # Si VM
-        elif c == 4: parcel(0o003, x(), self.sreg(), x())                  # VM Sj
+        elif c == 4:                                                       # VM Sj: not the X-MP's 0034, 0036, 0037
+            parcel(0o003, r.choice([0, 1, 2, 3, 5]) if self.xmp else x(), self.sreg(), x())
         elif c == 5:                                                       # VL Ak
             a = r.randrange(1, 6)
             self.emit('A%d' % a, "D'%d" % r.choice([0, 1, 5, 63, 64, 65, r.randrange(128)]))
             parcel(0o002, 0, x(), a)
-        elif c == 6 and self.floating: parcel(0o174, self.vreg(), self.vreg(), x())   # reciprocal for any k
+        elif c == 6 and self.floating: parcel(0o174, self.vreg(), self.vreg(), x())   # reciprocal unless k is 1 or 2
         elif c == 7: parcel(0o175, x(), self.vreg(), r.randrange(8))       # mask test: only k & 3 matters
         else: parcel(0o073, self.sreg(), x(), x())
 
+    def op_x(self):
+        """The X-MP's own instructions."""
+        r, e = self.r, self.emit
+        c = r.randrange(14)
+        j, jk = r.randrange(8), r.randrange(32)
+        if c == 0: e('SB%d' % j, 'A%d' % self.aany())
+        elif c in (1, 2): e('A%d' % self.areg(), 'SB%d' % j)
+        elif c == 3: e('ST%d' % j, 'S%d' % self.sreg())
+        elif c in (4, 5): e('S%d' % self.sreg(), 'ST%d' % j)
+        elif c == 6: e('SM', 'S%d' % self.sreg())
+        elif c in (7, 8): e('S%d' % self.sreg(), 'SM')
+        elif c == 9: e('SM%02o' % jk, r.choice(['0', '1']))
+        elif c == 10:
+            e('SM%02o' % jk, '0')
+            e('SM%02o' % jk, '1,TS')
+        elif c == 11: e('S%d' % self.sreg(), 'SR0')
+        elif c == 12: e(r.choice(['ERI', 'DRI', 'EBM', 'DBM', 'CMR', 'EFI', 'DFI']))
+        else:
+            # a store read back at once
+            a = self.areg()
+            e('SB%d' % j, 'A%d' % self.aany())
+            e('A%d' % a, 'SB%d' % j)
+
     def one(self):
         w = self.r.randrange(100)
+        if self.xmp and self.r.randrange(8) == 0: return self.op_x()
         if w < 28: self.op_a()
         elif w < 58: self.op_s()
         elif w < 68 and self.floating: self.op_f()
@@ -331,6 +383,12 @@ class Gen:
         for i in range(8): e("O'%o,0" % (DUMP + i), 'A%d' % i)
         for i in range(8): e("O'%o,0" % (DUMP + 0o10 + i), 'S%d' % i)
         e('S1', 'VM'); e("O'%o,0" % (DUMP + 0o20), 'S1')
+        if self.xmp:
+            for j in range(8):
+                e('A1', 'SB%d' % j); e("O'%o,0" % (DUMP + 0o30 + j), 'A1')
+                e('S1', 'ST%d' % j); e("O'%o,0" % (DUMP + 0o40 + j), 'S1')
+            e('S1', 'SM'); e("O'%o,0" % (DUMP + 0o50), 'S1')
+            e('S1', 'SR0'); e("O'%o,0" % (DUMP + 0o51), 'S1')
         e('A1', "D'64")
         e('A0', "O'%o" % (DUMP + 0o100)); e('0,A0', 'B00,A1')
         e('A0', "O'%o" % (DUMP + 0o200)); e('0,A0', 'T00,A1')
@@ -358,7 +416,8 @@ def main():
         sys.exit(__doc__)
     seed = int(a[0])
     n = int(a[a.index('-n') + 1]) if '-n' in a else 200
-    g = Gen(seed, n, vector='--no-vector' not in a, floating='--no-float' not in a, memory='--no-mem' not in a)
+    g = Gen(seed, n, vector='--no-vector' not in a, floating='--no-float' not in a, memory='--no-mem' not in a,
+            xmp='--xmp' in a)
     text = g.program()
     if '-o' in a:
         open(a[a.index('-o') + 1], 'w').write(text)

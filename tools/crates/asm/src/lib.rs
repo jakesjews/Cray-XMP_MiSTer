@@ -74,7 +74,12 @@
 //! sym      DATA    'text',exp    characters packed 8 per word, left
 //!                                justified, zero filled ('..'H blank filled,
 //!                                '..'R right justified); or CON-style words
-//!          ALIGN                 pad with zero parcels to a word boundary
+//!          ALIGN                 go on at the next instruction buffer
+//!                                boundary: a multiple of 20 octal words (40
+//!                                under MACHINE XMP); zero parcels fill the
+//!                                rest of the current word
+//!          MACHINE CRAY1 | XMP   the machine whose instructions follow; XMP
+//!                                adds the X-MP forms (see `cray1 isa`)
 //! sym      VWD     D'16/exp,...  raw parcels in the code stream; widths 16,
 //!                                32, 48 or 64 bits
 //!          INCLUDE "file"
@@ -82,9 +87,11 @@
 //!          MACRO   name p1,p2    ... ENDM   (LOCAL sym,... inside)
 //! ```
 //!
-//! `ABS`, `EJECT`, `SPACE`, `TITLE` and `SUBTITLE` are accepted and ignored.
-//! `CON`, `DATA`, `BSS` and `BSSZ` start on a word boundary; code before
-//! them is padded with zero parcels.  `ORG`, `BSS`, `BSSZ` and `VWD` widths
+//! `ABS`, `COMMENT`, `EJECT`, `SPACE`, `TITLE` and `SUBTITLE` are accepted and
+//! ignored.  `CON`, `DATA`, `BSS`, `BSSZ` and `ORG` start on a word boundary.
+//! As in CAL, the unused parcels of a word of code before them are filled
+//! with the pass instruction `S1 S1&S1` (044111), so a program may run
+//! through the boundary; behind `VWD` parcels the fill is zero.  `ORG`, `BSS`, `BSSZ` and `VWD` widths
 //! must not depend on symbols defined later.
 //!
 //! # Macros
@@ -224,6 +231,8 @@ pub struct ListLine {
 pub struct Assembly {
     /// The operand of `IDENT`.
     pub ident: Option<String>,
+    /// The machine the program is for: that of its last `MACHINE` line.
+    pub machine: cray1_isa::Cpu,
     /// The memory image from word 0 to the highest word used.  Empty if
     /// there were errors.
     pub words: Vec<u64>,
@@ -371,6 +380,7 @@ pub fn assemble(name: &str, source: &str, include: &mut IncludeResolver) -> Asse
 
     let mut out = Assembly {
         ident: engine.ident.take(),
+        machine: engine.cpu,
         entries: std::mem::take(&mut engine.entries),
         ..Assembly::default()
     };

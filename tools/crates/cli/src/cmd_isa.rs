@@ -7,9 +7,10 @@ use std::process::ExitCode;
 pub const DETAILS: &str = "
 Prints the instruction table the assembler, the disassembler and the
 other tools share: one row per line of Appendix D of the CRAY-1 Hardware
-Reference Manual (2240004 rev C), with the opcode pattern, the CAL
-syntax, the length in parcels, the functional unit, flags, the registers
-read and written, and a description.
+Reference Manual (2240004 rev C), the rows of the options of the 1982
+machine, and the X-MP rows that `MACHINE XMP` turns on, with the opcode
+pattern, the CAL syntax, the length in parcels, the functional unit,
+flags, the registers read and written, and a description.
 ";
 
 /// The registers of a list that this row can really touch: a special form
@@ -52,6 +53,8 @@ fn flags(f: &Form) -> String {
         (f.is_monitor_only(), 'M'),
         (f.is_exit(), 'X'),
         (f.is_vector(), 'V'),
+        (f.flags() & cray1_isa::flag::OPTION != 0, 'O'),
+        (!f.on(cray1_isa::Cpu::Cray1), 'P'),
     ] {
         if set {
             s.push(letter);
@@ -100,7 +103,8 @@ pub fn table() -> String {
 Pattern: octal digits of the first parcel; h i j k are operand fields, x is
 ignored by the machine, m is a second parcel.  Rows are matched in order.
 Flags: B branch, C conditional, R reads memory, W writes memory,
-M monitor mode only, X exit (exchange), V vector (uses VL).
+M monitor mode only, X exit (exchange), V vector (uses VL),
+O an option of the 1982 machine, P X-MP only (after MACHINE XMP).
 Register 0 in the h, j or k field is a constant, not a register:
 (Ah) = 0, (Aj) = 0, (Ak) = 1, (Sj) = 0, (Sk) = 2**63.
 ",

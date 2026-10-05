@@ -1,9 +1,18 @@
 //! The Cray-1 instruction set as one table.
 //!
 //! Authority: CRAY-1 Hardware Reference Manual 2240004 rev C, section 4 and
-//! Appendix D (serial 3 onward).  This is the Cray-1, not the X-MP: a field
-//! the manual marks `x` is ignored whatever it holds, so for example 003xjx
-//! is always `VM Sj` and 174ijx is always the reciprocal.
+//! Appendix D (serial 3 onward), and for the two options of the 1982 machine
+//! revision F of the same manual (HR-0004, May 1982): the programmable clock
+//! (0014j4 to 0014j7) and the vector population instructions (026ij1,
+//! 174ij1, 174ij2).  Rows of an option carry `flag::OPTION` and a page
+//! reference that starts with `F`.  This is the Cray-1, not the X-MP: a
+//! field the manual marks `x` is ignored whatever it holds, so for example
+//! 003xjx is always `VM Sj`.
+//!
+//! Where rev F leaves an encoding of an option undefined the table keeps the
+//! meaning the encoding has without the option: 026ijk with k = 2 to 7 is the
+//! population count, 174ijk with k = 3 to 7 the reciprocal.  0014jk with k =
+//! 1, 2 or 3 is a pass.
 //!
 //! # Instruction format
 //!
@@ -27,7 +36,8 @@
 //! * `Alt`: another spelling the assembler accepts, such as `ERR exp`.
 //!
 //! Rows that are not in Appendix D carry `flag::NOT_IN_APPENDIX_D`.  Two
-//! exist so that every parcel decodes: 001ixx for i = 5 to 7
+//! exist so that every parcel decodes: 0014jk for k = 1 to 3
+//! ([`Op::ClockPass`]), 001ixx for i = 5 to 7
 //! ([`Op::MonitorPass`], a pass per section 4) and 002ixx for i = 3 to 7
 //! ([`Op::Undefined`], which the manual does not define).  The others are
 //! spellings from the CAL manual examples (`Ai #exp`, `Si #exp`, `Bjk,Ai ,`
@@ -97,12 +107,16 @@ mod code;
 mod syntax;
 mod table;
 
-pub use code::{base_form, decode, encode, length, signed_octal, Decoded, Encoding, Fields, Reg};
-pub use syntax::{
-    assemble, assemble_numeric, disassemble, disassemble_fields, eval_number, is_register_name,
-    is_reserved_name, is_symbol_char, quoted_mask, Assembled, ExpUse, ExpValue,
+pub use code::{
+    base_form, decode, decode_cpu, encode, length, length_cpu, signed_octal, Decoded, Encoding,
+    Fields, Reg,
 };
-pub use table::{flag, ExpKind, Form, Kind, Op, RegRef, Sel, Unit, FORMS, OP_COUNT};
+pub use syntax::{
+    assemble, assemble_cpu, assemble_numeric, assemble_numeric_cpu, disassemble,
+    disassemble_fields, eval_number, is_register_name, is_reserved_name, is_symbol_char,
+    quoted_mask, Assembled, ExpUse, ExpValue,
+};
+pub use table::{flag, Cpu, ExpKind, Form, Kind, Op, RegRef, Sel, Unit, FORMS, OP_COUNT};
 
 #[cfg(test)]
 mod tests;

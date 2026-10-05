@@ -111,15 +111,9 @@ lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Signal is not used: 'm_ctr
 lint_off -rule UNUSEDSIGNAL -file "rtl/terminal/term_video.v" -match "*Bits of signal are not used: 'ly'[9]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/terminal/term_video.v" -match "*Bits of signal are not used: 'fx'[2:0]*"
 
-// The channel and inter-CPU signals are only connected in the X-MP build
-// (XMP = 1); the CRAY-1 build ties those ports off.
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'dma_*'*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'intercpu_*'*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'cln'*"
-
 // Only the memory unit works ahead of the multiplexer; the instruction buffers
-// and the channels wait for each acknowledge and have no use for take.
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Bits of signal are not used: 'mux_take'[2,0]*"
+// wait for each acknowledge and have no use for take.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Bits of signal are not used: 'mux_take'[0]*"
 
 // A vector length of 0 and of 100 octal both mean 64 elements, so the top bit
 // of VL does not change the count. The base address is a 22-bit word address
@@ -177,24 +171,10 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal 
 // outputs: only the shift unit needs first and last, only the logical unit
 // the last result (for the VM test), and the logical and integer add units
 // have no use for the valid flag.
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'vfu_start'[6]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_valid'[2,0]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_first'[5:2,0]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_last'[5:2,0]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_out_last'[5:1]*"
-
-// X-MP channels and inter-CPU instructions (XMP = 1, not verified). A channel
-// number is the low 6 bits of (Aj) and channel addresses are narrower than
-// the registers that carry them. The monitor mode of each CPU is registered
-// but nothing checks it yet.
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/dma_fu.v" -match "*Bits of signal are not used: 'int_aj'[23:6]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/dma_fu.v" -match "*Bits of signal are not used: 'int_ak'[23]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/dma_fu.v" -match "*Bits of signal are not used: 'in_flight_addr'[22]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/intercpu_comms.v" -match "*Signal is not used: 'intercpu_mon_mode_*'*"
-
-// The X-MP vector population count is not instantiated by any build. Its
-// last stage only adds bits 48 to 63.
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/xmp/vector_pop_parity.v" -match "*Bits of signal are not used: 'vj3'[47:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_valid'[6,2,0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_first'[6:2,0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_last'[6:2,0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_out_last'[6:1]*"
 
 // Keep the MiSTer framework out of lint diagnostics while using its real
 // module interfaces for elaboration. Generic lint_off covers lint/style

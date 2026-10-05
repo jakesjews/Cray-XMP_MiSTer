@@ -1,7 +1,36 @@
 //! The instruction table: one row per line of Appendix D of the CRAY-1
-//! Hardware Reference Manual (2240004 rev C), plus the few rows needed to give
-//! every 16-bit parcel a meaning.  Everything else in this crate is driven
-//! from `FORMS`.
+//! Hardware Reference Manual (2240004 rev C), the rows of the two options of
+//! the 1982 machine (HR-0004 rev F: programmable clock, vector population
+//! instructions), plus the few rows needed to give every 16-bit parcel a
+//! meaning.  Everything else in this crate is driven from `FORMS`.
+
+/// The machine whose instruction set is meant.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Cpu {
+    /// The CRAY-1 of 1982 with its two instruction set options.
+    #[default]
+    Cray1,
+    /// The CRAY-1 plus the instructions of a one-processor CRAY X-MP that the
+    /// operating system COS needs: the rows with `flag::XMP`.
+    Xmp,
+}
+
+impl Cpu {
+    /// `CRAY1` or `XMP`, as the assembler's `MACHINE` directive spells it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Cpu::Cray1 => "CRAY1",
+            Cpu::Xmp => "XMP",
+        }
+    }
+    pub fn from_name(name: &str) -> Option<Cpu> {
+        match name.to_ascii_uppercase().replace(['-', '_'], "").as_str() {
+            "CRAY1" => Some(Cpu::Cray1),
+            "XMP" | "XMP1" => Some(Cpu::Xmp),
+            _ => None,
+        }
+    }
+}
 
 /// A base instruction of the Cray-1.  Every first parcel decodes to exactly
 /// one `Op`; special syntax forms and alternate spellings share the `Op` of
@@ -18,10 +47,52 @@ pub enum Op {
     ClearCi,
     /// 0013jx XA <- (Aj)
     SetXa,
-    /// 0014jx RTC <- (Sj)
+    /// 0014j0 RTC <- (Sj)
     SetRt,
+    /// 0014j4 programmable clock: interrupt interval and countdown <- (Sj)
+    SetPci,
+    /// 0014x5 clear the programmable clock interrupt request
+    Cci,
+    /// 0014x6 enable the programmable clock interrupt request
+    Eci,
+    /// 0014x7 disable the programmable clock interrupt request
+    Dci,
+    /// 0014xk with k = 1, 2 or 3: not defined with the programmable clock; a pass
+    ClockPass,
     /// 0015xx to 0017xx: pass
     MonitorPass,
+    /// X-MP 0014j3: cluster number <- j
+    SetCln,
+    /// X-MP 0023xx: set the operand range interrupt mode flag
+    Eri,
+    /// X-MP 0024xx: clear the operand range interrupt mode flag
+    Dri,
+    /// X-MP 0025xx: clear the bidirectional memory mode flag
+    Dbm,
+    /// X-MP 0026xx: set the bidirectional memory mode flag
+    Ebm,
+    /// X-MP 0027xx: wait for memory references to complete
+    Cmr,
+    /// X-MP 0034jk: test and set semaphore jk
+    SemTestSet,
+    /// X-MP 0036jk: clear semaphore jk
+    SemClear,
+    /// X-MP 0037jk: set semaphore jk
+    SemSet,
+    /// X-MP 026ij7: Ai <- (SBj)
+    AFromSb,
+    /// X-MP 027ij7: SBj <- (Ai)
+    SbFromA,
+    /// X-MP 072i02: Si <- the semaphores
+    SFromSm,
+    /// X-MP 072ij3: Si <- (STj)
+    SFromSt,
+    /// X-MP 073i01: Si <- the status register
+    SFromSr,
+    /// X-MP 073i02: the semaphores <- (Si)
+    SmFromS,
+    /// X-MP 073ij3: STj <- (Si)
+    StFromS,
     /// 0020xk VL <- (Ak)
     SetVl,
     /// 0021xx set the floating point interrupt mode flag
@@ -70,6 +141,8 @@ pub enum Op {
     BFromA,
     /// 026ijx Ai <- population count of (Sj)
     PopCount,
+    /// 026ij1 Ai <- population count parity of (Sj)
+    PopParity,
     /// 027ijx Ai <- leading zero count of (Sj)
     LeadingZeros,
     /// 030ijk Ai <- (Aj) + (Ak)
@@ -236,6 +309,10 @@ pub enum Op {
     FSubVV,
     /// 174ijx Vi <- reciprocal approximation of (Vj)
     RecipV,
+    /// 174ij1 Vi <- population counts of (Vj)
+    PopV,
+    /// 174ij2 Vi <- population count parities of (Vj)
+    ParityV,
     /// 175xjk, k low bits 0: VM bit set where (Vj) = 0
     VmZero,
     /// 175xjk, k low bits 1: VM bit set where (Vj) != 0
@@ -285,6 +362,7 @@ pub enum Unit {
     VecLogical,
     VecShift,
     VecAdd,
+    VecPop,
     Memory,
 }
 
@@ -305,6 +383,7 @@ impl Unit {
             Unit::VecLogical => "V Logical",
             Unit::VecShift => "V Shift",
             Unit::VecAdd => "V Int Add",
+            Unit::VecPop => "V Pop",
             Unit::Memory => "Memory",
         }
     }
@@ -317,6 +396,8 @@ pub enum ExpKind {
     None,
     /// exp = ijk, 0 to 777 octal (`ERR exp`, `EX exp`).
     Ijk,
+    /// exp = j, 0 to 7 (cluster number).
+    J,
     /// exp = jk, 0 to 63 (short constant, left shift count, left mask length).
     Jk,
     /// exp = 64 - jk, 1 to 64 (right shift count, right mask length).
@@ -403,6 +484,13 @@ pub mod flag {
     /// The spelling is not in Appendix D (it comes from the CAL manual
     /// examples in cal_dv.txt or from later CAL).
     pub const NOT_IN_APPENDIX_D: u16 = 1 << 8;
+    /// The instruction belongs to an option of the 1982 machine (HR-0004
+    /// rev F): the programmable clock or the vector population instructions.
+    /// Its page reference is to rev F.
+    pub const OPTION: u16 = 1 << 9;
+    /// The row exists only on the X-MP (`Cpu::Xmp`); its page reference is to
+    /// the X-MP mainframe reference manual CSM-0111000.
+    pub const XMP: u16 = 1 << 10;
 }
 
 pub(crate) const VAR_H: u8 = 1;
@@ -608,6 +696,8 @@ const X: u16 = NOT_IN_APPENDIX_D;
 const BR: u16 = BRANCH;
 const CBR: u16 = BRANCH | COND;
 const VEC: u16 = VECTOR;
+const OPT: u16 = OPTION;
+const XM: u16 = XMP;
 
 /// The instruction table.
 ///
@@ -629,13 +719,27 @@ pub static FORMS: &[Form] = &[
     base(SetCl, "0011jk", "CL,Aj", "Ak", "4-8", "Set the channel (Aj) limit address to (Ak)").f(MONITOR).r(&[Aj, Ak]),
     base(ClearCi, "0012jx", "CI,Aj", "", "4-8", "Clear channel (Aj) interrupt flag").f(MONITOR).r(&[Aj]),
     base(SetXa, "0013jx", "XA", "Aj", "4-8", "Enter XA register with (Aj)").f(MONITOR).r(&[Aj]).w(&[Xa]),
-    base(SetRt, "0014jx", "RT", "Sj", "4-8", "Enter real-time clock register with (Sj)").f(MONITOR).r(&[Sj]).w(&[Rtc]),
+    base(SetRt, "0014j0", "RT", "Sj", "4-8", "Enter real-time clock register with (Sj)").f(MONITOR).r(&[Sj]).w(&[Rtc]),
+    base(SetPci, "0014j4", "PCI", "Sj", "F 4-10", "Enter interrupt interval register with (Sj)").f(MONITOR | OPT).r(&[Sj]),
+    base(Cci, "0014x5", "CCI", "", "F 4-10", "Clear the programmable clock interrupt request").f(MONITOR | OPT),
+    base(Eci, "0014x6", "ECI", "", "F 4-10", "Enable the programmable clock interrupt request").f(MONITOR | OPT),
+    base(Dci, "0014x7", "DCI", "", "F 4-10", "Disable the programmable clock interrupt request").f(MONITOR | OPT),
+    base(SetCln, "0014j3", "CLN", "exp", "X 5-11", "Enter cluster number register with j").e(E::J).f(MONITOR | XM),
+    base(ClockPass, "0014xk", "", "", "F 4-10", "Pass (0014jk with k = 1, 2 or 3 is not defined)").f(X),
     base(MonitorPass, "001ixx", "", "", "4-8", "Pass (monitor function with i = 5, 6 or 7)").f(X),
     base(SetVl, "0020xk", "VL", "Ak", "4-10", "Transmit (Ak) to VL register").r(&[Ak]).w(&[Vl]),
     spec(SetVl, "0020x0", "VL", "1", "4-10", "Transmit 1 to VL register"),
     base(Efi, "0021xx", "EFI", "", "4-10.1", "Enable interrupt on floating point error"),
     base(Dfi, "0022xx", "DFI", "", "4-10.1", "Disable interrupt on floating point error"),
+    base(Eri, "0023xx", "ERI", "", "X 5-15", "Enable interrupt on operand range error").f(XM),
+    base(Dri, "0024xx", "DRI", "", "X 5-15", "Disable interrupt on operand range error").f(XM),
+    base(Dbm, "0025xx", "DBM", "", "X 5-15", "Disable bidirectional memory transfers").f(XM),
+    base(Ebm, "0026xx", "EBM", "", "X 5-15", "Enable bidirectional memory transfers").f(XM),
+    base(Cmr, "0027xx", "CMR", "", "X 5-15", "Complete memory references").f(XM),
     base(Undefined, "002ixx", "", "", "", "Not defined by the Cray-1 manual (0023xx to 0027xx)").f(X),
+    base(SemTestSet, "0034jk", "SMjk", "1,TS", "X 5-17", "Test and set semaphore jk").f(XM),
+    base(SemClear, "0036jk", "SMjk", "0", "X 5-17", "Clear semaphore jk").f(XM),
+    base(SemSet, "0037jk", "SMjk", "1", "X 5-17", "Set semaphore jk").f(XM),
     base(SetVm, "003xjx", "VM", "Sj", "4-11", "Transmit (Sj) to VM register").r(&[Sj]).w(&[Vm]),
     spec(SetVm, "003x0x", "VM", "0", "4-11", "Clear VM register"),
     base(Ex, "004xxx", "EX", "", "4-12", "Normal exit").f(EXIT),
@@ -661,7 +765,10 @@ pub static FORMS: &[Form] = &[
     base(AFromS, "023ijx", "Ai", "Sj", "4-20", "Transmit (Sj) to Ai").r(&[Sj]).w(&[Ai]),
     base(AFromB, "024ijk", "Ai", "Bjk", "4-21", "Transmit (Bjk) to Ai").r(&[Bjk]).w(&[Ai]),
     base(BFromA, "025ijk", "Bjk", "Ai", "4-21", "Transmit (Ai) to Bjk").r(&[Ai]).w(&[Bjk]),
+    base(AFromSb, "026ij7", "Ai", "SBj", "X 5-32", "Transmit (SBj) to Ai").f(XM).w(&[Ai]),
+    base(PopParity, "026ij1", "Ai", "QSj", "F 4-25", "Population count parity of (Sj) to Ai").u(U::PopLz).f(OPT).r(&[Sj]).w(&[Ai]),
     base(PopCount, "026ijx", "Ai", "PSj", "4-22", "Population count of (Sj) to Ai").u(U::PopLz).r(&[Sj]).w(&[Ai]),
+    base(SbFromA, "027ij7", "SBj", "Ai", "X 5-34", "Transmit (Ai) to SBj").f(XM).r(&[Ai]),
     base(LeadingZeros, "027ijx", "Ai", "ZSj", "4-23", "Leading zero count of (Sj) to Ai").u(U::PopLz).r(&[Sj]).w(&[Ai]),
     base(AddA, "030ijk", "Ai", "Aj+Ak", "4-24", "Integer sum of (Aj) and (Ak) to Ai").u(U::AddrAdd).r(&[Aj, Ak]).w(&[Ai]),
     spec(AddA, "030i0k", "Ai", "Ak", "4-24", "Transmit (Ak) to Ai"),
@@ -753,7 +860,12 @@ pub static FORMS: &[Form] = &[
     base(SConst1, "071i5x", "Si", "1.", "4-42", "Transmit constant 1.0 to Si").w(&[Si]),
     base(SConst2, "071i6x", "Si", "2.", "4-42", "Transmit constant 2.0 to Si").w(&[Si]),
     base(SConst4, "071i7x", "Si", "4.", "4-42", "Transmit constant 4.0 to Si").w(&[Si]),
+    base(SFromSm, "072i02", "Si", "SM", "X 5-59", "Transmit the semaphores to Si").f(XM).w(&[Si]),
+    base(SFromSt, "072ij3", "Si", "STj", "X 5-59", "Transmit (STj) to Si").f(XM).w(&[Si]),
     base(SFromRt, "072ixx", "Si", "RT", "4-44", "Transmit (RTC) to Si").r(&[Rtc]).w(&[Si]),
+    base(SFromSr, "073i01", "Si", "SR0", "X 5-59", "Transmit the status register to Si").f(XM).w(&[Si]),
+    base(SmFromS, "073i02", "SM", "Si", "X 5-59", "Transmit (Si) to the semaphores").f(XM).r(&[Si]),
+    base(StFromS, "073ij3", "STj", "Si", "X 5-59", "Transmit (Si) to STj").f(XM).r(&[Si]),
     base(SFromVm, "073ixx", "Si", "VM", "4-44", "Transmit (VM) to Si").r(&[Vm]).w(&[Si]),
     base(SFromT, "074ijk", "Si", "Tjk", "4-44", "Transmit (Tjk) to Si").r(&[Tjk]).w(&[Si]),
     base(TFromS, "075ijk", "Tjk", "Si", "4-44", "Transmit (Si) to Tjk").r(&[Si]).w(&[Tjk]),
@@ -819,6 +931,8 @@ pub static FORMS: &[Form] = &[
     base(FSubSV, "172ijk", "Vi", "Sj-FVk", "4-61", "Floating differences of (Sj) and (Vk) to Vi").u(U::FpAdd).f(VEC).r(&[Sj, Vk, Vl]).w(&[Vi]),
     spec(FSubSV, "172i0k", "Vi", "-FVk", "4-61", "Transmit normalized negatives of (Vk) to Vi"),
     base(FSubVV, "173ijk", "Vi", "Vj-FVk", "4-61", "Floating differences of (Vj) and (Vk) to Vi").u(U::FpAdd).f(VEC).r(&[Vj, Vk, Vl]).w(&[Vi]),
+    base(PopV, "174ij1", "Vi", "PVj", "F 4-70", "Population counts of (Vj) to Vi").u(U::VecPop).f(VEC | OPT).r(&[Vj, Vl]).w(&[Vi]),
+    base(ParityV, "174ij2", "Vi", "QVj", "F 4-70", "Population count parities of (Vj) to Vi").u(U::VecPop).f(VEC | OPT).r(&[Vj, Vl]).w(&[Vi]),
     base(RecipV, "174ijx", "Vi", "/HVj", "4-63", "Floating reciprocal approximations of (Vj) to Vi").u(U::FpRecip).f(VEC).r(&[Vj, Vl]).w(&[Vi]),
     // ---- 175 to 177: vector mask and vector memory references
     base(VmZero, "175xj0", "VM", "Vj,Z", "4-65", "VM = 1 where (Vj) = 0").dc(4).u(U::VecLogical).f(VEC).r(&[Vj, Vl]).w(&[Vm]),

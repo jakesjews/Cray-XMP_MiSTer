@@ -115,9 +115,12 @@ fn the_two_pyramids_disagree_on_a_few_percent_of_products() {
         "XMP_MANUAL vs CRAY_SIM differ: full {:.4}, rounded {:.4}, 2-minus {:.4}, half {:.4}",
         share[0], share[1], share[2], share[3]
     );
-    for s in &share[..3] {
+    for s in &share[..2] {
         assert!((0.015..0.045).contains(s), "{s}");
     }
+    // cray-sim also guesses the complement step of 067: its result is lower by one or two
+    // units most of the time (see `TwoMinus`).
+    assert!((0.85..0.95).contains(&share[2]), "{}", share[2]);
     // Half precision also differs in where the round bits sit.
     assert!((0.2..0.35).contains(&share[3]), "{}", share[3]);
 }

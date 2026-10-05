@@ -1,8 +1,11 @@
 # The machine
 
 Technical notes on what this core implements, where it came from and where it
-differs from a real CRAY-1. The reference throughout is the CRAY-1 Hardware
-Reference Manual, publication 2240004 revision C.
+differs from a real CRAY-1. The machine is the CRAY-1 as sold in 1982, with its
+two instruction set options. The reference is the CRAY-1 Hardware Reference
+Manual: publication 2240004 revision C, whose page numbers are used below,
+and revision F of May 1982 (HR-0004) where the two differ. Pages of revision F
+are marked "rev F".
 
 ## Where the CPU came from
 
@@ -48,20 +51,32 @@ Repairs to the upstream files:
   monitor-mode gating of the clock and XA instructions, the floating-point
   mode flag, field protection and the range flags, a 22-bit P, the console
   interrupt, and a new vector section.
+- `i_buf`: a buffer that is being filled again no longer answers for the
+  block it held before. A jump taken after a fetch ahead could otherwise run
+  parcels of the wrong block.
 - Lint clean-up across the files: signals and registers nothing read were
   removed and operand widths made explicit. Each module was proven equivalent
   to its form before the clean-up with `tools/py/equiv.py`.
-- `xmp/intercpu_comms`: the issue signal of the fourth CPU tested the third
-  CPU's instruction type. Fixed; like the rest of the X-MP code it is untested.
 
-A parameter `XMP` selects the machine. `XMP = 0` is the CRAY-1 and is the only
-setting that has been verified. `XMP = 1` keeps the X-MP additions of the
-upstream source compiling (channels, shared registers, semaphores); nothing
-about it has been tested. The X-MP vector population count is not built.
+A parameter `XMP` selects the machine. `XMP = 0` is the CRAY-1 and is what the
+MiSTer core is built with. `XMP = 1` adds what a one-processor CRAY X-MP has
+that the operating system COS needs; see "The X-MP setting" below. The
+upstream source's own X-MP code (channels and the registers shared by four
+CPUs) did not work and has been removed.
 
 ## What is implemented
 
 - All CRAY-1 instructions of the manual's Appendix D.
+- The vector population instructions option (rev F pages 4-25 and 4-70):
+  026ij1 `Ai QSj`, the parity of the one bits of (Sj); 174ij1 `Vi PVj`, the
+  population counts of the elements of Vj; 174ij2 `Vi QVj`, their parities.
+  The vector unit takes 6 clock periods and runs one operation at a time
+  together with the reciprocal unit.
+- The programmable clock option (rev F pages 4-10 and 6-23): 0014j4 `PCI Sj`
+  enters the interrupt interval, 0014j5 `CCI` clears the interrupt request,
+  0014j6 `ECI` enables it and 0014j7 `DCI` disables it, all in monitor mode
+  only. The countdown runs all the time, one count per clock period; a
+  request comes every interval + 1 clock periods.
 - A, S, B, T and V registers, VL, VM, the real-time clock, P, BA, LA, XA, M and F.
 - The exchange sequence with the CRAY-1 exchange package layout, dead start,
   normal and error exits.
@@ -69,7 +84,11 @@ about it has been tested. The X-MP vector population count is not built.
   16 times BA is below 16 times LA and below 2^20. A store outside the field
   does not change memory.
 - Interrupt flags: normal exit, error exit, program range, operand range,
-  floating-point error and console interrupt. They set only outside monitor mode.
+  floating-point error, the programmable clock interrupt (bit 31) and the MCU
+  interrupt (bit 32). They set only outside monitor mode. A clock or MCU
+  request made in monitor mode waits and is taken when a user program runs.
+  The two bits are named as in revision F; revision C called them console
+  interrupt and real-time clock interrupt.
 - Floating-point range errors as on manual page 3-21. For the add unit that
   is an incoming exponent of 60000 octal or more; a carry that takes in-range
   operands to 60000 is delivered without the error.
@@ -89,22 +108,41 @@ about it has been tested. The X-MP vector population count is not built.
   element is in, and at any time after that, not only in the one chain slot
   clock. A register being filled by a vector load is never chained, because
   memory does not deliver at a steady rate. Results are the same.
-- **Floating-point multiply rounding.** The manual's figure of the CRAY-1
-  multiply pyramid does not fix every bit that is dropped. The multiply
-  follows the arithmetic the X-MP manual spells out instead. Some products may
-  differ in the last bit from a real CRAY-1; this has not been compared with one.
-- **Reciprocal.** The reciprocal approximation follows the algorithm of the
-  cray-sim project's model. Its results match that project's test values.
+- **Floating-point multiply.** The CRAY-1 had two multiply units. Machines
+  up to about 1980 had a pyramid that was not commutative (revisions C and E
+  of the manual). Change packet E-01 of May 1980 documents a symmetric unit,
+  in the same words as the later CRAY-1 S and X-MP manuals. This core has the
+  symmetric unit. About one product in five differs in its last bit from
+  what the original unit would give; which machines had which is not known.
+- **The multiply and the reciprocal match Cray's own simulation of them.**
+  Cray's floating-point diagnostic contains a simulation of each unit (the
+  listing found is the 1997 edition for the J90; the code goes back to 1980).
+  The core's units give the same bits as a transcription of it on millions of
+  operands, for 064 to 067 and 070. The complement step of 067 follows it
+  too; with it the statistics W. Kahan published from real machines in 1990
+  come out, which they do not with the rule the cray-sim project guessed.
+  `research/notes/fp-multiply.md` has the evidence.
+- **Half-precision products** keep 29 bits, as that simulation and the
+  CRAY-1 S and X-MP manuals have it. The 1980 change packet says 30.
 - **Interrupts are precise.** The exchange happens right after the instruction
   that raised the flag. The manual allows a few more parcels to issue.
 - **No I/O channels.** 0010 to 0012 do nothing. 033 reads zero. The I/O
   interrupt flag never sets.
 - **No memory errors.** The memory error flag and the error fields of the
   exchange package are always zero.
-- **Real-time clock interrupt.** The flag exists in F but nothing sets it; the
-  manual does not name a source.
+- **Encodings the 1982 manual leaves undefined.** 0014jk with k = 1, 2 or 3
+  is a pass. 026ijk with k = 2 to 7 is the population count. 174ijk with
+  k = 3 to 7 is the reciprocal. Dead start clears the programmable clock's
+  enable and request; on the real machine they are undefined then.
 - **A fetch outside the field in monitor mode** is not checked, since the
   program range flag cannot set there.
+- **A store into an instruction** that is already in an instruction buffer
+  does not change what runs, as on the real machine (manual page 3-33): the
+  buffer keeps the old parcels until it is filled again or an exchange voids
+  it. Which blocks are in the four buffers at a given moment follows this
+  core's fetch sequence, not necessarily the real machine's. The reference
+  model has no buffers and runs the new parcel at once, so the two can differ
+  on a program that modifies code it is about to run.
 
 ## Additions that are not CRAY-1
 
@@ -120,7 +158,9 @@ memory and operators work through front-end computers. This core adds:
   - `3777762` test exit, used by the test programs.
   - `3777763` a free-running clock counter.
 - **The console interrupt** is requested when CTRL-C arrives from the keyboard
-  or the serial port while it is enabled.
+  or the serial port while it is enabled. The console stands in for the
+  maintenance control unit, so the request raises the MCU interrupt flag.
+  It stays until the status word is written.
 - **Dead start.** A reset copies the monitor from a ROM into memory from word
   0 and exchanges to the package at word 0. After a memory image has been
   loaded from the menu, the image is started instead.
@@ -141,17 +181,54 @@ background. For vector loads and stores that is what the real machine does
 CRAY-1 behaviour (eight instruction buffers, a two-clock address multiply) or
 belong to the X-MP.
 
-What it and the review showed about the X-MP paths, none of which the CRAY-1
-build uses, and all of which wait for the X-MP work:
+## The X-MP setting
 
-- 174ij1 and 174ij2, the vector population counts, start a unit that is not
-  built. With `XMP = 1` the result register would stay reserved for good.
-- The inter-CPU module registers each CPU's monitor mode and never checks it.
-- Reading the interrupting channel with 033 clears every pending channel
-  interrupt, not only the one reported.
-- The floating-point status bit, bidirectional memory mode (0025, 0026) and
-  002700 are carried through the exchange package or not decoded, and do nothing.
-- The X-MP add unit also reports an out-of-range result; this one does not.
+The only operating system that survives for these machines, COS 1.17, is a
+build for the X-MP. `XMP = 1` gives the CPU what that build was found to need
+beyond a CRAY-1 (the study is in `research/cos-cray1/`, the specification in
+`research/notes/machine-spec.md`). The reference is the CRAY X-MP Series
+Model 14 mainframe reference manual, CSM-0111000. It is simulated and tested
+against the reference model. No MiSTer build uses it yet: COS also needs the
+I/O channels and I/O processors, which do not exist here.
+
+What changes with `XMP = 1`:
+
+- **Memory** has four million words. The I/O page is its top 16 words, word
+  `17777760` octal on.
+- **The exchange package** has the X-MP layout: a 24-bit P, an instruction
+  base and limit and a data base and limit of 19 bits each in units of 32
+  words, the mode bits of words 1 and 2, the deadlock flag, the program state
+  bit and the cluster number. The processor number, the memory error fields
+  and the VNU, ESVL and EAM bits are stored as zero.
+- **Fields.** Instructions are fetched through the instruction pair, operands
+  through the data pair. Only the low 22 bits of an operand address count. A
+  load from outside the data field delivers zero and a store is dropped; the
+  operand range flag also needs its mode bit, which 0023 sets and 0024 clears.
+  A block or vector transfer goes on after such a reference.
+- **Branches** take 24 bits and raise no flag themselves.
+- **The cluster number** is set from the package or by 0014j3 in monitor mode.
+  Clusters 1 to 3 each have eight SB registers (026ij7, 027ij7), eight ST
+  registers (072ij3, 073ij3) and 32 semaphores (0034, 0036, 0037, 072i02,
+  073i02). In cluster 0 stores do nothing and loads give zero.
+- **Test and set** (0034) of a set semaphore does not issue. Outside monitor
+  mode that is the deadlock interrupt at once, there being one CPU: the
+  package stored has the flag, the waiting bit and P at the instruction. In
+  monitor mode the instruction waits for good.
+- **The status register** (073i01) as the manual has it: ones in the low
+  half, the cluster number only in monitor mode.
+- **Modes.** 0025 and 0026 switch the bidirectional memory bit, which is only
+  carried. 0027 waits for memory references to finish. The floating-point
+  error status bit sets on any floating-point error and is cleared by 0021
+  and 0022.
+- **No recursion.** A vector register used as operand and result of one
+  instruction is read element by element before it is written.
+- 0021 to 0027 and 073i01 wait for results still on their way, so that a
+  floating-point error is counted under the modes its instruction saw. This
+  holds for 0021 and 0022 on the CRAY-1 setting as well.
+
+Not there: the X-MP's 24-bit constant `Ah exp` (01hijkm with the high bit of
+i), `Ai VL` (023i01), the second vector logical unit, gather and scatter, the
+interrupt monitor mode, the X-MP's rule for VL, and channels.
 
 ## Clocks
 
@@ -171,9 +248,13 @@ number: 49, 52.5, 56.5, 61.25, 66.8, 73.5 MHz.
 What limits the clock is the path every result takes in one clock period: off
 the result bus, through the register file's bypass, through operand selection
 and into the first stage of a functional unit, and the instruction issue loop
-beside it. Told the real target, the fitter closes those paths in 12.2 ns,
-which is what allows 81.67 MHz. Only 0.03 ns is to spare there, so 73.5 MHz is
-the setting to fall back to if a later change no longer fits. Two changes were
+beside it. Told the real target, the fitter closes those paths in about 12.2 ns,
+which is what allows 81.67 MHz. There is next to nothing to spare: from one
+build to the next the worst path has come out between 0.27 ns inside the
+clock period and 0.06 ns over it. The build in `releases` is 0.06 ns over on
+two paths from the S register bypass into the multiply unit; it passes the
+whole hardware regression. Closing that again is left until the feature work
+is done, and 73.5 MHz is the setting to fall back to. Two changes were
 needed to get from 79.6 to 81.67 MHz: a memory transfer under way goes by
 flags latched at its start instead of choosing between the live and the
 latched instruction, and 077 writes its V register element in the clock after

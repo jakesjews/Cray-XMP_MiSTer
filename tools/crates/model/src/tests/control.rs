@@ -64,7 +64,7 @@ fn exchange_package_layout() {
 fn mode_and_flag_bit_assignments() {
     // Page 3-35: M bit 36 correctable memory error mode, 37 floating point
     // error mode, 38 uncorrectable memory error mode, 39 monitor mode.
-    // Figure 3-8: F bit 31 console interrupt, 32 RTC interrupt, 33 floating
+    // Figure 3-8 (rev F): F bit 31 programmable clock, 32 MCU interrupt, 33 floating
     // point error, 34 operand range, 35 program range, 36 memory error,
     // 37 I/O interrupt, 38 error exit, 39 normal exit.
     // M occupies bits 36-39 and F bits 31-39 of their words, so the bit
@@ -73,8 +73,8 @@ fn mode_and_flag_bit_assignments() {
     assert_eq!(mode::FLOATING_POINT, 1 << (39 - 37));
     assert_eq!(mode::UNCORRECTABLE_MEMORY, 1 << (39 - 38));
     assert_eq!(mode::MONITOR, 1 << (39 - 39));
-    assert_eq!(flag::CONSOLE_INTERRUPT, 1 << (39 - 31));
-    assert_eq!(flag::RTC_INTERRUPT, 1 << (39 - 32));
+    assert_eq!(flag::PROGRAMMABLE_CLOCK, 1 << (39 - 31));
+    assert_eq!(flag::MCU_INTERRUPT, 1 << (39 - 32));
     assert_eq!(flag::FLOATING_POINT, 1 << (39 - 33));
     assert_eq!(flag::OPERAND_RANGE, 1 << (39 - 34));
     assert_eq!(flag::PROGRAM_RANGE, 1 << (39 - 35));
@@ -592,6 +592,61 @@ fn floating_point_error_flag() {
     assert_eq!(m.v(3, 0), Some(one));
     assert_eq!(unpack(m.v(3, 1).unwrap()).exp, 0o60000);
     assert_eq!(m.v(3, 2), Some(one));
+}
+
+/// A machine in monitor mode running `source`, with a user package at word
+/// 0 (XA = 0) whose program at word 300 is `A1 5`.
+fn monitor_then_user(source: &str) -> Machine {
+    let mut m = monitor_cal(source);
+    let mut package = [0u64; 16];
+    package[0] = (0o300u64 * 4) << 24;
+    package[2] = (LA_MAX as u64) << 28;
+    m.load_words(0, &package).unwrap();
+    m.load_words(0o300, &words(&cal("A1 5; A2 6"))).unwrap();
+    m
+}
+
+#[test]
+fn programmable_clock() {
+    // Rev F pages 4-10 and 6-23.  0014j4 enters the interval, 0014j5 clears
+    // the request, 0014j6 enables and 0014j7 disables it; all four only in
+    // monitor mode.  Nothing of the clock can be read by a program, and "a
+    // request set in monitor mode is held until the system switches to user
+    // mode": in monitor mode the instructions run on whatever the clock does.
+    let mut m = monitor_cal("PCI S1; ECI; CCI; DCI; ECI; A1 5");
+    steps(&mut m, 6);
+    assert_eq!((m.a(1), m.f()), (Some(5), 0));
+    // Outside monitor mode they are passes (page 4-11): the clock stays off.
+    let mut m = user(&cal("PCI S1; ECI; A1 5; A2 6"), 0, LA_MAX);
+    steps(&mut m, 4);
+    assert_eq!((m.a(2), m.f()), (Some(6), 0));
+    // Not enabled: a user program runs.  The same after the monitor has
+    // disabled the request and cleared one that may be set.
+    for source in ["PCI S1; EX", "ECI; DCI; CCI; EX", "ECI; CCI; DCI; CCI; EX"] {
+        let mut m = monitor_then_user(source);
+        let n = source.split(';').count();
+        steps(&mut m, n + 1);
+        assert!(!m.monitor_mode(), "{}", source);
+        assert_eq!(m.a(1), Some(5), "{}", source);
+    }
+    // Enabled, or disabled with a request that may still be set (it "remains
+    // set until a 0014j5"): the interrupt can come at any clock period,
+    // which the model cannot count.  It stops at the first user instruction.
+    for source in ["ECI; EX", "ECI; CCI; EX", "ECI; DCI; EX"] {
+        let mut m = monitor_then_user(source);
+        let n = source.split(';').count();
+        steps(&mut m, n);
+        assert!(!m.monitor_mode(), "{}", source);
+        let e = error_of(&mut m);
+        assert_eq!(e.kind, ErrorKind::TimeDependent, "{}", source);
+        assert_eq!(e.p, 0o300 * 4);
+    }
+    // 0014jk with k = 1, 2 or 3 is a pass and does not enter the clock
+    let mut m = monitor(&[0o001411, 0o001422, 0o001433, 0o020100, 5]);
+    let events = record(&mut m);
+    steps(&mut m, 4);
+    assert_eq!(m.a(1), Some(5));
+    assert!(!events.borrow().iter().any(|e| matches!(e, Event::Rtc(_))));
 }
 
 #[test]

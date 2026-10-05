@@ -234,12 +234,13 @@ fn quotient_error(a: u64, b: u64, q: u64) -> (i128, i128) {
 
 /// The four-instruction divide sequence of HRM page 3-28 against the exact quotient.
 ///
-/// It is **not** within one unit of the last place. Over these million random pairs the
-/// quotient is between 3.72 units too small and 0.13 units too large, 1.52 units too small on
-/// average, and within one unit only a fifth of the time. The manual's own figure is 47
-/// bits for the correction factor `2 - r*b`, whose coefficient sits just above one half, so
-/// one unit of its last bit is already up to two units of the quotient; the two truncating
-/// multiplies add about half a unit each. cray-sim's own arithmetic behaves the same way.
+/// It is **not** always within one unit of the last place. Over these million random pairs
+/// the quotient is between 2.28 units too small and 1.56 units too large, 0.45 units too
+/// small on average, and within one unit four times out of five. The manual's own figure is
+/// 47 bits for the correction factor `2 - r*b`, whose coefficient sits just above one half,
+/// so one unit of its last bit is already up to two units of the quotient; the two
+/// truncating multiplies add about half a unit each. (With cray-sim's rule for 067 the
+/// quotient would be 3.7 units low to 0.1 high and within one unit a fifth of the time.)
 #[test]
 fn divide_sequence_accuracy() {
     let mut rng = SplitMix64::new(0x00AB_CDEF);
@@ -260,9 +261,9 @@ fn divide_sequence_accuracy() {
         let q = fdiv(a, b, Profile::Xmp);
         assert!(!q.range_error);
         let (num, den) = quotient_error(a, b, q.value);
-        // Hard bounds: more than 4 units low or half a unit high never happens.
+        // Hard bounds: more than 3 units low or 2 units high never happens.
         assert!(
-            num > -4 * den && 2 * num < den,
+            num > -3 * den && num < 2 * den,
             "{a:016X} / {b:016X} = {:016X}",
             q.value
         );
@@ -275,16 +276,16 @@ fn divide_sequence_accuracy() {
         }
     }
     let mean = sum / MILLION as f64;
-    assert!(lowest < -3.5, "lowest {lowest}");
-    assert!(highest > 0.1 && highest < 0.5, "highest {highest}");
-    assert!((-1.7..-1.3).contains(&mean), "mean {mean}");
+    assert!((-2.5..-2.0).contains(&lowest), "lowest {lowest}");
+    assert!((1.3..1.8).contains(&highest), "highest {highest}");
+    assert!((-0.6..-0.3).contains(&mean), "mean {mean}");
     let share = within_one as f64 / MILLION as f64;
     println!("divide (HRM 3-28 order): error {lowest:.3} to {highest:+.3} units, mean {mean:.3}, within one unit {share:.3}");
-    assert!((0.15..0.25).contains(&share), "within one unit: {share}");
+    assert!((0.6..0.9).contains(&share), "within one unit: {share}");
 }
 
 /// The X-MP manual's sequence (HR-0097B page 4-34): the iteration is applied to the
-/// reciprocal first and the last multiply is rounded. Measured: 3.76 units low to 0.92 high.
+/// reciprocal first and the last multiply is rounded. Measured: 2.32 units low to 2.35 high.
 #[test]
 fn xmp_divide_sequence_accuracy() {
     let mut rng = SplitMix64::new(0x00AB_CDEF);
@@ -306,7 +307,7 @@ fn xmp_divide_sequence_accuracy() {
         let q = fmul(full, a, MulKind::Rounded, Profile::Xmp).value;
         let (num, den) = quotient_error(a, b, q);
         assert!(
-            num > -4 * den && num < den,
+            num > -3 * den && num < 3 * den,
             "{a:016X} / {b:016X} = {q:016X}"
         );
         let err = num as f64 / den as f64;
@@ -314,14 +315,16 @@ fn xmp_divide_sequence_accuracy() {
         highest = highest.max(err);
     }
     println!("divide (HR-0097B 4-34 order): error {lowest:.3} to {highest:+.3} units");
-    assert!(lowest < -3.5 && highest > 0.75, "{lowest} {highest}");
+    assert!(lowest < -2.0 && highest > 2.0, "{lowest} {highest}");
 }
 
-/// The reciprocal iteration: with r = frecip(b), `2 - r*b` is 1 + (1 - r*b) to within one
-/// unit of its own last bit, i.e. to 47 bits.
+/// The reciprocal iteration: with r = frecip(b), `2 - r*b` is 1 + (1 - r*b) to within two
+/// units of its own last bit, and never more than a quarter of a unit low. The unit forms
+/// 198 - P in units of 2^-56 (see `TwoMinus::Cray`), which is 1.55 units of that bit high.
 #[test]
 fn reciprocal_iteration_is_two_minus_the_product() {
     let mut rng = SplitMix64::new(0x0067_0067);
+    let (mut lowest, mut highest) = (f64::MAX, f64::MIN);
     for _ in 0..200_000 {
         let b = pack(
             false,
@@ -342,6 +345,10 @@ fn reciprocal_iteration_is_two_minus_the_product() {
         let got = i128::from(uc.coef) << shift;
         let ulp = 1i128 << shift;
         let diff = got - exact;
-        assert!(diff.abs() < ulp, "{b:016X}: {diff}");
+        lowest = lowest.min(diff as f64 / ulp as f64);
+        highest = highest.max(diff as f64 / ulp as f64);
+        assert!(4 * diff > -ulp && diff < 2 * ulp, "{b:016X}: {diff}");
     }
+    println!("2 - r*b: error {lowest:.3} to {highest:+.3} units of its last bit");
+    assert!(lowest < 0.0 && highest > 1.5, "{lowest} {highest}");
 }

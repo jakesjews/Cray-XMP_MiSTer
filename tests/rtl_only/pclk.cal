@@ -1,0 +1,217 @@
+* pclk: the programmable clock (0014j4 PCI, j5 CCI, j6 ECI, j7 DCI) and
+* its interrupt, flag bit 31 (HR-0004 rev F pages 4-10 and 6-23).
+* The reference model cannot count clock periods, so this test checks
+* itself and runs on the RTL only.  It runs in monitor mode and sends
+* short user programs off with UGO; each comes back by the clock's
+* interrupt or by a normal exit.
+         INCLUDE "rt_direct.cal"
+         INCLUDE "rt_user.cal"
+UPKG     =       3000
+FPCI     =       400                     ; flag bit 31
+FNEX     =       1                       ; flag bit 39: normal exit
+*
+* the period in clock periods when the interval register holds KINT
+         MACRO   CHKPER %REG,%N
+         LOCAL   %LO,%OK
+         S2      KPER,0
+         S3      %REG-S2
+         S2      D'40
+         S3      S3+S2
+         S0      S3
+         JSP     %LO
+         TFAIL   %N
+%LO      S2      D'80
+         S0      S2-S3
+         JSP     %OK
+         TFAIL   %N
+%OK
+         ENDM
+*
+         TBEGIN
+* 0014jk with k = 1, 2, 3 is a pass: the real-time clock keeps counting
+         S1      KBIG,0
+         S2      RT
+         VWD     D'16/O'001411
+         VWD     D'16/O'001412
+         VWD     D'16/O'001413
+         S3      RT
+         S4      S3-S2
+         S0      S4
+         JSP     L1
+         TFAIL   2
+L1       S5      D'1000
+         S0      S5-S4
+         JSP     L2
+         TFAIL   3
+* A request made in monitor mode sets no flag there.  A user program
+* looks at the F register of this test's own package while it is stored.
+L2       S1      D'50
+         PCI     S1
+         ECI
+         A1      D'200
+W1       A1      A1-1
+         A0      A1
+         JAN     W1
+         DCI
+         CCI
+         UGO     KP7
+         UFLAG   S2
+         CHKS    S2,FNEX,21
+         S2      UPKG+11,0               ; the program's S1
+         S2      S2<D'31
+         S2      S2>D'55
+         CHKS    S2,0,22
+* A request made in monitor mode is held: nothing happens here, and the
+* first user program is interrupted at once.
+         ECI
+         A1      D'200
+W3       A1      A1-1
+         A0      A1
+         JAN     W3
+         UGO     KP1
+         UFLAG   S2
+         CHKS    S2,FPCI,4
+         A2      UPKG+1,0                ; the program's A1: how far it got
+         A3      D'10
+         A0      A2-A3
+         JAM     L3
+         TFAIL   5
+* The period.  The user program reads the real-time clock all the time,
+* so its S1 at each interrupt tells when the interrupt came.
+L3       S1      KINT,0
+         PCI     S1
+         CCI
+         UGO     KP2
+         UFLAG   S2
+         CHKS    S2,FPCI,6
+         S4      UPKG+11,0
+         CCI
+         UGO     KP2
+         UFLAG   S2
+         CHKS    S2,FPCI,7
+         S5      UPKG+11,0
+         CCI
+         UGO     KP2
+         S6      UPKG+11,0
+         S1      S5-S4
+         CHKPER  S1,10
+         S1      S6-S5
+         CHKPER  S1,11
+* The countdown runs while requests are disabled: the first request after
+* ECI comes one period after PCI, not one period after ECI.
+         DCI
+         S1      KINT,0
+         S4      RT                      ; just before the countdown starts
+         PCI     S1
+         CCI
+         S5      D'10000
+         S5      S4+S5
+W4       S6      RT                      ; half a period goes by
+         S0      S6-S5
+         JSM     W4
+         ECI
+         UGO     KP2
+         UFLAG   S2
+         CHKS    S2,FPCI,23
+         S6      UPKG+11,0
+         S1      S6-S4                   ; from before PCI to the interrupt
+         S2      KEARLY,0
+         S0      S1-S2
+         JSP     L4
+         TFAIL   24                      ; too early
+L4       S2      KLATE,0
+         S0      S2-S1
+         JSP     L5
+         TFAIL   25                      ; the countdown waited for ECI
+* Disabled, and the request cleared: a program runs to its exit although
+* the countdown keeps reaching zero.
+L5       DCI
+         CCI
+         S1      D'50
+         PCI     S1
+         UGO     KP3
+         UFLAG   S2
+         CHKS    S2,FNEX,12
+         A2      UPKG+1,0
+         CHKA    A2,U$A2,13
+* DCI does not take back a request already made; CCI does.
+         ECI
+         A1      D'200
+W2       A1      A1-1
+         A0      A1
+         JAN     W2
+         DCI
+         UGO     KP1
+         UFLAG   S2
+         CHKS    S2,FPCI,14
+         CCI
+         UGO     KP3
+         UFLAG   S2
+         CHKS    S2,FNEX,15
+* Outside monitor mode all four are passes.
+* ECI: the clock stays disabled
+         UGO     KP4
+         UFLAG   S2
+         CHKS    S2,FNEX,16
+* PCI: the interval stays long
+         S1      KLONG,0
+         PCI     S1
+         CCI
+         ECI
+         UGO     KP5
+         UFLAG   S2
+         CHKS    S2,FNEX,17
+* DCI and CCI: the interrupt still comes
+         S1      D'2000
+         PCI     S1
+         CCI
+         UGO     KP6
+         UFLAG   S2
+         CHKS    S2,FPCI,20
+         DCI
+         CCI
+         TPASS
+         TEND
+*
+KBIG     CON     X'0000010000000000
+KINT     CON     D'20000
+KPER     CON     D'20001                 ; the countdown passes through zero
+KEARLY   CON     D'19960
+KLATE    CON     D'23000
+KLONG    CON     D'500000
+KP1      CON     UP1*T$P2_24
+KP2      CON     UP2*T$P2_24
+KP3      CON     UP3*T$P2_24
+KP4      CON     UP4*T$P2_24
+KP5      CON     UP5*T$P2_24
+KP6      CON     UP6*T$P2_24
+KP7      CON     UP7*T$P2_24
+         UDATA
+*
+* the user programs
+         ORG     3100
+UP1      A1      A1+1                    ; count for ever
+         J       UP1
+         ORG     3110
+UP2      S1      RT                      ; read the clock for ever
+         J       UP2
+         ORG     3120
+UP3      A1      A1+1                    ; count to (A2), then exit
+         A0      A2-A1
+         JAN     UP3
+         EX
+         ORG     3130
+UP4      ECI
+         J       UP3
+         ORG     3140
+UP5      S1      D'10
+         PCI     S1
+         J       UP3
+         ORG     3150
+UP6      DCI
+UP6L     CCI
+         J       UP6L
+         ORG     3160
+UP7      S1      UPKG+3,0                ; word 3 of the package stored here
+         EX
+         END

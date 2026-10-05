@@ -1,9 +1,12 @@
 //! `cray1-run`: run a memory image on the CRAY-1 reference model.
 //!
 //! ```text
-//! cray1-run IMAGE [--max N] [--input TEXT] [--state OUT] [--trace OUT] [--quiet]
+//! cray1-run IMAGE [--machine CRAY1|XMP] [--max N] [--input TEXT] [--state OUT]
+//!           [--trace OUT] [--quiet]
 //! ```
 //!
+//! * `--machine XMP`: the machine with the X-MP features (see the crate
+//!   documentation): four million words, the X-MP exchange package.
 //! * `IMAGE`: raw big-endian 64-bit words, loaded at word 0.  The machine
 //!   dead starts from the exchange package in words 0 to 15.
 //! * `--max N`: stop after N steps (default 10000000).  A step is an
@@ -121,6 +124,7 @@
 //! F, A0 to A7 and S0 to S7 as loaded.  An instruction that raises a flag
 //! shows the `F` line and then the exchange.
 
+use cray1_isa::Cpu;
 use cray1_model::{report, Event, Machine, Observer, RunResult};
 use std::cell::Cell;
 use std::fs::File;
@@ -129,7 +133,7 @@ use std::process::ExitCode;
 use std::rc::Rc;
 
 const USAGE: &str =
-    "usage: cray1-run IMAGE [--max N] [--input TEXT] [--state OUT] [--trace OUT] [--quiet]";
+    "usage: cray1-run IMAGE [--machine CRAY1|XMP] [--max N] [--input TEXT] [--state OUT] [--trace OUT] [--quiet]";
 const STATUS_USAGE: u8 = 64;
 const STATUS_FILE: u8 = 66;
 
@@ -140,6 +144,7 @@ struct Options {
     state: Option<String>,
     trace: Option<String>,
     quiet: bool,
+    cpu: Cpu,
 }
 
 /// Decode the escapes of `--input`.
@@ -180,6 +185,7 @@ fn parse(argv: &[String]) -> Result<Options, String> {
         state: None,
         trace: None,
         quiet: false,
+        cpu: Cpu::Cray1,
     };
     let mut images = Vec::new();
     let mut it = argv.iter();
@@ -208,6 +214,11 @@ fn parse(argv: &[String]) -> Result<Options, String> {
             "--state" => o.state = Some(value(name)?),
             "--trace" => o.trace = Some(value(name)?),
             "--quiet" => o.quiet = true,
+            "--machine" => {
+                let text = value(name)?;
+                o.cpu = Cpu::from_name(&text)
+                    .ok_or_else(|| format!("--machine `{}` is not known: CRAY1 or XMP", text))?;
+            }
             _ if name.starts_with('-') && name != "-" => {
                 return Err(format!("unknown option {}", name))
             }
@@ -259,7 +270,10 @@ impl Drop for Sink {
 
 fn run(o: &Options) -> Result<u8, String> {
     let image = std::fs::read(&o.image).map_err(|e| format!("{}: {}", o.image, e))?;
-    let mut machine = Machine::with_image(&image).map_err(|e| format!("{}: {}", o.image, e))?;
+    let mut machine = Machine::for_cpu(o.cpu);
+    machine
+        .load_image(&image)
+        .map_err(|e| format!("{}: {}", o.image, e))?;
     machine.push_input(&o.input);
     let trace = match &o.trace {
         Some(path) => Some(BufWriter::new(

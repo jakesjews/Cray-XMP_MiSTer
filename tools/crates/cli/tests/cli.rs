@@ -192,13 +192,28 @@ fn asm_warnings_exit_2_with_an_image() {
 }
 
 #[test]
+fn dis_notes_an_instruction_that_straddles_words() {
+    let dir = scratch("straddle");
+    let src = path(&dir, "straddle.cal");
+    std::fs::write(
+        &src,
+        "         PASS\n         PASS\n         PASS\n         J         1234567\n",
+    )
+    .unwrap();
+    let img = path(&dir, "straddle.img");
+    let o = cray1(&["asm", &src, "-o", &img]);
+    assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+    let text = stdout(&cray1(&["dis", &img]));
+    assert_eq!(text.matches("; straddles words").count(), 1, "{}", text);
+}
+
+#[test]
 fn dis_output_assembles_back_to_the_same_image() {
     let dir = scratch("roundtrip");
     let img = path(&dir, "all.img");
     let o = cray1(&["asm", &fixture("all_forms.cal"), "-o", &img]);
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
     let text = stdout(&cray1(&["dis", &img]));
-    assert!(text.contains("; straddles words"));
     assert!(
         !text.contains("ignored bits"),
         "the fixture is canonical apart from ERR exp and EX exp"

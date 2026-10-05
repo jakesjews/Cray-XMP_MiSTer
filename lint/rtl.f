@@ -33,6 +33,7 @@ rtl/cray/cray_mem_mux.v
 rtl/cray/mem_fu.v
 rtl/cray/vector_add.v
 rtl/cray/vector_logical.v
+rtl/cray/vector_pop.v
 rtl/cray/vector_shift.v
 rtl/cray/cray_opnd.v
 rtl/cray/exchange_ctl.v
@@ -64,14 +65,6 @@ rtl/cray/cray-1x/scalar_pop_lz.v
 rtl/cray/cray-1x/scalar_shift.v
 rtl/cray/cray-1x/t_regfile_hard.v
 rtl/cray/cray-1x/v_scheduler.v
-rtl/cray/cray-1x/xmp/dma_fu.v
-rtl/cray/cray-1x/xmp/intercpu_comms.v
-rtl/cray/cray-1x/xmp/intercpu_sb_mux.v
-rtl/cray/cray-1x/xmp/intercpu_sm_mux.v
-rtl/cray/cray-1x/xmp/intercpu_st_mux.v
-rtl/cray/cray-1x/xmp/slow_ch_rx.v
-rtl/cray/cray-1x/xmp/slow_ch_tx.v
 // Not in files.qip: the X-MP vector population count, which no build
 // instantiates. Listed so that make lint can check it on its own.
-rtl/cray/cray-1x/xmp/vector_pop_parity.v
 Cray1.sv

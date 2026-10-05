@@ -78,6 +78,33 @@ fn population_and_leading_zero_counts() {
 }
 
 #[test]
+fn population_count_parity() {
+    // Rev F page 4-25: 026ij1 enters the low bit of the population count in
+    // the low bit of Ai; "the actual population count is not transferred".
+    // (Ai) = 0 if j = 0.
+    let mut m = monitor_cal("A1 QS1; A2 QS0; A3 QS2; A4 QS3");
+    m.set_s(0, Some(1));
+    m.set_s(1, Some(0x0000_00f0_0000_0001)); // five one bits
+    m.set_s(2, Some(u64::MAX)); // 64
+    m.set_s(3, Some(1 << 63)); // one
+    steps(&mut m, 4);
+    assert_eq!(
+        (m.a(1), m.a(2), m.a(3), m.a(4)),
+        (Some(1), Some(0), Some(0), Some(1))
+    );
+    // k = 2 to 7 are not defined by rev F: the count, as without the option
+    let mut m = monitor(&[0o026112, 0o026217]);
+    m.set_s(1, Some(0x0000_00f0_0000_0001));
+    steps(&mut m, 2);
+    assert_eq!((m.a(1), m.a(2)), (Some(5), Some(5)));
+    // an undefined operand gives an undefined result
+    let mut m = monitor_cal("A1 QS1");
+    m.set_s(1, None);
+    steps(&mut m, 1);
+    assert_eq!(m.a(1), None);
+}
+
+#[test]
 fn a_arithmetic() {
     // Page 4-25, special cases of 030 and 031; page 4-26, of 032.  No
     // overflow is detected: the arithmetic is 24-bit two's complement

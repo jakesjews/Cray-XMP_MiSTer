@@ -2,10 +2,12 @@
 """Run the simulation test suites.
 
     runtests.py quick [-j JOBS]   smoke tests under every start-up, the directed tests,
-                                  the self-checking clock test, the floating-point
-                                  reference vectors, 200 random programs
+                                  the self-checking clock and interrupt tests, the
+                                  floating-point reference vectors, 200 random programs;
+                                  then the X-MP mode: its tests and 100 random programs
     runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
-                                  floating-point operation and 10,000 random programs
+                                  floating-point operation, 10,000 random programs and
+                                  2,000 for the X-MP mode
 
 Needs the host tools (make tools) and the simulations (make sim).  Programs are
 compared with the reference model by difftest.py; see docs/DEVELOPMENT.md.
@@ -46,7 +48,7 @@ def smoke_variants(out):
 
 
 def rtl_only():
-    """Self-checking programs the reference model cannot run (they read the clock)."""
+    """Self-checking programs the reference model cannot run (clocks and interrupts from outside)."""
     print('== self-checking RTL tests', flush=True)
     asm = os.path.join(ROOT, 'tools/target/release/cray1')
     cpu = os.path.join(ROOT, 'sim/build/cpu/Vcray_cpu')
@@ -54,9 +56,11 @@ def rtl_only():
     for cal in sorted(glob.glob(os.path.join(ROOT, 'tests/rtl_only/*.cal'))):
         img = os.path.join(ROOT, 'build', os.path.basename(cal)[:-4] + '.img')
         subprocess.run([asm, 'asm', cal, '-I', 'tests/rt', '-o', img], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
+        m = re.search(r'^\* SIM:(.*)$', open(cal).read(), re.M)      # more simulator arguments for this test
+        extra = m.group(1).split() if m else []
         for mode in (['--mem', '0'], ['--mem', 'rand:1-9'], ['--mem', 'slow'], ['--mem', 'ddr3', '--step']):
             total += 1
-            r = subprocess.run([cpu, '--image', img, '--cycles', '2000000', '--quiet'] + mode, cwd=ROOT,
+            r = subprocess.run([cpu, '--image', img, '--cycles', '2000000', '--quiet'] + mode + extra, cwd=ROOT,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if r.returncode == 0:
                 good += 1
@@ -87,6 +91,9 @@ def main():
                [PY, DIFF, 'file'] + sorted(glob.glob(os.path.join(ROOT, 'tests/directed/*.cal'))) + ['-I', 'tests/rt', '-j', jobs])
     ok &= rtl_only()
     ok &= step('floating-point reference vectors', [FPBENCH, 'tests/fp/xmp_ref.vec'])
+    xmp = sorted(glob.glob(os.path.join(ROOT, 'tests/xmp/*.cal')))
+    ok &= step('X-MP mode: %d tests' % len(xmp), [PY, DIFF, 'file'] + xmp + ['-I', 'tests/rt', '-j', jobs])
+    ok &= step('X-MP mode: 100 random programs', [PY, DIFF, 'rand', '1', '100', '-n', '250', '--xmp', '-j', jobs])
     if a[0] == 'quick':
         ok &= step('200 random programs', [PY, DIFF, 'rand', '1', '200', '-n', '250', '-j', jobs])
     else:
@@ -98,6 +105,8 @@ def main():
             ok &= step('floating point: ' + os.path.basename(f), [FPBENCH, f])
             ok &= step('floating point with gaps: ' + os.path.basename(f), [FPBENCH, f, '--gaps'])
         ok &= step('10,000 random programs', [PY, DIFF, 'rand', '1', '10000', '-n', '250', '-j', jobs])
+        ok &= step('X-MP mode: 2,000 random programs',
+                   [PY, DIFF, 'rand', '1001', '3000', '-n', '250', '--xmp', '-j', jobs])
     print('ALL PASSED' if ok else 'FAILED')
     sys.exit(0 if ok else 1)
 

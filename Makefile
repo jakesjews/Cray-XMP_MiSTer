@@ -22,7 +22,6 @@ lint: lint-prepare
 	$(VERILATOR) --lint-only -Wall --top-module emu -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module emu +define+SHELL_TEST -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module cray_cpu -GXMP=1 -f lint/rtl.f
-	$(VERILATOR) --lint-only -Wall --top-module vector_pop_parity -f lint/rtl.f
 
 lint-prepare:
 	@mkdir -p lint/gen
@@ -32,7 +31,7 @@ tools:
 	cargo build --release --manifest-path tools/Cargo.toml
 
 sim:
-	$(MAKE) -C sim cpu fp emu
+	$(MAKE) -C sim cpu cpu-xmp fp emu
 
 rom: tools
 	@mkdir -p build

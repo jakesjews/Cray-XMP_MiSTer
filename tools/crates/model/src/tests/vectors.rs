@@ -659,6 +659,56 @@ fn recursive_cases_the_manual_does_not_spell_out() {
 }
 
 #[test]
+fn vector_population_count_and_parity() {
+    // Rev F page 4-70.  174ij1: the count goes to the low 7 bits of each
+    // element of Vi, "the remaining higher order bits ... are zeroed".
+    // 174ij2: the low bit of the count goes to the low bit of the element.
+    let mut m = monitor_cal("V1 PV2; V3 QV2");
+    m.set_vl(Some(4));
+    fill(&mut m, 1, &[9, 9, 9, 9, 9]);
+    fill(&mut m, 2, &[0, u64::MAX, 0x0000_00f0_0000_0001, 1 << 63]);
+    steps(&mut m, 2);
+    assert_eq!(elements(&m, 1, 5), some(&[0, 64, 5, 1, 9]));
+    assert_eq!(elements(&m, 3, 4), some(&[0, 0, 1, 1]));
+    // 174 with k = 0 and k = 3 to 7 stays the reciprocal
+    for k in [0u16, 3, 7] {
+        let mut m = monitor(&[0o174120 | k]);
+        m.set_vl(Some(1));
+        m.set_v(2, 0, Some(f(2.0)));
+        steps(&mut m, 1);
+        assert_eq!(
+            m.v(1, 0),
+            Some(frecip(f(2.0), FP_PROFILE).value),
+            "k = {}",
+            k
+        );
+    }
+    // The result register as the operand: the chain slot time of 8 clock
+    // periods on page 4-70 is unit time + 2, so the counts come in groups of
+    // eight (pages 3-14 to 3-16).  Element 0 holds three one bits.
+    assert_eq!(vector::unit_time::VECTOR_POPULATION, 6);
+    let mut m = monitor(&[0o174111]);
+    m.set_vl(Some(20));
+    for e in 0..20 {
+        m.set_v(1, e, Some(u64::MAX)); // only element 0 matters
+    }
+    m.set_v(1, 0, Some(7));
+    steps(&mut m, 1);
+    let mut expect = vec![3u64; 8]; // population of 7
+    expect.extend([2u64; 8]); // population of 3
+    expect.extend([1u64; 4]); // population of 2
+    assert_eq!(elements(&m, 1, 20), some(&expect));
+    // an undefined element gives an undefined count, the others are done
+    let mut m = monitor_cal("V1 PV2");
+    m.set_vl(Some(3));
+    m.set_v(2, 0, Some(3));
+    m.set_v(2, 1, None);
+    m.set_v(2, 2, Some(1));
+    steps(&mut m, 1);
+    assert_eq!(elements(&m, 1, 3), vec![Some(2), None, Some(1)]);
+}
+
+#[test]
 fn elements_beyond_the_vector_length_are_unaltered() {
     // Page 4-51: "The remaining elements of V7 are unaltered."
     let mut m = monitor_cal("V1 V2+V3");

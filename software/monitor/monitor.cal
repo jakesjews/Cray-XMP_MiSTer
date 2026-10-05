@@ -238,7 +238,7 @@ CMDC     A1      UPKG
          S1      0
          CSTA,0  S1
          S5      UPKG+3,0                ; the flags are bits 31 to 39 from the left
-         S0      S5<D'31
+         S0      S5<D'32                 ; the MCU interrupt: CTRL-C
          JSM     JCON
          S0      S5<D'33
          JSM     JFPE

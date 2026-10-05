@@ -52,6 +52,12 @@ module i_buf (
 
 	//beginning address registers
 	reg [17:0] beg_addr0, beg_addr1, beg_addr2, beg_addr3;
+	//A buffer answers for its beginning address only while it holds all 16 words of
+	//that block: not after reset, and not while it is being filled again.  The words
+	//of the new block overwrite the old ones as they arrive, and P can come back to
+	//the old block before the fill is over (a jump taken after a fetch ahead).
+	reg  [3:0] buf_vld;
+	wire       fill_start;
 
 	//Buffers get replaced with an LRU policy based on the 2-bit buffer counter
 	reg [1:0] buf_cnt;
@@ -95,10 +101,10 @@ module i_buf (
 	assign o_nip_vld = (buf0_match || buf1_match || buf2_match || buf3_match) && (cur_buf == i_p_addr[23:6]);
 
 	//Let's check if the incoming address matches any beginning addresses
-	assign buf0_match = (cur_buf == beg_addr0);
-	assign buf1_match = (cur_buf == beg_addr1);
-	assign buf2_match = (cur_buf == beg_addr2);
-	assign buf3_match = (cur_buf == beg_addr3);
+	assign buf0_match = buf_vld[0] && (cur_buf == beg_addr0);
+	assign buf1_match = buf_vld[1] && (cur_buf == beg_addr1);
+	assign buf2_match = buf_vld[2] && (cur_buf == beg_addr2);
+	assign buf3_match = buf_vld[3] && (cur_buf == beg_addr3);
 
 	assign no_match = ~(buf0_match || buf1_match || buf2_match || buf3_match);
 
@@ -122,21 +128,18 @@ module i_buf (
 	assign load_complete = i_mem_vld && (mem_cnt == BUF_FULL);
 
 	//load the 'beginning address' registers of each buffer when we finish a load
-	always @(posedge clk)
-		if (rst) beg_addr0 <= 18'b111111111111111111;
-		else if ((buf_cnt == 2'b00) && load_complete) beg_addr0 <= tmp_addr;
+	always @(posedge clk) if ((buf_cnt == 2'b00) && load_complete) beg_addr0 <= tmp_addr;
+
+	always @(posedge clk) if ((buf_cnt == 2'b01) && load_complete) beg_addr1 <= tmp_addr;
+
+	always @(posedge clk) if ((buf_cnt == 2'b10) && load_complete) beg_addr2 <= tmp_addr;
+
+	always @(posedge clk) if ((buf_cnt == 2'b11) && load_complete) beg_addr3 <= tmp_addr;
 
 	always @(posedge clk)
-		if (rst) beg_addr1 <= 18'b111111111111111111;
-		else if ((buf_cnt == 2'b01) && load_complete) beg_addr1 <= tmp_addr;
-
-	always @(posedge clk)
-		if (rst) beg_addr2 <= 18'b111111111111111111;
-		else if ((buf_cnt == 2'b10) && load_complete) beg_addr2 <= tmp_addr;
-
-	always @(posedge clk)
-		if (rst) beg_addr3 <= 18'b111111111111111111;
-		else if ((buf_cnt == 2'b11) && load_complete) beg_addr3 <= tmp_addr;
+		if (rst) buf_vld <= 4'b0000;
+		else if (fill_start) buf_vld[buf_cnt] <= 1'b0;
+		else if (load_complete) buf_vld[buf_cnt] <= 1'b1;
 
 
 
@@ -211,11 +214,13 @@ module i_buf (
 		if (rst) buf_state <= IDLE;
 		else
 			case (buf_state)
-				IDLE: if (no_match && !load_complete && !i_hold) buf_state <= RX;
+				IDLE: if (fill_start) buf_state <= RX;
 				RX:   if ((mem_cnt == BUF_FULL) && i_mem_vld) buf_state <= IDLE;
 			endcase
 
-	always @(posedge clk) if ((buf_state == IDLE) && no_match && !load_complete && !i_hold) tmp_addr <= i_p_addr[23:6];
+	assign fill_start = (buf_state == IDLE) && no_match && !load_complete && !i_hold;
+
+	always @(posedge clk) if (fill_start) tmp_addr <= i_p_addr[23:6];
 
 
 

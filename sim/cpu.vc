@@ -4,6 +4,6 @@
 -Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-PINMISSING -Wno-DECLFILENAME -Wno-CASEINCOMPLETE -Wno-CASEX -Wno-BLKSEQ -Wno-UNDRIVEN -Wno-EOFNEWLINE
 -O3 --x-assign unique --x-initial unique
 -CFLAGS "-O2 -std=c++17"
--Irtl/cray/cray-1x -y rtl/cray -y rtl/cray/cray-1x -y rtl/cray/cray-1x/xmp
+-Irtl/cray/cray-1x -y rtl/cray -y rtl/cray/cray-1x
 rtl/cray/cray_cpu.v
 sim/harness/cpu_main.cpp

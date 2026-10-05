@@ -1,0 +1,180 @@
+* pop: the population instructions of the 1982 machine.  026ij1 is the
+* parity of a scalar, 174ij1 the population counts of a vector and 174ij2
+* their parities.  Also a count chained between two sums, and a count whose
+* result register is its operand.
+* RUNTIMES: direct exch user reloc
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+* 026: the count and its low bit
+         S1      PA+2,0                  ; five one bits
+         A1      PS1
+         CHKA    A1,5,2
+         A2      QS1
+         CHKA    A2,1,3
+         S2      PA+1,0                  ; 64 one bits
+         A3      QS2
+         CHKA    A3,0,4
+         A4      PS2
+         CHKA    A4,D'64,5
+         A4      QS0                     ; j = 0: zero
+         CHKA    A4,0,6
+* 174ij1 and 174ij2 over five elements; the sixth is left alone
+         A1      6
+         VL      A1
+         A0      PF
+         V2      ,A0,1
+         V3      ,A0,1
+         A1      5
+         VL      A1
+         A0      PA
+         V1      ,A0,1
+         V2      PV1
+         V3      QV1
+         A2      0
+         S1      V2,A2
+         CHKS    S1,0,7
+         S1      V3,A2
+         CHKS    S1,0,10
+         A2      1
+         S1      V2,A2
+         CHKS    S1,D'64,11
+         S1      V3,A2
+         CHKS    S1,0,12
+         A2      2
+         S1      V2,A2
+         CHKS    S1,5,13
+         S1      V3,A2
+         CHKS    S1,1,14
+         A2      3
+         S1      V2,A2
+         CHKS    S1,1,15
+         S1      V3,A2
+         CHKS    S1,1,16
+         A2      4
+         S1      V2,A2
+         CHKS    S1,D'32,17
+         S1      V3,A2
+         CHKS    S1,0,20
+         A2      5
+         S1      V2,A2
+         CHKS    S1,D'77,21
+* chained: the counts of sums, added again
+         A1      D'64
+         VL      A1
+         A0      PV
+         V1      ,A0,1
+         V4      V1+V1                   ; each element doubled: same count
+         V5      PV4
+         V6      V5+V5
+         A2      D'63
+         S1      V5,A2
+         CHKS    S1,6,22                 ; element 63 holds 63: six one bits
+         S1      V6,A2
+         CHKS    S1,D'12,23
+         A2      D'32
+         S1      V6,A2
+         CHKS    S1,2,24
+* the result register is the operand: counts in groups of eight
+         A1      D'20
+         VL      A1
+         S1      7
+         A2      0
+         V7      V1+V1
+         V7,A2   S1                      ; element 0: three one bits
+         V7      PV7
+         A2      7
+         S1      V7,A2
+         CHKS    S1,3,25
+         A2      D'8
+         S1      V7,A2
+         CHKS    S1,2,26                 ; the count of the new element 0
+         A2      D'19
+         S1      V7,A2
+         CHKS    S1,1,27
+         S1      7
+         A2      0
+         V7,A2   S1                      ; three one bits again
+         V7      QV7                     ; parities, same grouping: all one
+         A2      D'16
+         S1      V7,A2
+         CHKS    S1,1,30
+         TPASS
+         TEND    DUMPALL
+*
+PA       CON     0
+         CON     X'FFFFFFFFFFFFFFFF
+         CON     X'000000F000000001
+         CON     X'8000000000000000
+         CON     X'AAAAAAAAAAAAAAAA
+         CON     X'123456789ABCDEF0
+PF       CON     D'77
+         CON     D'77
+         CON     D'77
+         CON     D'77
+         CON     D'77
+         CON     D'77
+PV       CON     0                       ; element n holds n
+         CON     D'1
+         CON     D'2
+         CON     D'3
+         CON     D'4
+         CON     D'5
+         CON     D'6
+         CON     D'7
+         CON     D'8
+         CON     D'9
+         CON     D'10
+         CON     D'11
+         CON     D'12
+         CON     D'13
+         CON     D'14
+         CON     D'15
+         CON     D'16
+         CON     D'17
+         CON     D'18
+         CON     D'19
+         CON     D'20
+         CON     D'21
+         CON     D'22
+         CON     D'23
+         CON     D'24
+         CON     D'25
+         CON     D'26
+         CON     D'27
+         CON     D'28
+         CON     D'29
+         CON     D'30
+         CON     D'31
+         CON     D'32
+         CON     D'33
+         CON     D'34
+         CON     D'35
+         CON     D'36
+         CON     D'37
+         CON     D'38
+         CON     D'39
+         CON     D'40
+         CON     D'41
+         CON     D'42
+         CON     D'43
+         CON     D'44
+         CON     D'45
+         CON     D'46
+         CON     D'47
+         CON     D'48
+         CON     D'49
+         CON     D'50
+         CON     D'51
+         CON     D'52
+         CON     D'53
+         CON     D'54
+         CON     D'55
+         CON     D'56
+         CON     D'57
+         CON     D'58
+         CON     D'59
+         CON     D'60
+         CON     D'61
+         CON     D'62
+         CON     D'63
+         END

@@ -70,6 +70,8 @@ sim/build/fp/Vfp_tb tests/fp/xmp_ref.vec
 (cd rtl/terminal && ../../sim/build/emu/Vemu --type '?\r' --frame /tmp/screen.ppm)
 ```
 
+- `sim/build/cpu_xmp/Vcray_cpu` is the same simulation with `XMP = 1` and
+  four million words of memory, for the X-MP setting.
 - `Vcray_cpu` is the CPU with a memory model. `--mem` picks the memory timing:
   `0`, `fixed:N`, `rand:A-B`, `ddr3` or `slow`. `--step` holds each instruction
   until the one before has finished.
@@ -99,14 +101,25 @@ time, and a second random seed. All five must agree with the model.
   vectors, and `vload.cal`, vector loads at every alignment, step and length
   (written by `gen_vload.py`).
 - `tests/rtl_only/` holds programs that check themselves, for what the model
-  cannot predict: the real-time clock. They run on the RTL alone.
+  cannot predict: the real-time clock, the programmable clock and its
+  interrupt, and the console interrupt. They run on the RTL alone. A line
+  `* SIM: arguments` in such a program gives the simulator more arguments;
+  `--ctrl-c 30000,400000` makes the console ask for its interrupt in those
+  clocks. `tests/rt/rt_user.cal` has the macros these tests use to send off
+  short user programs and look at the flags they come back with.
+- `tests/xmp/` are programs for the X-MP setting, on the start-up
+  `tests/rt/rt_xmp.cal`. A program says which machine it is for with a line
+  `MACHINE XMP`; the assembler then accepts the X-MP forms, and `difftest.py`
+  runs it on the model with `--machine XMP` and on the `XMP = 1` simulation.
 - `tools/py/randprog.py` writes random programs. `tools/py/difftest.py rand FIRST LAST`
-  runs a range of seeds and keeps failing cases in `build/diff`.
+  runs a range of seeds and keeps failing cases in `build/diff`. With `--xmp`
+  both do the same for the X-MP setting, shared registers and semaphores
+  included.
 - `tests/fp/xmp_ref.vec` holds 79 floating-point cases whose results come from
   the cray-sim project's test program.
 
 Random programs do not use the exits, the monitor instructions, channel
-status or the real-time clock, and they index memory through A0 to A5 and A7.
+status or the clocks, and they index memory through A0 to A5 and A7.
 The smoke tests and the monitor cover exits, exchanges and range errors.
 
 ## Testing on a MiSTer
@@ -174,13 +187,12 @@ With Verilator on `PATH`:
 make lint
 ```
 
-This writes a fixed build ID to `lint/gen/` and runs Verilator four times
+This writes a fixed build ID to `lint/gen/` and runs Verilator three times
 with `--lint-only -Wall -f lint/rtl.f`:
 
 - the `emu` top, as built for the MiSTer
 - the `emu` top with `SHELL_TEST` defined, the memory self-test build
-- `cray_cpu` with `XMP=1`, so the X-MP paths keep compiling
-- `vector_pop_parity`, an X-MP module that no build instantiates
+- `cray_cpu` with `XMP=1`, the X-MP setting
 
 `lint/rtl.f` lists the sources from `files.qip`; update both when adding a
 synthesis source. `.v` files are parsed as Verilog 2005, as Quartus does.
@@ -215,7 +227,7 @@ For each module in a changed file, Yosys compares the working tree with the
 named revision: the same outputs, the same next state of every register and
 the same values sent to every submodule, for all inputs. A module with an
 `XMP` parameter is checked for both settings. Use it after reformatting or a
-lint clean-up, where the simulations cannot reach, such as the X-MP paths.
+lint clean-up, to cover what the simulations do not reach.
 
 It needs ports, registers and submodule instances to keep their names, and it
 does not look inside submodules; their files are checked on their own.

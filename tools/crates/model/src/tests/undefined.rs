@@ -357,3 +357,29 @@ fn constants_the_manual_lists_are_defined() {
     assert_eq!((m.v(1, 0), m.v(1, 1), m.v(1, 2)), (Some(0), Some(0), None));
     assert_eq!(m.s(6), None, "(S7) and (S7) is (S7), which is undefined");
 }
+
+#[test]
+fn a_register_less_itself_is_zero_whatever_it_holds() {
+    // No manual lists these, but the result does not depend on the register:
+    // 031 and 061 with j = k not 0, and the vector forms 145 and 157 with
+    // j = k.  `Vi Vi\\Vi` (145iii) is how CAL clears a vector register from
+    // 1982 on, also one that was never written.
+    let mut m = bare("A1 A7-A7; S1 S7-S7; V1 V2\\V2; V3 V4-V4; V5 V5\\V5; V6 V6-V6; V7 V2\\V4");
+    m.set_vl(Some(2));
+    steps(&mut m, 7);
+    assert_eq!((m.a(1), m.s(1)), (Some(0), Some(0)));
+    for i in [1, 3, 5, 6] {
+        assert_eq!(
+            (m.v(i, 0), m.v(i, 1), m.v(i, 2)),
+            (Some(0), Some(0), None),
+            "V{}",
+            i
+        );
+    }
+    // different registers: undefined as ever
+    assert_eq!(m.v(7, 0), None);
+    // register 0 named as j and k is a pair of constants, not a register
+    let mut m = bare("A1 A0-A0; S1 S0-S0");
+    steps(&mut m, 2);
+    assert_eq!((m.a(1), m.s(1)), (Some(A_MASK), Some(1 << 63)));
+}

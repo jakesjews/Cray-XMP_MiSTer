@@ -83,6 +83,7 @@ fn exit_status_saturates() {
         kind: ErrorKind::UndefinedValue,
         p: 0,
         parcels: None,
+        cpu: cray1_isa::Cpu::Cray1,
         detail: String::new(),
     };
     assert_eq!(RunResult::Error(e).exit_status(), 3);
@@ -96,9 +97,16 @@ fn other_io_words_read_zero_and_ignore_writes() {
         m.set_s(i, Some(9));
     }
     steps(&mut m, 7);
-    assert_eq!((m.s(2), m.s(3), m.s(4)), (Some(0), Some(0), Some(2)));
+    // CON_STAT keeps bit 0 of what was written as its bit 2: the console
+    // interrupt enable
+    assert_eq!((m.s(2), m.s(3), m.s(4)), (Some(0), Some(0), Some(6)));
     assert!(m.console().is_empty());
     assert!(m.written_words().is_empty());
+    let mut m = monitor_cal("3777760,0 S1; S2 3777760,0; 3777760,0 S3; S4 3777760,0");
+    m.set_s(1, Some(1));
+    m.set_s(3, Some(0o776));
+    steps(&mut m, 4);
+    assert_eq!((m.s(2), m.s(4)), (Some(6), Some(2)));
 }
 
 #[test]

@@ -12,7 +12,6 @@
 module func_top (
 	clk,
 	rst,
-	i_cpu_num,
 	i_nip_nxt,
 	i_word_nxt,
 	i_nip_vld,
@@ -27,45 +26,30 @@ module func_top (
 	o_data_to_mem,
 	o_mem_wr_en,
 	i_mem_ack,
-	//DMA interface
-	o_dma_instr,
-	o_dma_mon_mode,
-	o_dma_instr_vld,
-	o_dma_ak,
-	o_dma_aj,
-	i_dma_ai,
-	i_dma_int,
 	//Inter-cpu interface
-	o_cln,
-	o_intercpu_instr,
-	o_intercpu_monmode,
-	o_intercpu_instr_vld,
-	i_intercpu_issue,
-	o_intercpu_sj,
-	o_intercpu_si,
-	o_intercpu_ai,
-	i_intercpu_si,
-	i_intercpu_ai,
 	//Debug interface
 	o_debug,
 	i_debug_full,
 	i_single_step,
-	i_console_int,
+	i_mcu_int,
 	i_ibuf_busy,
 	o_ibuf_hold
 );
 
 
 
-	// XMP = 0: CRAY-1 behaviour (manual 2240004 rev C).  XMP = 1: the X-MP additions of
-	// the source this came from, kept compilable but not verified.
+	// XMP = 0: the CRAY-1 of 1982.  XMP = 1: the same with what a one-processor X-MP
+	// has that the operating system COS needs (CSM-0111000): the X-MP exchange
+	// package with a 24-bit P and separate instruction and data fields, four million
+	// words, the cluster number and the shared registers and semaphores, the status
+	// register, the operand range and bidirectional memory mode bits, and vector
+	// operations without recursion.  docs/CPU.md lists what each setting does.
 	parameter XMP = 0;
 
 	`include "cray_types.vh"
 	//system signals
 	input wire clk;
 	input wire rst;
-	input wire [1:0] i_cpu_num;
 	input wire [15:0] i_nip_nxt;
 	input wire [63:0] i_word_nxt;
 	input wire i_nip_vld;
@@ -83,30 +67,13 @@ module func_top (
 	input wire i_mem_ack;
 
 	//I/O interface
-	output wire [15:0] o_dma_instr;
-	output wire o_dma_mon_mode;
-	output wire o_dma_instr_vld;
-	output wire [23:0] o_dma_ak;
-	output wire [23:0] o_dma_aj;
-	input wire [23:0] i_dma_ai;
-	input wire i_dma_int;
 
 	//inter-CPU communications
-	output wire [2:0] o_cln;
-	output wire [15:0] o_intercpu_instr;
-	output wire o_intercpu_monmode;
-	output wire o_intercpu_instr_vld;
-	input wire i_intercpu_issue;
-	output wire [63:0] o_intercpu_sj;
-	output wire [63:0] o_intercpu_si;
-	output wire [23:0] o_intercpu_ai;
-	input wire [63:0] i_intercpu_si;
-	input wire [23:0] i_intercpu_ai;
 
 	output wire [31:0] o_debug;
 	input wire i_debug_full;
 	input wire i_single_step;
-	input wire i_console_int;  // CRAY-1: request the console interrupt (flag bit 31)
+	input wire i_mcu_int;  // request of the maintenance control unit: the MCU interrupt (flag bit 32)
 	input wire i_ibuf_busy;  // an instruction buffer fill is in progress
 	output wire o_ibuf_hold;  // do not start a new fill (exchange in progress)
 	//Functional unit outputs
@@ -207,8 +174,11 @@ module func_top (
 	wire [21:0] mem_addr;
 	wire        mem_ack;
 
-	//InterCPU signals
-	wire intercpu_type;
+	//X-MP: cluster number, shared registers, semaphores and status register
+	wire [23:0] shr_a;  // (SBj) for 026ij7, during the clock after it issues
+	wire [63:0] shr_s;  // the result of a 072 form, two clocks after it issues
+	wire [63:0] status_reg;  // 073i01, during the clock after it issues
+	wire        ts_hold;  // the test and set in CIP finds its semaphore set
 
 	//Exchange Package logic
 	// exchange sequencer interface
@@ -237,13 +207,13 @@ module func_top (
 	wire [23:0] p_mask = XMP ? 24'hFFFFFF : 24'h3FFFFF;  // P is 22 bits on a CRAY-1
 
 
-	reg  [ 7:0] xa;
-	reg  [ 2:0] cln;
-	wire        program_state = 1'b0;  //X-MP program state bit: not implemented
-	reg  [23:0] instr_base_addr;
-	reg  [23:0] instr_limit_addr;
-	reg  [23:0] data_base_addr;
-	reg  [23:0] data_limit_addr;
+	reg [ 7:0] xa;
+	reg [ 1:0] cln;  //X-MP cluster number
+	reg        program_state;  //X-MP program state bit: stored and loaded only
+	reg [23:0] instr_base_addr;
+	reg [23:0] instr_limit_addr;
+	reg [23:0] data_base_addr;
+	reg [23:0] data_limit_addr;
 
 	///////////////////////////////////
 	//      Mode Register            //
@@ -262,10 +232,9 @@ module func_top (
 	/////////////////////////////////
 	//      Flag Register    // 
 	///////////////////////////////// 
-	wire [10:0] flags;
+	wire [9:0] flags;
 	//individual 1-bit flags
-	reg flag_icp;  //Interrupt from Internal CPU
-	reg flag_dl;  //deadlock
+	reg flag_dl;  //deadlock (X-MP)
 	reg flag_pci;  //programmable clock interrupt
 	reg flag_mcu;  //MCU - set when MIOP send signal
 	reg flag_fpe;  //floating point error
@@ -282,11 +251,10 @@ module func_top (
 	reg [63:0] real_time_clock;
 
 	//Programmable Clock
-	reg         prog_clock_en;
-	wire        clear_prog_clk_int_req;
-	wire        set_prog_clk_int_req;
-	reg  [31:0] icd;  //interrupt countdown counter
-	reg  [31:0] ii;  //Interrupt interval register
+	reg        pclk_en;  //programmable clock: requests enabled (0014j6, 0014j7)
+	reg        pclk_req;  //programmable clock interrupt request
+	reg [31:0] icd;  //interrupt countdown counter
+	reg [31:0] ii;  //Interrupt interval register
 
 	//******************************************
 	//*           Instruction Issue            *
@@ -347,9 +315,6 @@ module func_top (
 
 	wire exchange_type;
 
-	// DMA signals
-	wire dma_type;
-	wire dma_issue;
 
 	//single_stepping
 	wire instructions_in_flight;
@@ -361,17 +326,23 @@ module func_top (
 	wire cip_issue;  // the current instruction issues this clock
 
 	//The instruction as the schedulers see it.  On a CRAY-1 the fields the manual marks x
-	//are ignored (023ijx, 026ijx, 027ijx, 072ixx, 073ixx); the X-MP gave those encodings
-	//other meanings, which the lookup tables still hold for XMP = 1.
+	//are ignored (023ijx, 026ijx, 027ijx, 072ixx, 073ixx).  The X-MP gives some of those
+	//encodings a meaning, and the lookup tables tell them by the fields left in place
+	//here: 026ij7 and 027ij7 (SBj), 072i02 and 073i02 (the semaphores), 072ij3 and
+	//073ij3 (STj) and 073i01 (the status register).  026ij1 is told apart at the
+	//population count unit.
 	reg [15:0] cip_dec;
 	always @* begin
 		cip_dec = cip;
-		if (!XMP)
-			case (cip[15:9])
-				7'o023, 7'o026, 7'o027: cip_dec = {cip[15:3], 3'b000};
-				7'o072, 7'o073:         cip_dec = {cip[15:6], 6'b000000};
-				default:                ;
-			endcase
+		case (cip[15:9])
+			7'o023: cip_dec = {cip[15:3], 3'b000};
+			7'o026, 7'o027: if (!XMP || (cip[2:0] != 3'd7)) cip_dec = {cip[15:3], 3'b000};
+			7'o072: if (!XMP || !((cip[5:0] == 6'o02) || (cip[2:0] == 3'd3))) cip_dec = {cip[15:6], 6'b000000};
+			7'o073:
+			if (!XMP || !((cip[5:0] == 6'o01) || (cip[5:0] == 6'o02) || (cip[2:0] == 3'd3)))
+				cip_dec = {cip[15:6], 6'b000000};
+			default: ;
+		endcase
 	end
 
 	always @(posedge clk) single_step <= i_single_step;
@@ -383,7 +354,9 @@ module func_top (
 	assign cip_go                 = cip_vld && !x_take_int && ok_to_run && !opnd_busy && !fetch_fault;
 	assign cip_issue              = cip_vld && issue_vld;
 
-	cray_opnd opnd (
+	cray_opnd #(
+		.XMP(XMP)
+	) opnd (
 		.i_cip (cip),
 		.o_rd_a(rd_a),
 		.o_rd_s(rd_s)
@@ -397,12 +370,25 @@ module func_top (
 	(((cip_instr==7'o062) || (cip_instr==7'o063)) && tk_busy[4]) ||
 				((cip_instr[6:2]==5'b01101) && tk_busy[3]) ||
 				((cip_instr==7'o070) && tk_busy[5]);
-	assign opnd_busy = (|(rd_a & a_res_mask)) || (|(rd_s & s_res_mask)) || vec_hold;
+	//The mode instructions 0021 to 0027 and the status register read 073i01 wait for
+	//every result on its way and for memory: a floating point error belongs to the
+	//modes that held when its instruction issued, and to the status read behind it.
+	//What is on its way is taken a clock late, to keep it out of the issue path; the
+	//instruction that issued in the clock before is covered by its own flag.
+	reg settle_busy, settle_issued;
+	always @(posedge clk) begin
+		settle_busy   <= instructions_in_flight || !mem_idle;
+		settle_issued <= cip_issue;
+	end
+	wire unsettled = settle_busy || settle_issued;
+	wire mode_hold = unsettled && (((cip[15:9] == 7'o002) && (cip[8:6] != 3'd0)) ||
+				((XMP != 0) && (cip[15:9] == 7'o073) && (cip[5:0] == 6'o01)));
+	assign opnd_busy = (|(rd_a & a_res_mask)) || (|(rd_s & s_res_mask)) || vec_hold || mode_hold || ts_hold;
 
 	/////////////////////////////////////
 	//    Logic Analyzer        //
 	/////////////////////////////////////
-	assign o_debug[31:0] = {xa[7:0], 2'b0, cip_vld && issue_vld, cln[2:0], cip_vld, issue_vld, o_p_addr[15:0]};
+	assign o_debug[31:0] = {xa[7:0], 2'b0, cip_vld && issue_vld, 1'b0, cln, cip_vld, issue_vld, o_p_addr[15:0]};
 
 	//////////////////////////////////////////
 	//     Exchange Package Logic           //
@@ -429,8 +415,10 @@ module func_top (
 	// parcel pipeline marked as a fault, and when it would become the current
 	// instruction the program range flag sets instead.  The flag cannot set in monitor
 	// mode, where the manual does not say what happens; there the fetch is not checked.
-	wire [20:0] fetch_limit = (|instr_limit_addr[23:20]) ? 21'h100000 : {1'b0, instr_limit_addr[19:0]};
-	wire [22:0] fetch_word = {1'b0, p_addr[23:2]} + {1'b0, instr_base_addr[21:0]};
+	// The X-MP has four million words and a 24-bit base.
+	wire [22:0] fetch_limit = XMP ? ((|instr_limit_addr[23:22]) ? 23'h400000 : {1'b0, instr_limit_addr[21:0]}) :
+								((|instr_limit_addr[23:20]) ? 23'h100000 : {3'b0, instr_limit_addr[19:0]});
+	wire [24:0] fetch_word = {3'b0, p_addr[23:2]} + {1'b0, XMP ? instr_base_addr : {2'b0, instr_base_addr[21:0]}};
 	assign p_oof       = !mode_mm && (fetch_word >= {2'b0, fetch_limit});
 	assign nip_in_vld  = i_nip_vld || p_oof;
 	assign fetch_fault = cip_vld && x_run && (cip_fault || (two_parcel_cip && nip_fault));
@@ -476,6 +464,15 @@ module func_top (
 	assign o_p_addr = p_addr + {instr_base_addr[21:0], 2'b0};
 
 	// Outgoing package word.
+	// X-MP layout (CSM-0111000 figure 3-3):
+	//   word 0  P [47:24]                                             A0 [23:0]
+	//   word 1  IBA [47:29]  WS FPS BDM - IMM [28:24]                 A1
+	//   word 2  ILA [47:29]  IOR ICM IFP IUM MM [28:24]               A2
+	//   word 3  DL [48]  XA [47:40]  VL [39:33]  F [32:24]            A3
+	//   word 4  DBA [47:29]  PS [28]  CLN [25:24]                     A4
+	//   word 5  DLA [47:29]                                           A5
+	//   words 6-7  A6, A7,  words 8-15  S0-S7
+	// The processor number, the memory error fields, VNU, ESVL and EAM are stored as 0.
 	// CRAY-1 layout (manual figure 3-8):
 	//   word 0  P [45:24]                          A0 [23:0]
 	//   word 1  BA [45:28]                         A1
@@ -486,14 +483,14 @@ module func_top (
 	always @* begin
 		if (XMP)
 			case (x_cnt)
-				4'b0000: x_word = {i_cpu_num[1:0], 14'b0, p_save, a_ex_data};
+				4'b0000: x_word = {16'b0, p_save, a_ex_data};
 				4'b0001:
 				x_word = {16'b0, instr_base_addr[23:5], mode_ws, mode_fps, mode_bdm, 1'b0, mode_imm, a_ex_data};
 				4'b0010:
 				x_word = {16'b0, instr_limit_addr[23:5], mode_ior, mode_icm, mode_ifp, mode_ium, mode_mm, a_ex_data};
-				4'b0011: x_word = {14'b0, flags[10:9], xa, vector_length, flags[8:0], a_ex_data};
-				4'b0100: x_word = {16'b0, data_base_addr[23:6], 1'b0, program_state, 1'b0, cln[2:0], a_ex_data};
-				4'b0101: x_word = {16'b0, data_limit_addr[23:6], 6'b0, a_ex_data};
+				4'b0011: x_word = {15'b0, flag_dl, xa, vector_length, flags[8:0], a_ex_data};
+				4'b0100: x_word = {16'b0, data_base_addr[23:5], program_state, 2'b0, cln, a_ex_data};
+				4'b0101: x_word = {16'b0, data_limit_addr[23:5], 5'b0, a_ex_data};
 				4'b0110: x_word = {40'b0, a_ex_data};
 				4'b0111: x_word = {40'b0, a_ex_data};
 				default: x_word = s_ex_data;
@@ -552,10 +549,13 @@ module func_top (
 			xa <= ((cip[15:6]==10'o0013) && (XMP ? (cip[2:0]==3'b0) : 1'b1) && cip_issue && mode_mm) ? a_j_data[11:4] : xa;   //(Aj) is 0 when j is 0
 
 	//Set the mode bits - Pg 3-9 of CSM-0111000
+	//0021 and 0022 switch the floating point interrupt mode on both machines.  On the
+	//X-MP 0023 and 0024 switch the operand range interrupt mode and 0026 and 0025 the
+	//bidirectional memory mode, which is only carried.  They wait for results on their
+	//way (mode_hold).
+	wire mode_set = cip_issue && (cip[15:9] == 7'o002);
 	always @(posedge clk)
 		if (rst) begin
-			mode_ws  <= 1'b0;
-			mode_fps <= 1'b0;
 			mode_bdm <= 1'b0;
 			mode_imm <= 1'b0;
 			mode_ior <= 1'b0;
@@ -564,8 +564,6 @@ module func_top (
 			mode_ium <= 1'b0;
 			mode_mm  <= 1'b0;
 		end else if (XMP && x_load && (x_cnt == 4'b0001)) begin
-			mode_ws  <= x_data[28];
-			mode_fps <= x_data[27];
 			mode_bdm <= x_data[26];
 			mode_imm <= x_data[24];
 		end else if (x_load && (x_cnt == 4'b0010)) begin
@@ -574,15 +572,42 @@ module func_top (
 			mode_ifp <= x_data[26];
 			mode_ium <= x_data[25];
 			mode_mm  <= x_data[24];
-		end else if (!XMP && cip_issue && (cip[15:6] == 10'o0021)) mode_ifp <= 1'b1;
-		else if (!XMP && cip_issue && (cip[15:6] == 10'o0022)) mode_ifp <= 1'b0;
+		end else if (mode_set)
+			case (cip[8:6])
+				3'd1:    mode_ifp <= 1'b1;
+				3'd2:    mode_ifp <= 1'b0;
+				3'd3:    mode_ior <= 1'b1;
+				3'd4:    mode_ior <= 1'b0;
+				3'd5:    mode_bdm <= 1'b0;
+				3'd6:    mode_bdm <= 1'b1;
+				default: ;
+			endcase
+
+	//X-MP status bits of word 1.  FPS: a floating point error has occurred, whatever
+	//the interrupt mode; cleared by 0021 and 0022.  WS: the exchange found a test and
+	//set waiting in CIP; it is not loaded from a package.
+	always @(posedge clk)
+		if (rst) begin
+			mode_fps <= 1'b0;
+			mode_ws  <= 1'b0;
+		end else if (XMP && x_load && (x_cnt == 4'b0001)) begin
+			mode_fps <= x_data[27];
+			mode_ws  <= 1'b0;
+		end else begin
+			if (mode_set && ((cip[8:6] == 3'd1) || (cip[8:6] == 3'd2))) mode_fps <= 1'b0;
+			else if (fp_range_err) mode_fps <= 1'b1;
+			if (x_request && ts_hold) mode_ws <= 1'b1;
+		end
+
+	always @(posedge clk)
+		if (rst) program_state <= 1'b0;
+		else if (XMP && x_load && (x_cnt == 4'b0100)) program_state <= x_data[28];
 
 
 
 	//Now configure all of the flag bits
 	always @(posedge clk)
 		if (rst) begin
-			flag_icp <= 1'b0;
 			flag_dl  <= 1'b0;
 			flag_pci <= 1'b0;
 			flag_mcu <= 1'b0;
@@ -595,7 +620,6 @@ module func_top (
 			flag_nex <= 1'b0;
 		end  //Load initial values from the exchange package.
 		else if (x_load && (x_cnt == 4'b0011)) begin
-			flag_icp <= XMP ? x_data[49] : 1'b0;  //bit 14
 			flag_dl  <= XMP ? x_data[48] : 1'b0;  //bit 15
 			flag_pci <= x_data[32];  //bit 31
 			flag_mcu <= x_data[31];  //bit 32
@@ -608,32 +632,32 @@ module func_top (
 			flag_nex <= x_data[24];  //bit 39
 		end  //Now we need to take care of the conditions that actually set all of these flags
 		else if (!x_swap) begin
-			//Interrupt from Internal CPU - Set when another CPU issues instr 001401
-			flag_icp <= 1'b0;
-			//Deadlock - set when all CPUs in a cluster are holding issue on a test & set instr
-			flag_dl <= 1'b0;
-			//Programmable clock interrupt - set when the interrupt countdown counter in
-			//the programmable clock equals 0.
-			flag_pci <= mode_mm ? 1'b0 :
-							XMP     ? ((flag_pci || set_prog_clk_int_req) && !clear_prog_clk_int_req) :
-									  (flag_pci || i_console_int);   //the console interrupt on a CRAY-1
-			//MCU interrupt - set when the MIOP sends this signal
-			flag_mcu <= 1'b0;
+			//Deadlock - set when all CPUs in a cluster are holding issue on a test & set instr.
+			//With one CPU that is whenever a test and set finds its semaphore set.
+			flag_dl  <= mode_mm ? 1'b0 : (flag_dl || ts_hold);
+			//Programmable clock interrupt - set while the clock's request is set.  The
+			//request is made when the interrupt countdown counter reaches 0 and stays
+			//until 0014j5 clears it, so one made in monitor mode is taken on leaving it.
+			flag_pci <= mode_mm ? 1'b0 : (flag_pci || pclk_req);
+			//MCU interrupt - set while the maintenance control unit (here the console)
+			//holds its request
+			flag_mcu <= mode_mm ? 1'b0 : (flag_mcu || i_mcu_int);
 			//Floating Point Error - set when the floating point range error occurs in any of
 			//the floating-point functional units and the enable floating-point interrupt flag is set. 
 			flag_fpe <= mode_mm ? 1'b0 : (flag_fpe || (mode_ifp && fp_range_err));
 			//Operand Range Error - set when the data reference is made outside the boundaries of 
 			//the data base address and data limit address registers, and the Enable Operand Range
 			//Interrupt flag is set. 
-			flag_ore <= mode_mm ? 1'b0 : (flag_ore || mem_range_err);
+			//On the X-MP the mode bit IOR must be set as well.
+			flag_ore <= mode_mm ? 1'b0 : (flag_ore || (mem_range_err && ((XMP == 0) || mode_ior)));
 			//Program Range Error - set when an instruction fetch is made outside the boundaries of 
 			//the Instruction Base Address and Instruction Limit Address registers.
 			flag_pre <= mode_mm ? 1'b0 : (flag_pre || fetch_fault || branch_range_err);
 			//Memory Error - set when a correctable or uncorrectable memory error occurs and the
 			//corresponding enable memory error mode bit is set in the M register
-			flag_me <= 1'b0;
+			flag_me  <= 1'b0;
 			//I/O Interrupt flag - set when a 6 Mbyte channel or the 1250 Mbyte channel completes a transfer
-			flag_ioi <= mode_mm ? 1'b0 : i_dma_int;
+			flag_ioi <= 1'b0;  //no channels yet
 			//Error Exit - set by an error exit instruction (000)
 			flag_eex <= mode_mm ? 1'b0 : (((cip[15:9] == 7'o000) && cip_vld && issue_vld) || flag_eex);
 			//Normal Exit - set by a normal exit instruction (004)
@@ -660,18 +684,18 @@ module func_top (
 	//and the conditions for setting an F register are present, the
 	//flag remains cleared and no exchange sequence is initiated.
 
-	assign flags[10:0] = {
-		flag_icp, flag_dl, flag_pci, flag_mcu, flag_fpe, flag_ore, flag_pre, flag_me, flag_ioi, flag_eex, flag_nex
+	assign flags[9:0] = {
+		flag_dl, flag_pci, flag_mcu, flag_fpe, flag_ore, flag_pre, flag_me, flag_ioi, flag_eex, flag_nex
 	};
 
 	//Fire an interrupt when the current instruction executes, we're not in monitor mode, and a flag has been set	
-	assign signal_interrupt = x_run && |flags[10:0] && !mode_mm;
+	assign signal_interrupt = x_run && |flags[9:0] && !mode_mm;
 
-	//Cluster Number
+	//Cluster number (X-MP): from the package, or by 0014j3 in monitor mode
 	always @(posedge clk)
-		if (rst) cln <= 3'b0;
-		else if (XMP && x_load && (x_cnt == 4'b0100)) cln <= x_data[26:24];
-		else if ((cip[15:6] == 10'b0000001100) && (cip[2:0] == 3'b011) && cip_vld) cln <= cip[5:3];
+		if (rst) cln <= 2'b0;
+		else if (XMP && x_load && (x_cnt == 4'b0100)) cln <= x_data[25:24];
+		else if (XMP && cip_issue && mode_mm && (cip[15:6] == 10'o0014) && (cip[2:0] == 3'd3)) cln <= cip[4:3];
 
 	//1) accept the incoming data from the instruction buffers
 	always @(posedge clk)
@@ -742,31 +766,30 @@ module func_top (
 	always @* begin
 		if (!x_swap)
 			case (s_result_src[4:0])
-				SBUS_IMM: s_wr_data = s_imm_out;
-				SBUS_COMP_IMM: s_wr_data = s_imm_out;
-				SBUS_S_LOG: s_wr_data = s_log_out;
-				SBUS_S_SHIFT: s_wr_data = s_shft_out;
-				SBUS_S_ADD: s_wr_data = s_add_out;
-				SBUS_FP_ADD: s_wr_data = f_add_out;
-				SBUS_FP_MULT: s_wr_data = f_mul_out;
-				SBUS_FP_RA: s_wr_data = f_ra_out;
+				SBUS_IMM:       s_wr_data = s_imm_out;
+				SBUS_COMP_IMM:  s_wr_data = s_imm_out;
+				SBUS_S_LOG:     s_wr_data = s_log_out;
+				SBUS_S_SHIFT:   s_wr_data = s_shft_out;
+				SBUS_S_ADD:     s_wr_data = s_add_out;
+				SBUS_FP_ADD:    s_wr_data = f_add_out;
+				SBUS_FP_MULT:   s_wr_data = f_mul_out;
+				SBUS_FP_RA:     s_wr_data = f_ra_out;
 				SBUS_CONST_GEN: s_wr_data = s_const_out;
-				SBUS_RTC: s_wr_data = real_time_clock;
-				SBUS_V_MASK: s_wr_data = vector_mask;
-				SBUS_T_BUS: s_wr_data = t_jk_data;
-				SBUS_V0: s_wr_data = v_rd_data[63:0];
-				SBUS_V1: s_wr_data = v_rd_data[127:64];
-				SBUS_V2: s_wr_data = v_rd_data[191:128];
-				SBUS_V3: s_wr_data = v_rd_data[255:192];
-				SBUS_V4: s_wr_data = v_rd_data[319:256];
-				SBUS_V5: s_wr_data = v_rd_data[383:320];
-				SBUS_V6: s_wr_data = v_rd_data[447:384];
-				SBUS_V7: s_wr_data = v_rd_data[511:448];
-				SBUS_MEM: s_wr_data = data_from_mem_to_regs;
-				SBUS_INTERCPU:
-				s_wr_data = XMP ? i_intercpu_si : real_time_clock;  //072: the clock is in the CPU on a CRAY-1
-				SBUS_HI_SR: s_wr_data = {22'b0, i_cpu_num[1:0], 5'b0, cln[2:0], 32'b0};
-				default: s_wr_data = 64'b0;
+				SBUS_RTC:       s_wr_data = real_time_clock;
+				SBUS_V_MASK:    s_wr_data = vector_mask;
+				SBUS_T_BUS:     s_wr_data = t_jk_data;
+				SBUS_V0:        s_wr_data = v_rd_data[63:0];
+				SBUS_V1:        s_wr_data = v_rd_data[127:64];
+				SBUS_V2:        s_wr_data = v_rd_data[191:128];
+				SBUS_V3:        s_wr_data = v_rd_data[255:192];
+				SBUS_V4:        s_wr_data = v_rd_data[319:256];
+				SBUS_V5:        s_wr_data = v_rd_data[383:320];
+				SBUS_V6:        s_wr_data = v_rd_data[447:384];
+				SBUS_V7:        s_wr_data = v_rd_data[511:448];
+				SBUS_MEM:       s_wr_data = data_from_mem_to_regs;
+				SBUS_INTERCPU:  s_wr_data = XMP ? shr_s : real_time_clock;  //072: the clock, or an X-MP shared register
+				SBUS_HI_SR:     s_wr_data = status_reg;
+				default:        s_wr_data = 64'b0;
 			endcase
 		else s_wr_data = x_data;
 	end
@@ -805,9 +828,9 @@ module func_top (
 				ABUS_S_POP:    a_wr_data = a_poplz_out;
 				ABUS_A_ADD:    a_wr_data = a_add_out;
 				ABUS_A_MULT:   a_wr_data = a_mul_out;
-				ABUS_CHANNEL:  a_wr_data = i_dma_ai[23:0];
+				ABUS_CHANNEL:  a_wr_data = 24'b0;  //033: no channels yet
 				ABUS_MEM:      a_wr_data = data_from_mem_to_regs[23:0];
-				ABUS_INTERCPU: a_wr_data = i_intercpu_ai;
+				ABUS_INTERCPU: a_wr_data = shr_a;
 				default:       a_wr_data = 24'b0;
 			endcase
 		else a_wr_data = x_data[23:0];
@@ -817,9 +840,7 @@ module func_top (
 	assign a_wr_addr = !x_swap ? a_result_dest : a_ex_addr;
 
 	//Track V-type instructions
-	v_scheduler #(
-		.XMP(XMP)
-	) vsched (
+	v_scheduler vsched (
 		.i_cip         (cip),
 		.i_cip_vld     (cip_go),
 		.i_a_res_mask  (a_res_mask),
@@ -852,8 +873,9 @@ localparam VLOG      = 3'b000,   //vector logical
 	assign vfu_busy[2] = vadd_busy;
 	assign vfu_busy[3] = fp_mul_busy;
 	assign vfu_busy[4] = fp_add_busy;
-	assign vfu_busy[5] = fp_ra_busy;
-	assign vfu_busy[6] = vpop_busy;
+	//the reciprocal and the population count are both "174 in process": one at a time
+	assign vfu_busy[5] = fp_ra_busy | vpop_busy;
+	assign vfu_busy[6] = fp_ra_busy | vpop_busy;
 	assign vfu_busy[7] = mem_busy;
 	assign mem_idle    = !mem_busy;
 	assign v_type      = (cip[15:14] == 2'b11);
@@ -869,10 +891,8 @@ localparam VLOG      = 3'b000,   //vector logical
 						 (v_issue && v_type && !mem_type) ||
 						 (branch_issue && branch_type) ||
 						 (mem_issue && mem_type && !s_type && !a_type) ||
-						 (i_intercpu_issue && intercpu_type) ||
-						 (dma_issue && dma_type) || 
 						 exchange_type ||
-						 !(s_type || a_type || v_type || branch_type || mem_type || exchange_type || intercpu_type || dma_type) ||
+						 !(s_type || a_type || v_type || branch_type || mem_type || exchange_type) ||
 						 !cip_vld) && (ok_to_run || (mem_type && mem_issue)) && x_run && !x_take_int && !(cip_vld && opnd_busy) && !fetch_fault;
 
 
@@ -891,21 +911,23 @@ localparam VLOG      = 3'b000,   //vector logical
 	wire [6:0] vl_count = (vector_length[5:0] == 6'd0) ? 7'd64 : {1'b0, vector_length[5:0]};
 	wire [4:0] v_rec_delay = {1'b0, v_fu_delay} + 5'd2;  //recursive operand delay: unit time + 2
 
-	//units with a tracker: 0 logical, 1 shift, 2 integer add, 3 FP multiply, 4 FP add, 5 reciprocal
-	wire [ 5:0] tk_busy;
-	wire [15:0] tk_instr     [0:5];
-	wire [63:0] tk_sj        [0:5];
-	wire [23:0] tk_ak        [0:5];
-	wire [ 5:0] tk_in_valid;
-	wire [ 5:0] tk_in_idx    [0:5];
-	wire [ 5:0] tk_in_first;
-	wire [ 5:0] tk_in_last;
-	wire [ 5:0] tk_out_valid;
-	wire [ 5:0] tk_out_idx   [0:5];
-	wire [ 5:0] tk_out_last;
-	wire [ 2:0] tk_out_dest  [0:5];
-	wire [ 5:0] tk_out_wr_v;
-	wire [63:0] fu_out       [0:5];
+	//units with a tracker: 0 logical, 1 shift, 2 integer add, 3 FP multiply, 4 FP add,
+	//5 reciprocal, 6 population count
+	localparam NTK = 7;
+	wire [NTK-1:0] tk_busy;
+	wire [   15:0] tk_instr     [0:NTK-1];
+	wire [   63:0] tk_sj        [0:NTK-1];
+	wire [   23:0] tk_ak        [0:NTK-1];
+	wire [NTK-1:0] tk_in_valid;
+	wire [    5:0] tk_in_idx    [0:NTK-1];
+	wire [NTK-1:0] tk_in_first;
+	wire [NTK-1:0] tk_in_last;
+	wire [NTK-1:0] tk_out_valid;
+	wire [    5:0] tk_out_idx   [0:NTK-1];
+	wire [NTK-1:0] tk_out_last;
+	wire [    2:0] tk_out_dest  [0:NTK-1];
+	wire [NTK-1:0] tk_out_wr_v;
+	wire [   63:0] fu_out       [0:NTK-1];
 
 	assign fu_out[0] = v_log_out;
 	assign fu_out[1] = v_shft_out;
@@ -913,12 +935,13 @@ localparam VLOG      = 3'b000,   //vector logical
 	assign fu_out[3] = f_mul_out;
 	assign fu_out[4] = f_add_out;
 	assign fu_out[5] = f_ra_out;
+	assign fu_out[6] = v_pop_out;
 
 	genvar gu;
 	generate
-		for (gu = 0; gu < 6; gu = gu + 1) begin : g_track
+		for (gu = 0; gu < NTK; gu = gu + 1) begin : g_track
 			v_optrack #(
-				.L((gu == 0) ? 2 : (gu == 1) ? 4 : (gu == 2) ? 3 : (gu == 3) ? 7 : (gu == 4) ? 6 : 14)
+				.L((gu == 0) ? 2 : (gu == 1) ? 4 : (gu == 2) ? 3 : (gu == 3) ? 7 : (gu == 4) ? 6 : (gu == 5) ? 14 : 6)
 			) track (
 				.clk        (clk),
 				.rst        (rst),
@@ -985,7 +1008,7 @@ localparam VLOG      = 3'b000,   //vector logical
 					wr_idx  = vmem_wr_idx;
 					wr_data = data_from_mem_to_regs;
 				end
-				for (u = 0; u < 6; u = u + 1)
+				for (u = 0; u < NTK; u = u + 1)
 				if (tk_out_valid[u] && tk_out_wr_v[u] && (tk_out_dest[u] == gr)) begin
 					wr_en   = 1'b1;
 					wr_idx  = tk_out_idx[u];
@@ -998,7 +1021,7 @@ localparam VLOG      = 3'b000,   //vector logical
 				.rst        (rst),
 				.i_rd_start (vread_start[gr] && !mem_type),
 				.i_len      (vl_count),
-				.i_recursive(vwrite_start[gr]),
+				.i_recursive(vwrite_start[gr] && (XMP == 0)),  //no recursion on the X-MP
 				.i_rec_delay(v_rec_delay),
 				.i_elem_idx (a_k_data[5:0]),
 				.i_mem_rd   (vmem_store && (vmem_num == gr)),
@@ -1022,7 +1045,7 @@ localparam VLOG      = 3'b000,   //vector logical
 			integer c;
 			always @* begin
 				fu_wr = 1'b0;
-				for (c = 0; c < 6; c = c + 1)
+				for (c = 0; c < NTK; c = c + 1)
 				if (tk_out_valid[c] && tk_out_wr_v[c] && (tk_out_dest[c] == gr)) fu_wr = 1'b1;
 			end
 			always @(posedge clk)
@@ -1179,7 +1202,16 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_result(v_add_out)
 	);
 
-	assign vpop_busy = 1'b0;
+	//Vector Population Count unit (174ij1 counts, 174ij2 their parities)
+	wire [63:0] v_pop_out;
+	vector_pop vpop (
+		.clk     (clk),
+		.i_parity(tk_instr[6][1]),
+		.i_d     (vreg_sel(v_rd_data, tk_instr[6][5:3])),
+		.o_result(v_pop_out)
+	);
+
+	assign vpop_busy = tk_busy[6];
 
 	assign vlog_busy   = tk_busy[0];
 	assign vshift_busy = tk_busy[1];
@@ -1279,10 +1311,11 @@ localparam VLOG      = 3'b000,   //vector logical
 
 	//Scalar Population Count and Leading-Zero Count unit
 	scalar_pop_lz spoplz (
-		.clk     (clk),         //system clock input
-		.i_issue (cip_issue),
-		.i_instr (cip_instr),   //7-bit instruction input
-		.i_sj    (s_j_data),    //64-bit sj input
+		.clk     (clk),                                            //system clock input
+		.i_issue (cip_issue && !((XMP != 0) && (cip_k == 3'd7))),  //not the X-MP's 026ij7, Ai SBj
+		.i_instr (cip_instr),                                      //7-bit instruction input
+		.i_parity(cip_k == 3'd1),                                  //026ij1
+		.i_sj    (s_j_data),                                       //64-bit sj input
 		.o_result(a_poplz_out)
 	);  //24-bit output
 
@@ -1345,7 +1378,9 @@ localparam VLOG      = 3'b000,   //vector logical
 	//         Memory Controller Functional Unit           //
 	/////////////////////////////////////////////////////////
 
-	mem_fu mfu (
+	mem_fu #(
+		.XMP(XMP)
+	) mfu (
 		.clk              (clk),
 		.rst              (rst),
 		.i_cip            (cip),
@@ -1409,51 +1444,76 @@ localparam VLOG      = 3'b000,   //vector logical
 
 
 	/////////////////////////////////////////////////////////
-	//          DMA "I/O" Controller Logic                 //
+	//   X-MP: shared registers, semaphores, status        //
 	/////////////////////////////////////////////////////////
+	//Three clusters, each with eight 24-bit SB registers, eight 64-bit ST registers and
+	//32 semaphores (CSM-0111000 pages 2-17, 5-17, 5-32, 5-34, 5-59).  The cluster number
+	//picks the set; in cluster 0 a store does nothing and a load gives zero.
+	//  026ij7  Ai SBj      027ij7  SBj Ai
+	//  072ij3  Si STj      073ij3  STj Si
+	//  072i02  Si SM       073i02  SM Si      the semaphores are bits 63 to 32, SM0 first
+	//  0034jk  test and set semaphore jk: it cannot issue while the semaphore is set
+	//  0036jk  clear semaphore jk          0037jk  set semaphore jk
+	//  073i01  Si SR0      the status register
+	//A store acts in the clock its instruction issues, and a load takes what the
+	//register holds in that clock, so a load right behind a store sees it.
+	wire xmp_sem = (XMP != 0) && (cip[15:9] == 7'o003) && cip[8] && (cip[8:6] != 3'd5);  //0034, 0036, 0037
 
-	assign o_dma_instr     = cip;
-	assign o_dma_mon_mode  = mode_mm;
-	assign o_dma_instr_vld = cip_vld;
-	assign o_dma_ak        = a_k_data;
-	assign o_dma_aj        = a_j_data;
+	generate
+		if (XMP) begin : g_shared
+			(* ramstyle = "MLAB, no_rw_check" *)reg [23:0] sb  [0:31];
+			(* ramstyle = "MLAB, no_rw_check" *)reg [63:0] st  [0:31];
+			reg [31:0] sm  [ 0:3];  //bit 31 is semaphore 0; cluster 0 is never used
+			reg [23:0] a_r;
+			reg [63:0] s_r1, s_r2, sr_r;
 
-	assign dma_type = ((cip[15:6] == 10'o0010) || (cip[15:6] == 10'o0011) || (cip[15:6] == 10'o0012));
+			wire        clustered = (cln != 2'd0);
+			wire [ 4:0] reg_n = {cln, cip[5:3]};
+			wire [ 4:0] sem_n = 5'd31 - cip[4:0];
+			wire        is_ts = (cip[15:6] == 10'o0034);
+			wire [31:0] sem_now = sm[cln];
 
-	assign dma_issue = dma_type & !(|a_res_mask);
+			assign ts_hold = cip_vld && is_ts && clustered && sem_now[sem_n];
 
-	/////////////////////////////////////////////////////////
-	//        InterCPU Communication Logic                 //
-	/////////////////////////////////////////////////////////
+			always @(posedge clk) begin
+				if (cip_issue && clustered) begin
+					if ((cip[15:9] == 7'o027) && (cip[2:0] == 3'd7)) sb[reg_n] <= a_i_data;
+					if ((cip[15:9] == 7'o073) && (cip[2:0] == 3'd3)) st[reg_n] <= s_i_data;
+					if ((cip[15:9] == 7'o073) && (cip[5:0] == 6'o02)) sm[cln] <= s_i_data[63:32];
+					if (cip[15:6] == 10'o0036) sm[cln][sem_n] <= 1'b0;
+					if (is_ts || (cip[15:6] == 10'o0037)) sm[cln][sem_n] <= 1'b1;
+				end
+				a_r <= clustered ? sb[reg_n] : 24'b0;
+				//072i00 is still the real-time clock
+				s_r1 <= (cip[5:0] == 6'o00) ? real_time_clock : !clustered ? 64'b0 : (cip[2:0] == 3'd3) ? st[reg_n] : {sem_now, 32'b0};
+				s_r2 <= s_r1;
+				//clustered, program state, floating point error status and the three mode
+				//bits; the cluster number only in monitor mode; ones in the low half
+				sr_r <= {
+					clustered,
+					5'b0,
+					program_state,
+					5'b0,
+					mode_fps,
+					mode_ifp,
+					mode_ior,
+					mode_bdm,
+					14'b0,
+					mode_mm ? cln : 2'b0,
+					32'hFFFFFFFF
+				};
+			end
 
-	//Figure out when it's an instruction targeting the interCPU communication block
-
-	assign intercpu_type =   (XMP != 0) && cip_vld && 
-					  (((cip[15:6]==10'b0000001100) && (cip[2:0]==3'b0)) || //0014j0 RT Sj
-		((cip[15:9] == 7'b0111010) && (cip[5:0] == 6'b0)) ||  //072i00 Si RT
-		((cip[15:9] == 7'b0010110) && (cip[2:0] == 3'h7)) ||  //026ij7 Ai SBj
-		((cip[15:9] == 7'b0010111) && (cip[2:0] == 3'h7)) ||  //027ij7 SBj Ai
-		((cip[15:9] == 7'b0111010) && (cip[2:0] == 3'h3)) ||  //072ij3 Si STj
-		((cip[15:9] == 7'b0111011) && (cip[2:0] == 3'h3)) ||  //073ij3 STj Si
-		((cip[15:6] == 10'b0000011100)) ||  //0034jk SMjk 1,TS
-		((cip[15:6] == 10'b0000011110)) ||  //0036jk SMjk 0
-		((cip[15:6] == 10'b0000011111)) ||  //0037jk SMjk 1
-		((cip[15:9] == 7'b0111010) && (cip[5:0] == 6'h02)) ||  //072i02 Si SM
-		((cip[15:9] == 7'b0111011) && (cip[5:0] == 6'h02)));  //073i02 SM Si
-
-	//Make I/O assignments							 
-	assign o_cln[2:0]           = cln[2:0];
-	assign o_intercpu_instr     = cip[15:0];
-	//For now, we're going to gate sending instr_vld to the intercpu register block until there are no
-	//outstanding writes to A/S registers. This will kill performance, but i don't *think* access to these
-	//is terribly performance-critical. This really just underscores the need for a central scoreboard to 
-	//check for hazards in a straightforward/high-performance sort of way. The intercpu block can then be dumb,
-	//and not worry about hazards.
-	assign o_intercpu_instr_vld = cip_vld && !(|a_res_mask) && !(|s_res_mask);
-	assign o_intercpu_monmode   = mode_mm;
-	assign o_intercpu_sj        = s_j_data;
-	assign o_intercpu_si        = s_i_data;
-	assign o_intercpu_ai        = a_i_data;
+			assign shr_a      = a_r;
+			assign shr_s      = s_r2;
+			assign status_reg = sr_r;
+		end else begin : g_no_shared
+			assign ts_hold    = 1'b0;
+			assign shr_a      = 24'b0;
+			assign shr_s      = 64'b0;
+			assign status_reg = 64'b0;
+		end
+	endgenerate
 
 	/////////////////////////////////////////////////////////
 	//         Misc. Registers, instruction decoding, etc. //
@@ -1466,44 +1526,55 @@ localparam VLOG      = 3'b000,   //vector logical
 
 	always @(posedge clk)
 		real_time_clock <= rst ? 64'b0 :
-					  ((cip[15:6]==10'o0014) && (XMP ? (cip_k==3'o0) : 1'b1) && cip_issue && mode_mm) ? s_j_data : (real_time_clock + 64'b1);
+					  ((cip[15:6]==10'o0014) && (cip_k==3'o0) && cip_issue && mode_mm) ? s_j_data : (real_time_clock + 64'b1);
 
 
-	//Programmable Clock
-	// 0014j4     PCI Sj      Enter Interrupt Interval register with (Sj)
+	//Programmable clock (HR-0004 rev F pages 4-10 and 6-23), monitor mode only:
+	// 0014j4    PCI Sj  enter the interrupt interval and the countdown with (Sj)
+	// 0014j5    CCI     clear the interrupt request
+	// 0014j6    ECI     enable the interrupt request
+	// 0014j7    DCI     disable the interrupt request
+	//The countdown runs all the time.  At zero it takes the interval again and, if
+	//enabled, sets the request, which stays set until 0014j5.  The request raises
+	//flag bit 31 outside monitor mode.
+	//The instruction acts in the clock after it issues.  No program can tell (the
+	//clock cannot be read and its interrupt is not taken in monitor mode), and it
+	//keeps the issue logic away from these registers.
+	reg        pclk_op;
+	reg [ 2:0] pclk_k;
+	reg [31:0] pclk_sj;
+	always @(posedge clk) begin
+		pclk_op <= !rst && (cip[15:6] == 10'o0014) && cip_k[2] && cip_issue && mode_mm;
+		pclk_k  <= cip_k;
+		pclk_sj <= s_j_data[31:0];
+	end
+
+	wire pclk_load = pclk_op && (pclk_k == 3'd4);
 	always @(posedge clk)
-		ii[31:0] <= rst ? 32'b0 : 
-					((cip[15:6]==10'o0014) && (cip[2:0]==3'h4) && cip_vld && issue_vld) ? s_j_data[31:0] : ii[31:0];
+		if (rst) begin
+			ii       <= 32'b0;
+			icd      <= 32'b0;
+			pclk_en  <= 1'b0;
+			pclk_req <= 1'b0;
+		end else begin
+			if (pclk_load) begin
+				ii  <= pclk_sj;
+				icd <= pclk_sj;
+			end else if (icd == 32'b0) icd <= ii;
+			else icd <= icd - 32'b1;
 
-	// 001405    CCI     Clear the programmable clock interrupt request
-	assign clear_prog_clk_int_req = (cip[15:0] == 16'o001405) && cip_vld && issue_vld;
+			if (pclk_op && (pclk_k == 3'd5)) pclk_req <= 1'b0;
+			if (!pclk_load && (icd == 32'b0) && pclk_en) pclk_req <= 1'b1;
 
-	// 001406    ECI     Enable programmable clock interrupt request
-	// 001407    DCI     Disable programmable clock interrupt request
-	always @(posedge clk)
-		prog_clock_en <= (rst || !XMP) ? 1'b0 : 
-								   (cip[15:0]==16'o001406 && cip_vld && issue_vld) ? 1'b1 :
-											 (cip[15:0]==16'o001407 && cip_vld && issue_vld) ? 1'b0 :
-											 prog_clock_en;
-
-	//ICD - Interrupt Countdown counter:
-	//         -> set it when the PCI Sj instruction gets executed
-	//         -> If it's enabled, decrement every cycle until it reaches 0, then restore to ii[31:0]
-	//         -> Otherwise, just hold steady
-	always @(posedge clk)
-		icd[31:0] <= rst ? 32'b0 :
-					 ((cip[15:6]==10'o0014) && (cip[2:0]==3'h4) && cip_vld && issue_vld) ? s_j_data[31:0] :
-							(prog_clock_en && icd[31:0]==32'b0) ? ii[31:0] :
-							prog_clock_en ? (icd[31:0] - 32'b1) :
-							icd[31:0];
-
-	assign set_prog_clk_int_req = prog_clock_en && (icd[31:0] == 32'b0);
+			if (pclk_op && (pclk_k == 3'd6)) pclk_en <= 1'b1;
+			if (pclk_op && (pclk_k == 3'd7)) pclk_en <= 1'b0;
+		end
 
 
 	//Control the vector mask register
 	always @(posedge clk)
 		if (rst) vector_mask <= 64'hFFFFFFFFFFFFFFFF;
-		else if (cip_issue && (cip_instr == 7'o003) && !intercpu_type) vector_mask <= s_j_data;  //(Sj) is 0 when j is 0
+		else if (cip_issue && (cip_instr == 7'o003) && !xmp_sem) vector_mask <= s_j_data;  //(Sj) is 0 when j is 0
 		else if (vm_test_out)
 			vector_mask <= (tk_out_idx[0]==6'd0) ? {v_test_out,63'b0} : (vector_mask | ({63'b0,v_test_out} << (6'd63 - tk_out_idx[0])));
 	//Control the vector length register

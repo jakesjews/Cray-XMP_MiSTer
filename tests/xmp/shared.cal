@@ -1,0 +1,170 @@
+* shared: the cluster number register, the shared registers SB and ST, the
+* semaphores and the status register of the X-MP (CSM-0111000 pages 2-17,
+* 5-11, 5-17, 5-32, 5-34, 5-59 and 5-60), in monitor mode.
+         MACHINE XMP
+         INCLUDE "rt_xmp.cal"
+         TBEGIN
+* cluster 0: the stores do nothing and the loads give zero
+         A1      1234567
+         S1      KPAT,0
+         SB3     A1
+         ST5     S1
+         SM      S1
+         A2      SB3
+         CHKA    A2,0,2
+         S2      ST5
+         CHKS    S2,0,3
+         S3      SM
+         CHKS    S3,0,4
+* cluster 1.  The semaphores are the upper half of the word, SM0 the sign.
+         CLN     1
+         SB3     A1
+         ST5     S1
+         SM      S1
+         A2      SB3
+         CHKA    A2,1234567,5
+         S2      ST5
+         CHKS    S2,X'A5A50001FFFFFFFF,6
+         S3      SM
+         CHKS    S3,X'A5A5000100000000,7
+* one semaphore at a time: set 1, clear 0, test and set 3 (it is clear)
+         SM1     1
+         SM0     0
+         SM3     1,TS
+         S3      SM
+         CHKS    S3,X'75A5000100000000,10
+         SM37    0
+         SM36    1
+         S3      SM
+         CHKS    S3,X'75A5000200000000,11
+* the register read back right behind its store
+         A4      7654321
+         SB3     A4
+         A5      SB3
+         CHKA    A5,7654321,12
+         S4      KPAT+1,0
+         ST5     S4
+         S5      ST5
+         CHKS    S5,X'0123456789ABCDEF,13
+* a count issued right behind a shared register load is still a count
+         A5      SB3
+         A6      ZS4
+         CHKA    A6,7,42
+         A5      SB3
+         A6      PS4
+         CHKA    A6,D'32,43
+         A5      SB3
+         A6      QS4
+         CHKA    A6,0,44
+* a store waits for a result that is still on its way to its register
+         A2      1000
+         A3      234
+         A4      A2+A3
+         SB2     A4
+         A5      SB2
+         CHKA    A5,1234,35
+         A4      A2*A3
+         SB2     A4
+         A5      SB2
+         CHKA    A5,234000,36
+         S4      KPAT+1,0
+         S5      S4+S4
+         ST2     S5
+         S6      ST2
+         CHKS    S6,X'02468ACF13579BDE,37
+         S5      S4+FS4
+         ST2     S5
+         S6      ST2
+         S7      S4+FS4
+         S0      S6\S7
+         JSZ     SH1
+         TFAIL   40
+SH1      S5      S4-S4
+         S6      SM
+         SM      S5
+         S5      SM
+         CHKS    S5,0,41
+         SM      S6                      ; the semaphores as they were
+* cluster 2 has registers of its own
+         CLN     2
+         A3      4444
+         SB3     A3
+         S3      0
+         SM      S3
+         SM5     1,TS
+         A6      SB3
+         CHKA    A6,4444,14
+         S6      SM
+         CHKS    S6,X'0400000000000000,15
+         CLN     1
+         A6      SB3
+         CHKA    A6,7654321,16
+         S6      SM
+         CHKS    S6,X'75A5000200000000,17
+* SB0 and ST0 are registers, not the constants of register 0
+         A1      77
+         SB0     A1
+         A2      SB0
+         CHKA    A2,77,20
+* the status register: clustered, the cluster number, ones in the low half
+         CLN     3
+         S1      SR0
+         CHKS    S1,X'80000003FFFFFFFF,21
+         EFI
+         ERI
+         EBM
+         S1      SR0
+         CHKS    S1,X'80070003FFFFFFFF,22
+         DFI
+         DRI
+         DBM
+         CMR
+         S1      SR0
+         CHKS    S1,X'80000003FFFFFFFF,23
+         CLN     0
+         S1      SR0
+         CHKS    S1,X'00000000FFFFFFFF,24
+* The floating point error status sets with the error whatever the modes
+* are, also for a status read right behind the instruction, and 0021 and
+* 0022 clear it, also right behind an instruction whose error comes later.
+         S4      KBIG,0
+         S5      S4*FS4                  ; out of range
+         S1      SR0
+         CHKS    S1,X'00080000FFFFFFFF,31
+         DFI
+         S1      SR0
+         CHKS    S1,X'00000000FFFFFFFF,32
+         S5      S4*FS4
+         EFI
+         S1      SR0
+         CHKS    S1,X'00040000FFFFFFFF,33 ; the mode, and the status cleared
+         S6      S4+FS4                  ; in range: no error
+         S5      S4*RS4
+         S6      S4+FS4
+         DFI
+         S5      S4*FS4
+         S6      /HS4
+         S1      SR0
+         CHKS    S1,X'00080000FFFFFFFF,34
+         DFI
+* the CRAY-1 forms beside them still mean what they did
+         S2      D'55
+         VM      S2
+         SM11    1                       ; 0037, 0036 and 0034 are not VM Sj here
+         SM21    0
+         SM31    1,TS
+         S3      VM
+         CHKS    S3,D'55,25
+         A1      PS2
+         CHKA    A1,5,26
+         A1      QS2
+         CHKA    A1,1,27
+         A1      ZS2
+         CHKA    A1,D'58,30
+         TPASS
+         TEND    DUMPAS
+*
+KBIG     CON     X'5FFF800000000000      ; exponent 57777: its square is out of range
+KPAT     CON     X'A5A50001FFFFFFFF
+         CON     X'0123456789ABCDEF
+         END

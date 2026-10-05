@@ -11,6 +11,8 @@
 //   0xFFFF2 TEST_EXIT  write: end-of-test marker with an exit code; read: {done, code[62:0]}
 //   0xFFFF3 CYCLES     read:  free-running clock counter
 // Everything else in the page reads zero and ignores writes.
+// With XMP = 1 memory has four million words and the page is their top 16:
+// 0x3FFFF0 to 0x3FFFFF.
 //
 // Console interrupt: while it is enabled, a CTRL-C (code 3) arriving from the
 // keyboard or the serial port requests it.  The CPU's console interrupt flag then
@@ -70,7 +72,7 @@ module cray_system #(
 		.clk          (clk),
 		.rst          (cpu_rst),
 		.i_single_step(1'b0),
-		.i_console_int(con_int_req),
+		.i_mcu_int    (con_int_req),
 
 		.o_mem_req  (cpu_req),
 		.o_mem_we   (cpu_we),
@@ -125,7 +127,7 @@ module cray_system #(
 	wire ds_owner = (ds_state != DS_RUN);
 
 	// ---- address decode ----
-	localparam [17:0] IO_PAGE = 18'h0FFFF;  // word addresses 0xFFFF0-0xFFFFF
+	localparam [17:0] IO_PAGE = XMP ? 18'h3FFFF : 18'h0FFFF;  // word addresses 0xFFFF0-0xFFFFF, on the X-MP 0x3FFFF0-0x3FFFFF
 
 	wire io_sel = cpu_req && (cpu_addr[21:4] == IO_PAGE);
 

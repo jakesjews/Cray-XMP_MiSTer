@@ -68,7 +68,8 @@
 * macro uses a return jump, so B00 is never clobbered.
 *
 * Symbols starting with T$ and macro parameters starting with % belong to
-* the runtime.
+* the runtime.  The runtime file that includes this one defines T$IO, the
+* first word of the I/O page: the top 20 words of memory.
 *
 T$ENTRY  =       200                     ; first word of the test
 T$STAT   =       100
@@ -78,10 +79,10 @@ T$SV7    =       103
 T$TMP    =       104
 T$CDON   =       105
 T$DUMP   =       4000
-T$CSTA   =       3777760                 ; CON_STAT
-T$CDAT   =       3777761                 ; CON_DATA
-T$EXIT   =       3777762                 ; TEST_EXIT
-T$CYCL   =       3777763                 ; CYCLES
+T$CSTA   =       T$IO                    ; CON_STAT
+T$CDAT   =       T$IO+1                  ; CON_DATA
+T$EXIT   =       T$IO+2                  ; TEST_EXIT
+T$CYCL   =       T$IO+3                  ; CYCLES
 T$P2_24  =       100000000               ; 2**24: P and the M and F fields
 T$P2_28  =       2000000000              ; 2**28: BA and LA
 T$P2_33  =       100000000000            ; 2**33: VL

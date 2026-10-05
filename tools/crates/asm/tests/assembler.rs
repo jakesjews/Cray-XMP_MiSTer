@@ -83,7 +83,11 @@ NEXT     A1        NEXT
 }
 
 #[test]
-fn data_starts_on_a_word_boundary_with_zero_padding() {
+fn data_starts_on_a_word_boundary_behind_pass_instructions() {
+    // CAL fills the unused parcels of a word of code with `S1 S1&S1` (044111), so a
+    // program can run through the boundary.  ALIGN fills with zero and goes on at the next
+    // instruction buffer boundary, 20 octal words.
+    const P: u16 = 0o044111;
     let a = ok("         A1        1
 TABLE    CON       5,6
          A2        2
@@ -97,22 +101,41 @@ END1     A5        5
     assert_eq!(
         a.words,
         [
-            word([0o022101, 0, 0, 0]),
+            word([0o022101, P, P, P]),
             5,
             6,
-            word([0o022202, 0, 0, 0]),
+            word([0o022202, P, P, P]),
             0,
             0,
-            word([0o022303, 0, 0, 0]),
+            word([0o022303, P, P, P]),
             0,
             word([0o022404, 0, 0, 0]),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
             word([0o022505, 0, 0, 0]),
         ]
     );
+    assert_eq!(sym(&a, "END1"), (0o20 * 4, 'P'));
+    // 40 octal words on an X-MP
+    let x = ok("         MACHINE   XMP
+         A1        1
+         ALIGN
+HERE     A2        2
+");
+    assert_eq!(sym(&x, "HERE"), (0o40 * 4, 'P'));
+    // raw parcels are data: zero behind them
+    let v = ok("         VWD       D'16/O'123456
+T        CON       7
+");
+    assert_eq!(v.words, [word([0o123456, 0, 0, 0]), 7]);
     assert_eq!(sym(&a, "TABLE"), (1, 'W'));
     assert_eq!(sym(&a, "BUF"), (4, 'W'));
     assert_eq!(sym(&a, "Z"), (7, 'W'));
-    assert_eq!(sym(&a, "END1"), (9 * 4, 'P'));
 }
 
 #[test]
@@ -222,7 +245,6 @@ CODE     J         CODE
          A1        CODE
          A1        TABLE
          CODE,0    S1
-         ALIGN
 TABLE    CON       0
 ");
     let table = sym(&a, "TABLE").0;
@@ -241,7 +263,7 @@ TABLE    CON       0
             0o020100,
             0o000015, // A1 TABLE: the word address (two parcels, TABLE is defined later)
             0o130100, 0o000010, // CODE,0 S1
-            0,        // padding before the CON
+            0o044111, // a pass instruction fills the word before the CON
         ]
     );
 }
@@ -323,7 +345,7 @@ fn directives_that_move_the_location_counter_need_known_operands() {
     assert!(one_error(" PASS\nL PASS\n ORG L\n").contains("not on a word boundary"));
     // a parcel address on a word boundary is fine for ORG
     let a = ok(" ORG 2\nL PASS\n ORG 5\n CON 1\n ORG L\n EX\n");
-    assert_eq!(a.words[2], word([0o004000, 0, 0, 0]));
+    assert_eq!(a.words[2], word([0o004000, 0o044111, 0o044111, 0o044111]));
 }
 
 #[test]

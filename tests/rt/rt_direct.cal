@@ -26,6 +26,7 @@
 * (tools/crates/model/tests/smoke.rs does this; with sed:
 * sed 's/rt_direct\.cal/rt_exch.cal/' test.cal).
 *
+T$IO     =       3777760
          INCLUDE "rt_common.cal"
 *
          ORG     0

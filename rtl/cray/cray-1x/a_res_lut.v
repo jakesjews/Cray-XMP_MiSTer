@@ -35,7 +35,7 @@ module a_res_lut (
 			7'o022:  o_delay = 4'd1;
 			7'o023:  o_delay = 4'd1;
 			7'o024:  o_delay = 4'd1;
-			7'o026:  o_delay = i_cip[2] ? 4'd2 : 4'd4;
+			7'o026:  o_delay = (i_cip[2:0] == 3'd7) ? 4'd1 : 4'd4;  //k = 7: an X-MP shared register
 			7'o027:  o_delay = 4'd3;
 			7'o030:  o_delay = 4'd2;
 			7'o031:  o_delay = 4'd2;
@@ -60,7 +60,7 @@ module a_res_lut (
 			7'o022:  o_src = ABUS_SIMM;
 			7'o023:  o_src = ABUS_S_BUS;
 			7'o024:  o_src = ABUS_B_BUS;
-			7'o026:  o_src = i_cip[2] ? ABUS_INTERCPU : ABUS_S_POP;
+			7'o026:  o_src = (i_cip[2:0] == 3'd7) ? ABUS_INTERCPU : ABUS_S_POP;
 			7'o027:  o_src = ABUS_S_POP;
 			7'o030:  o_src = ABUS_A_ADD;
 			7'o031:  o_src = ABUS_A_ADD;

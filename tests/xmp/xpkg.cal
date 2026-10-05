@@ -1,0 +1,280 @@
+* xpkg: the X-MP exchange package and what hangs on it (CSM-0111000 section
+* 3): its layout, the separate instruction and data fields, the operand
+* range interrupt mode, the deadlock interrupt of a test and set, a P of 24
+* bits, and vector operations whose result register is an operand.
+         MACHINE XMP
+         INCLUDE "rt_xmp.cal"
+         INCLUDE "rt_xuser.cal"
+UPKG     =       3000
+UIBA     =       300                     ; instruction base: word 14000
+UBASE    =       14000
+UDBA     =       400                     ; data base: word 20000
+DBASE    =       20000
+FAR      =       5000000                 ; a word above the first million
+         TBEGIN
+*
+* ---- the layout: a package with a pattern in every field, and every bit
+* the machine does not keep set, comes back as KEXP when the program exits
+         A1      0
+         A2      D'16
+PA1      S1      KIN,A1
+         UPKG,A1 S1
+         A1      A1+1
+         A0      A2-A1
+         JAN     PA1
+         A7      UPKG
+         XA      A7
+         EX
+         A1      0
+PA2      S1      UPKG,A1
+         S2      KEXP,A1
+         S0      S1\S2
+         JSZ     PA3
+         UPKG+20,0 A1                    ; which word differs
+         TFAIL   2
+PA3      A1      A1+1
+         A0      A2-A1
+         JAN     PA2
+*
+* ---- the fields.  Instructions come from the instruction field, operands
+* from the data field (words 0 to 77 of it); a load beyond the limit gives
+* zero and, with the mode bit, the operand range flag.
+         S1      KFI,0
+         U$W1,0  S1
+         S1      KFL,0
+         U$W2,0  S1
+         S1      KFD,0
+         U$W4,0  S1
+         S1      KFE,0
+         U$W5,0  S1
+         UGO     KPB
+         UFLAG   S2
+         CHKS    S2,40,3                 ; operand range
+         S2      DBASE+6,0
+         CHKS    S2,777,4                ; stored through the data field
+         S2      UPKG+12,0               ; the program's S2
+         CHKS    S2,111,5                ; the last word of the field
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,UBX-UBASE*4,6        ; P: right behind the vector load
+         A2      2
+         S2      V1,A2
+         CHKS    S2,111,7                ; element 2: word 77
+         A2      3
+         S2      V1,A2
+         CHKS    S2,0,10                 ; beyond the limit: zero
+         A2      4
+         S2      V1,A2
+         CHKS    S2,0,11
+* a store beyond the limit does not happen
+         UGO     KPC
+         UFLAG   S2
+         CHKS    S2,40,12
+         S2      DBASE+100,0
+         CHKS    S2,222,13
+* without the mode bit there is no interrupt, and the load still gives zero
+         S1      KFL0,0
+         U$W2,0  S1
+         UGO     KPD
+         UFLAG   S2
+         CHKS    S2,1,14                 ; normal exit
+         S2      UPKG+13,0               ; the program's S3
+         CHKS    S2,0,15
+*
+* ---- test and set on a set semaphore: the deadlock flag (bit 15 of word
+* 3), the waiting bit (bit 35 of word 1) and P at the instruction
+         CLN     1
+         S1      0
+         SM      S1                      ; all semaphores of cluster 1 clear
+         CLN     0
+         UGO     KPE
+         S2      UPKG+3,0
+         S2      S2>D'24
+         CHKS    S2,UPKG/20*200000+100000000,16 ; XA, and only the deadlock flag
+         S2      UPKG+1,0
+         S2      S2<D'35
+         S2      S2>D'63
+         CHKS    S2,1,17
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,UETS-UBASE*4,20
+         A2      UPKG+1,0
+         CHKA    A2,1,21                 ; the program's A1
+         S2      UPKG+14,0               ; its S4: the status register it read
+         CHKS    S2,X'80000000FFFFFFFF,31
+* the monitor clears the semaphore and the program goes on from there
+         CLN     1
+         SM5     0
+         CLN     0
+         S1      U$W3,0
+         UPKG+3,0 S1
+         A7      UPKG
+         XA      A7
+         EX
+         UFLAG   S2
+         CHKS    S2,1,22
+         A2      UPKG+1,0
+         CHKA    A2,2,23
+         CLN     1
+         S2      SM
+         CLN     0
+         CHKS    S2,X'0400000000000000,24
+*
+* ---- the instruction field ends at its limit, base included: the last
+* word of it runs, a jump one word further is the program range error
+         UGO     KPF
+         UFLAG   S2
+         CHKS    S2,1,32
+         UGO     KPG
+         UFLAG   S2
+         CHKS    S2,20,33                ; program range
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,4000,34              ; P: the address that could not be fetched
+*
+* ---- P has 24 bits: run two instructions put above the first million words
+         S1      FARW,0
+         FAR,0   S1
+         S1      FARW+1,0
+         FAR+1,0 S1
+         A1      1
+         J       FAR*4
+FARW     BSS     0
+         A1      2
+         J       PF1
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+PF1      CHKA    A1,2,25
+*
+* ---- the result register as an operand: element by element, no groups
+         A1      D'20
+         VL      A1
+         A0      KV
+         V1      ,A0,1
+         V2      ,A0,1
+         V1      V1+V2
+         A2      D'19
+         S2      V1,A2
+         CHKS    S2,D'38,26
+         A2      3
+         S2      V1,A2
+         CHKS    S2,6,27
+         TPASS
+         TEND    DUMPALL
+*
+* the package that goes in ...
+KIN      CON     (UA-UBASE*4)*T$P2_24+1234560+X'7FF0000000000000
+         CON     UIBA*T$P2_29+15*T$P2_24+1234561+X'FFF0000000000000+22*T$P2_24
+         CON     X'75A5A*T$P2_29+36*T$P2_24+1234562+X'8000000000000000
+         CON     UPKG/20*T$P2_40+125*T$P2_33+1234563+X'8000000000000000
+         CON     X'12345*T$P2_29+1*T$P2_28+2*T$P2_24+1234564+X'8000000000000000
+         CON     X'6ABCD*T$P2_29+1234565
+         CON     1234566
+         CON     1234567
+         CON     X'0123456789ABCDEF
+         CON     X'1123456789ABCDEF
+         CON     X'2123456789ABCDEF
+         CON     X'3123456789ABCDEF
+         CON     X'4123456789ABCDEF
+         CON     X'5123456789ABCDEF
+         CON     X'6123456789ABCDEF
+         CON     X'7123456789ABCDEF
+* ... and the one that comes back: P one parcel on, the normal exit flag
+KEXP     CON     (UA-UBASE*4+1)*T$P2_24+1234560
+         CON     UIBA*T$P2_29+15*T$P2_24+1234561
+         CON     X'75A5A*T$P2_29+36*T$P2_24+1234562
+         CON     UPKG/20*T$P2_40+125*T$P2_33+1*T$P2_24+1234563
+         CON     X'12345*T$P2_29+1*T$P2_28+2*T$P2_24+1234564
+         CON     X'6ABCD*T$P2_29+1234565
+         CON     1234566
+         CON     1234567
+         CON     X'0123456789ABCDEF
+         CON     X'1123456789ABCDEF
+         CON     X'2123456789ABCDEF
+         CON     X'3123456789ABCDEF
+         CON     X'4123456789ABCDEF
+         CON     X'5123456789ABCDEF
+         CON     X'6123456789ABCDEF
+         CON     X'7123456789ABCDEF
+KFI      CON     UIBA*T$P2_29            ; instruction base
+KFL      CON     (UIBA+20)*T$P2_29+20*T$P2_24 ; its limit; operand range mode
+KFL0     CON     (UIBA+20)*T$P2_29       ; the same without the mode
+KFD      CON     UDBA*T$P2_29+1*T$P2_24  ; data base; cluster 1
+KFE      CON     (UDBA+2)*T$P2_29        ; data limit: 100 words
+KPB      CON     (UB-UBASE*4)*T$P2_24
+KPC      CON     (UC-UBASE*4)*T$P2_24
+KPD      CON     (UD-UBASE*4)*T$P2_24
+KPE      CON     (UE-UBASE*4)*T$P2_24
+KPF      CON     (UF-UBASE*4)*T$P2_24
+KPG      CON     (UG-UBASE*4)*T$P2_24
+         UDATA
+KV       CON     0
+         CON     1
+         CON     2
+         CON     3
+         CON     4
+         CON     5
+         CON     6
+         CON     7
+         CON     D'8
+         CON     D'9
+         CON     D'10
+         CON     D'11
+         CON     D'12
+         CON     D'13
+         CON     D'14
+         CON     D'15
+         CON     D'16
+         CON     D'17
+         CON     D'18
+         CON     D'19
+*
+* the user programs, in the instruction field
+         ORG     UBASE+100
+UA       EX
+         ORG     UBASE+110
+UB       S1      5,0
+         6,0     S1
+         S2      77,0
+         A1      5
+         VL      A1
+         A0      75
+         V1      ,A0,1                   ; words 75 to 101: two beyond the limit
+UBX      A2      3
+         EX
+         ORG     UBASE+120
+UC       S1      5,0
+         100,0   S1                      ; one word beyond the limit
+         EX
+         ORG     UBASE+130
+UD       S3      77,0
+         S3      100,0                   ; beyond the limit: zero
+         EX
+         ORG     UBASE+140
+UE       CLN     2                       ; a pass outside monitor mode
+         S4      SR0                     ; clustered; which cluster is not shown
+         SM5     1
+         A1      1
+UETS     SM5     1,TS                    ; the semaphore is set: it cannot issue
+         A1      2
+         EX
+         ORG     UBASE+160
+UF       J       3774                    ; relative word 777: the last of the field
+         ORG     UBASE+170
+UG       J       4000                    ; relative word 1000: beyond it
+         ORG     UBASE+777
+         EX
+*
+* the data field
+         ORG     DBASE+5
+         CON     777
+         ORG     DBASE+75
+         CON     107
+         CON     110
+         CON     111
+         CON     222
+         CON     333
+         END

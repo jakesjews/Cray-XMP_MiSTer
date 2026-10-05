@@ -3,6 +3,7 @@
 //! assembler (boot.SV.txt), and a round trip of every instruction form.
 
 use cray1_asm::{assemble_file, assemble_source, Assembly};
+use cray1_isa::Cpu;
 use std::path::PathBuf;
 
 fn fixture(name: &str) -> PathBuf {
@@ -175,16 +176,36 @@ fn boot_matches_the_python_assembler() {
     assert_eq!(a.entries, ["RX_SPIN"]);
 }
 
-/// A CAL source that uses every row of the instruction table once, written
-/// from the table's own examples.
-fn all_forms_source() -> String {
+/// The rows of the instruction table that can be reached on a machine.  On
+/// the X-MP the row for 0023xx to 0027xx is left with nothing: every one of
+/// those encodings has a meaning there.
+fn forms_of(cpu: Cpu) -> Vec<&'static cray1_isa::Form> {
+    cray1_isa::FORMS
+        .iter()
+        .filter(|f| f.on(cpu))
+        .filter(|f| {
+            let e = cray1_isa::encode(f, f.example_fields());
+            cray1_isa::decode_cpu(cpu, e.parcel0, e.parcel1).op == f.op
+        })
+        .collect()
+}
+
+/// A CAL source that uses every row of the instruction table a machine has
+/// once, written from the table's own examples.
+fn all_forms_source(cpu: Cpu) -> String {
     let mut out = String::new();
     out.push_str("* Every instruction form of the Cray-1 once: one line per row of the\n");
     out.push_str("* instruction table (cray1 isa), in table order, with the expected parcels\n");
     out.push_str("* in the comment column.  Checked against the table by the regression test\n");
     out.push_str("* in tools/crates/asm; regenerate with CRAY1_UPDATE_FIXTURES=1 cargo test.\n");
+    if cpu == Cpu::Xmp {
+        out.push_str("* This file has the rows of the X-MP as well.\n");
+    }
     out.push_str("         IDENT     ALLFORMS\n");
-    for f in cray1_isa::FORMS {
+    if cpu == Cpu::Xmp {
+        out.push_str("         MACHINE   XMP\n");
+    }
+    for f in forms_of(cpu) {
         let e = cray1_isa::encode(f, f.example_fields());
         let (result, operand) = match f.example() {
             Some(x) => x,
@@ -203,18 +224,24 @@ fn all_forms_source() -> String {
 
 #[test]
 fn every_instruction_form_round_trips() {
-    let path = fixture("all_forms.cal");
-    let source = all_forms_source();
+    forms_round_trip("all_forms.cal", Cpu::Cray1);
+    forms_round_trip("xmp_forms.cal", Cpu::Xmp);
+}
+
+fn forms_round_trip(name: &str, cpu: Cpu) {
+    let path = fixture(name);
+    let source = all_forms_source(cpu);
     if std::env::var_os("CRAY1_UPDATE_FIXTURES").is_some() {
         std::fs::write(&path, &source).unwrap();
     }
     let on_disk = std::fs::read_to_string(&path).unwrap_or_default();
     assert_eq!(
         on_disk, source,
-        "tests/asm/all_forms.cal is out of date with the instruction table"
+        "tests/asm/{} is out of date with the instruction table",
+        name
     );
 
-    let a = assemble_fixture("all_forms.cal");
+    let a = assemble_fixture(name);
     assert_eq!(a.diagnostics, []);
 
     // every line assembles to the parcels in its comment column
@@ -231,18 +258,23 @@ fn every_instruction_form_round_trips() {
         parcels.extend(&l.parcels);
         lines += 1;
     }
-    assert_eq!(lines, cray1_isa::FORMS.len());
+    let forms = forms_of(cpu);
+    assert_eq!(lines, forms.len());
     let total = parcels.len() as u64;
     assert_eq!((0..total).map(|p| a.parcel(p)).collect::<Vec<_>>(), parcels);
 
     // the image decodes to one instruction per line, each table row in turn
     let mut addr = 0;
     let mut straddles = 0;
+    let mut straddles_moved = 0;
     let mut text = String::from("         IDENT     AGAIN\n");
-    for f in cray1_isa::FORMS {
+    if cpu == Cpu::Xmp {
+        text.push_str("         MACHINE   XMP\n");
+    }
+    for f in forms {
         let p0 = a.parcel(addr);
-        let len = cray1_isa::length(p0) as u64;
-        let d = cray1_isa::decode(p0, (len == 2).then(|| a.parcel(addr + 1)));
+        let len = cray1_isa::length_cpu(cpu, p0) as u64;
+        let d = cray1_isa::decode_cpu(cpu, p0, (len == 2).then(|| a.parcel(addr + 1)));
         assert_eq!(d.op, f.op, "parcel {:o}: {}", addr, f.pattern);
         assert!(
             f.matches(d.parcel0, Some(d.m)),
@@ -251,17 +283,29 @@ fn every_instruction_form_round_trips() {
             f.pattern
         );
         straddles += (len == 2 && addr % 4 == 3) as u32;
+        straddles_moved += (len == 2 && addr % 4 == 2) as u32;
         text.push_str(&format!("         {}\n", cray1_isa::disassemble(&d)));
         addr += len;
     }
     assert_eq!(addr, total);
-    assert!(
-        straddles > 0,
-        "some two-parcel instruction should straddle a word boundary"
-    );
 
     // and the disassembly assembles back to the same image
     let b = assemble_source(&text);
     assert_eq!(b.diagnostics, []);
     assert_eq!(b.words, a.words);
+
+    // The same one parcel later, so that two-parcel instructions lie across
+    // the word boundaries in one image or the other.
+    let c = assemble_source(&text.replacen("AGAIN\n", "AGAIN\n         PASS\n", 1));
+    // (PASS before MACHINE: the directive emits nothing)
+    assert_eq!(c.diagnostics, []);
+    assert_eq!(c.parcel(0), 0o001000);
+    assert_eq!(
+        (1..=total).map(|p| c.parcel(p)).collect::<Vec<_>>(),
+        parcels
+    );
+    assert!(
+        straddles + straddles_moved > 0,
+        "some two-parcel instruction should straddle a word boundary"
+    );
 }

@@ -2,7 +2,9 @@
 //
 //   Vcray_cpu --image FILE [--mem PROFILE] [--cycles N] [--seed N] [--step]
 //             [--log-mem] [--dump START:COUNT] [--state OUT] [--expect FILE] [--quiet]
+//             [--input TEXT] [--ctrl-c CYCLE[,CYCLE...]]
 // PROFILE: 0, fixed:N, rand:A-B, ddr3, slow.  Addresses are octal.
+// --ctrl-c: the console asks for its interrupt in those clocks, as CTRL-C does.
 // Exit status: 0 when the program wrote TEST_EXIT with code 0, 1 otherwise.
 #include "Vcray_cpu.h"
 #include "verilated.h"
@@ -19,6 +21,7 @@ int main(int argc, char **argv) {
     long cycles = 200000;
     uint32_t seed = 1;
     bool single_step = false, log_mem = false, quiet = false;
+    std::set<long> ctrl_c;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto next = [&]() { return std::string(i + 1 < argc ? argv[++i] : ""); };
@@ -33,6 +36,10 @@ int main(int argc, char **argv) {
         else if (a == "--state") state = next();
         else if (a == "--expect") expect = next();
         else if (a == "--input") input = next();
+        else if (a == "--ctrl-c") {
+            std::string list = next();
+            for (size_t p = 0; p < list.size();) { ctrl_c.insert(atol(list.c_str() + p)); p = list.find(',', p); if (p == std::string::npos) break; p++; }
+        }
     }
     Verilated::randSeed(seed);
 
@@ -55,12 +62,15 @@ int main(int argc, char **argv) {
     Vcray_cpu *top = new Vcray_cpu;
     top->rst = 1;
     top->i_single_step = single_step;
+    top->i_mcu_int = 0;
     top->i_mem_ack = 0;
     top->i_mem_rdata = 0;
 
     long t = 0;
     for (; t < cycles && !mem.exited && !Verilated::gotFinish(); t++) {
         if (t == 8) top->rst = 0;
+        if (ctrl_c.count(t)) mem.ctrl_c();
+        top->i_mcu_int = mem.con_int_req;
         bool req = top->o_mem_req, we = top->o_mem_we, burst = top->o_mem_burst;
         uint32_t addr = top->o_mem_addr; uint64_t wdata = top->o_mem_wdata;
         top->clk = 1; top->eval();
@@ -79,8 +89,8 @@ int main(int argc, char **argv) {
         unsigned a; unsigned long long v; long n = 0;
         while (f && fscanf(f, "%o %llx", &a, &v) == 2) {
             n++;
-            if (mem.mem[a & 0xFFFFF] != v && expect_bad++ < 12)
-                printf("EXPECT %07o: got %016llx want %016llx\n", a, (unsigned long long)mem.mem[a & 0xFFFFF], v);
+            if (mem.mem[a % mem.WORDS] != v && expect_bad++ < 12)
+                printf("EXPECT %07o: got %016llx want %016llx\n", a, (unsigned long long)mem.mem[a % mem.WORDS], v);
         }
         if (f) fclose(f);
         printf("expect: %ld words checked, %ld wrong\n", n, expect_bad);
@@ -88,7 +98,7 @@ int main(int argc, char **argv) {
     if (!dump.empty()) {
         unsigned start = 0, count = 8;
         sscanf(dump.c_str(), "%o:%o", &start, &count);
-        for (unsigned i = 0; i < count; i++) printf("%07o: %022llo\n", start + i, (unsigned long long)mem.mem[(start + i) & 0xFFFFF]);
+        for (unsigned i = 0; i < count; i++) printf("%07o: %022llo\n", start + i, (unsigned long long)mem.mem[(start + i) % mem.WORDS]);
     }
     if (!quiet || !mem.exited)
         fprintf(stderr, "sim: %ld cycles, mem %s, %llu reads, %llu writes, %s\n", t, mem.prof.name.c_str(),

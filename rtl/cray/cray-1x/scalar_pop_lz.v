@@ -16,6 +16,10 @@
 //enters the result in the lower order 7 bits of Ai. 
 //The upper 17 bits are zeroed. 
 
+//026ij1   - Population count parity of (Sj) to Ai.
+//Enters only the low order bit of that count in the
+//low order bit of Ai (HR-0004 rev F page 4-25).
+
 //027ijx   - Leading zero count of (Sj) to Ai.
 //This instructions counts the number of leading 
 //zeros in Sj and enters the result into the low
@@ -24,6 +28,7 @@
 module scalar_pop_lz (
 	i_sj,
 	i_instr,
+	i_parity,
 	i_issue,
 	clk,
 	o_result
@@ -33,6 +38,7 @@ module scalar_pop_lz (
 	input wire clk;
 	input wire i_issue;  //the instruction on i_instr issues this clock
 	input wire [6:0] i_instr;
+	input wire i_parity;  //the instruction is 026ij1
 	output wire [23:0] o_result;
 
 	reg [63:0] sj0;
@@ -125,8 +131,12 @@ module scalar_pop_lz (
 	//count three clocks after an 027.  The choice follows the instruction that issued,
 	//not whatever parcel happens to be in the pipeline behind it.
 	reg [3:0] pop_pipe;
-	always @(posedge clk) pop_pipe <= {pop_pipe[2:0], i_issue && (i_instr == 7'b0010110)};
-	assign o_result[23:0] = pop_pipe[3] ? p_result[23:0] : lz_result[23:0];
+	reg [3:0] par_pipe;
+	always @(posedge clk) begin
+		pop_pipe <= {pop_pipe[2:0], i_issue && (i_instr == 7'b0010110)};
+		par_pipe <= {par_pipe[2:0], i_parity};
+	end
+	assign o_result[23:0] = !pop_pipe[3] ? lz_result[23:0] : par_pipe[3] ? {23'b0, p_tmp2[0]} : p_result[23:0];
 
 	always @(posedge clk) begin  //just pipelining the state so it carries through
 		sj0 <= i_sj;

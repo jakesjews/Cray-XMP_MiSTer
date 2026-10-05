@@ -4,8 +4,13 @@
 //   word, never in the clock req first rises; burst = 16-word read.
 // Latency is configurable so no CPU path can come to depend on it.
 //
+// Built with CRAY_XMP defined the memory has four million words, for the CPU
+// with the X-MP features, and the I/O page is at 0x3FFFF0.
+//
 // The top 16 words of the 1M-word space are the core's invented I/O page:
-//   0xFFFF0 CON_STAT  read: bit 0 input available, bit 1 output ready
+//   0xFFFF0 CON_STAT  read: bit 0 input available, bit 1 output ready, bit 2
+//                     console interrupt enabled, bit 3 requested; write: bit 0
+//                     enables the console interrupt and clears a request
 //   0xFFFF1 CON_DATA  read: next input character; write: print character
 //   0xFFFF2 TEST_EXIT write: end of test, value is the exit code
 //   0xFFFF3 CYCLES    read: clock counter
@@ -39,8 +44,12 @@ struct MemProfile {
 
 class CrayMemModel {
 public:
+#ifdef CRAY_XMP
+    static constexpr uint32_t WORDS = 1u << 22;
+#else
     static constexpr uint32_t WORDS = 1u << 20;
-    static constexpr uint32_t IO_BASE = 0xFFFF0;
+#endif
+    static constexpr uint32_t IO_BASE = WORDS - 16;
     std::vector<uint64_t> mem;
     MemProfile prof;
     std::string console_out;
@@ -48,6 +57,8 @@ public:
     bool echo_console = true;
     bool exited = false;
     uint64_t exit_code = 0;
+    bool con_int_en = false, con_int_req = false;   // the console (MCU) interrupt, as in cray_system.sv
+    void ctrl_c() { if (con_int_en) con_int_req = true; }
     uint64_t cycle = 0, reads = 0, writes = 0;
     bool log = false;
     bool bad = false;
@@ -127,7 +138,7 @@ private:
         uint64_t v;
         if (a >= IO_BASE && a < WORDS) {
             switch (a - IO_BASE) {
-                case 0: v = (console_in.empty() ? 0 : 1) | 2; break;
+                case 0: v = (console_in.empty() ? 0 : 1) | 2 | (con_int_en ? 4 : 0) | (con_int_req ? 8 : 0); break;
                 case 1: if (console_in.empty()) v = 0; else { v = console_in.front(); console_in.pop_front(); } break;
                 case 3: v = cycle; break;
                 default: v = 0;
@@ -142,6 +153,7 @@ private:
         if (log) fprintf(stderr, "[%8llu] WR %07o <- %022llo\n", (unsigned long long)cycle, a, (unsigned long long)v);
         if (a >= IO_BASE && a < WORDS) {
             switch (a - IO_BASE) {
+                case 0: con_int_en = v & 1; con_int_req = false; break;
                 case 1: console_out.push_back((char)v); if (echo_console) { fputc((int)(v & 0xFF), stdout); fflush(stdout); } break;
                 case 2: exited = true; exit_code = v; break;
                 default: break;

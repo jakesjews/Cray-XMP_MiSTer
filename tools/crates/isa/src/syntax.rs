@@ -43,9 +43,10 @@ pub struct Assembled {
 enum Tok {
     /// A literal character.
     Lit(u8),
-    /// `Ai`, `Sj`, `Vk`, `Ah`...: register letter and field letter.
+    /// `Ai`, `Sj`, `Vk`, `Ah`...: register letter and field letter.  Also
+    /// the `Bj` and `Tj` of the shared registers `SBj` and `STj`.
     Reg(u8, u8),
-    /// `Bjk` or `Tjk`.
+    /// `Bjk` or `Tjk`, and the `Mjk` of a semaphore `SMjk`.
     Blk(u8),
     /// `exp`.
     Exp,
@@ -59,9 +60,12 @@ fn tokenize(template: &str) -> Vec<Tok> {
         if b[i..].starts_with(b"exp") {
             out.push(Tok::Exp);
             i += 3;
-        } else if matches!(b[i], b'B' | b'T') && b[i + 1..].starts_with(b"jk") {
+        } else if matches!(b[i], b'B' | b'T' | b'M') && b[i + 1..].starts_with(b"jk") {
             out.push(Tok::Blk(b[i]));
             i += 3;
+        } else if matches!(b[i], b'B' | b'T') && b[i + 1..].starts_with(b"j") {
+            out.push(Tok::Reg(b[i], b'j'));
+            i += 2;
         } else if matches!(b[i], b'A' | b'S' | b'V')
             && i + 1 < b.len()
             && matches!(b[i + 1], b'h' | b'i' | b'j' | b'k')
@@ -393,11 +397,22 @@ fn register_number(text: RegText, limit: i64, what: &str, eval: &mut Eval) -> Re
 /// encoding (`Ai exp`, `Si exp`, masks and shifts by 0 or 64) the choice
 /// follows `Sel`.
 pub fn assemble(result: &str, operand: &str, eval: &mut Eval) -> Result<Assembled, String> {
+    assemble_cpu(Cpu::Cray1, result, operand, eval)
+}
+
+/// `assemble` for the given machine: `Cpu::Xmp` adds the spellings of the
+/// rows with `flag::XMP`.
+pub fn assemble_cpu(
+    cpu: Cpu,
+    result: &str,
+    operand: &str,
+    eval: &mut Eval,
+) -> Result<Assembled, String> {
     let all = templates();
     for want_exp in [false, true] {
         for (n, t) in all.iter().enumerate() {
             let form = &FORMS[n];
-            if t.has_exp != want_exp || !form.has_syntax() {
+            if t.has_exp != want_exp || !form.has_syntax() || !form.on(cpu) {
                 continue;
             }
             if !first_byte_fits(&t.result, result) || !first_byte_fits(&t.operand, operand) {
@@ -588,7 +603,12 @@ pub fn eval_number(text: &str) -> Option<i64> {
 
 /// `assemble` for operands whose expressions are plain numbers.
 pub fn assemble_numeric(result: &str, operand: &str) -> Result<Assembled, String> {
-    assemble(result, operand, &mut |text: &str, _| {
+    assemble_numeric_cpu(Cpu::Cray1, result, operand)
+}
+
+/// `assemble_numeric` for the given machine.
+pub fn assemble_numeric_cpu(cpu: Cpu, result: &str, operand: &str) -> Result<Assembled, String> {
+    assemble_cpu(cpu, result, operand, &mut |text: &str, _| {
         eval_number(text)
             .map(|value| ExpValue {
                 value,
@@ -650,6 +670,12 @@ pub fn disassemble_fields(d: &Decoded) -> (String, String) {
     let fields = d.fields();
     let gh = d.gh();
     let p1 = Some(d.m);
+    // an X-MP instruction is spelled the X-MP way
+    let cpu = if d.form.on(Cpu::Cray1) {
+        Cpu::Cray1
+    } else {
+        Cpu::Xmp
+    };
     for target in [original, canonical] {
         for kind in [Kind::Special, Kind::Base, Kind::Alt] {
             for (n, form) in rows_for_gh(gh) {
@@ -660,7 +686,7 @@ pub fn disassemble_fields(d: &Decoded) -> (String, String) {
                     continue;
                 }
                 let (result, operand) = render_row(n, &fields);
-                if let Ok(a) = assemble_numeric(&result, &operand) {
+                if let Ok(a) = assemble_numeric_cpu(cpu, &result, &operand) {
                     if a.encoding == target {
                         return (result, operand);
                     }
@@ -701,6 +727,7 @@ impl Form {
         let value = match self.exp {
             ExpKind::None => None,
             ExpKind::Ijk => Some(0o123),
+            ExpKind::J => Some(2),
             ExpKind::Jk | ExpKind::JkRev => Some(0o12),
             ExpKind::Jkm | ExpKind::Ijkm => Some(0o1234567),
             ExpKind::JkmNot => Some(-0o1234567),
@@ -709,16 +736,34 @@ impl Form {
         if let Some(v) = value {
             f.set_exp(self.exp, v).expect("example value fits");
         }
-        // The catch-all rows (001ixx, 002ixx) only own the larger values of i.
-        // Then keep only what the pattern lets vary, so the fields equal a decode.
-        loop {
-            let e = encode(self, f);
-            let d = decode(e.parcel0, e.parcel1);
-            if d.op == self.op || f.i == 7 {
-                return d.fields();
+        // The catch-all rows (001ixx, 002ixx) only own the larger values of i,
+        // and 0014xk some values of k.  Prefer fields that mean this row on
+        // both machines.  Then keep only what the pattern lets vary, so the
+        // fields equal a decode.
+        let cpu = if self.on(Cpu::Cray1) {
+            Cpu::Cray1
+        } else {
+            Cpu::Xmp
+        };
+        let mut fallback = None;
+        for i in f.i..=7 {
+            for k in [f.k, 1, 2, 4, 5, 6, 7, 0] {
+                let g = Fields { i, k, ..f };
+                let e = encode(self, g);
+                let d = decode_cpu(cpu, e.parcel0, e.parcel1);
+                if d.op != self.op {
+                    continue;
+                }
+                if decode_cpu(Cpu::Xmp, e.parcel0, e.parcel1).op == self.op {
+                    return d.fields();
+                }
+                fallback.get_or_insert(d.fields());
             }
-            f.i += 1;
         }
+        fallback.unwrap_or_else(|| {
+            let e = encode(self, f);
+            decode_cpu(cpu, e.parcel0, e.parcel1).fields()
+        })
     }
     /// An example of this row in CAL: result and operand fields.  `None` for
     /// the rows CAL cannot spell.

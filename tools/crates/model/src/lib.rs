@@ -2,8 +2,12 @@
 //!
 //! This is the yardstick the hardware CPU is checked against by differential
 //! testing.  Authority: CRAY-1 Hardware Reference Manual 2240004 rev C
-//! (HRM); page numbers in this crate are its page numbers.  Decoding comes
-//! from `cray1-isa`, floating point arithmetic from `cray1-fp`
+//! (HRM); page numbers in this crate are its page numbers.  The machine is
+//! the CRAY-1 of 1982: where revision F of the manual (HR-0004, May 1982)
+//! differs it is followed and cited as "rev F" with its own page numbers.
+//! That is the programmable clock, the vector population instructions and
+//! the meaning of F register bits 31 and 32.  Decoding comes from
+//! `cray1-isa`, floating point arithmetic from `cray1-fp`
 //! (`Profile::Cray1`).
 //!
 //! # The machine
@@ -66,8 +70,10 @@
 //!   A merge (146, 147) takes the definedness of the operand it selects.
 //!   Results the manual gives as constants are defined whatever the
 //!   register holds: a logical product with a defined zero (044 with j = 0,
-//!   `Vi 0` = 140i00), 045 with j = k, 046 and 047 with j = k not 0, and a
-//!   032 product with a defined zero.
+//!   `Vi 0` = 140i00), 045 with j = k, 046 and 047 with j = k not 0, the
+//!   differences 031 and 061 with j = k not 0, the vector forms 145 and 157
+//!   with j = k (`Vi Vj\Vj` clears a register in later CAL), and a 032
+//!   product with a defined zero.
 //!   An exchange package word is undefined if an A or S register in it is
 //!   (or VL, for word 3).
 //! * A test error (`TestError`, `ErrorKind::UndefinedValue`) stops the run
@@ -76,11 +82,14 @@
 //!   memory reference, the increment of 176/177, a shift count in an A
 //!   register, the element number of 076/077, VL in a vector instruction,
 //!   the length of a block transfer, (Aj) entered into XA, a write to
-//!   `CON_DATA` or `TEST_EXIT`, an instruction parcel, one of words 0 to 3
-//!   of an incoming exchange package, or a floating point operand while the
-//!   floating point interrupt is enabled outside monitor mode.
+//!   `CON_STAT`, `CON_DATA` or `TEST_EXIT`, an instruction parcel, one of
+//!   words 0 to 3 of an incoming exchange package, or a floating point
+//!   operand while the floating point interrupt is enabled outside monitor
+//!   mode.
 //! * `ErrorKind::NotDefinedByManual` stops the run for 0023xx to 0027xx and
 //!   for an instruction fetch outside the field in monitor mode.
+//! * `ErrorKind::TimeDependent` stops the run when a program outside
+//!   monitor mode could be interrupted by the programmable clock.
 //!
 //! # Where the manual is silent or ambiguous
 //!
@@ -118,6 +127,15 @@
 //!   is the neighbour in the stream of operands the rule produces.
 //! * **Real-time clock**: counts clock periods, so its value is undefined
 //!   here even after 0014 has entered it.
+//! * **Programmable clock** (rev F pages 4-10, 6-23): the interval and the
+//!   countdown are clock period counts and are not modelled.  The model
+//!   keeps the enable (0014j6, 0014j7) and whether a request may be set
+//!   (from 0014j6 until a 0014j5 that follows a 0014j7).  In monitor mode
+//!   that changes nothing; a program outside monitor mode stops the model
+//!   while a request may be set.  Enable and request start cleared.
+//! * **Encodings rev F leaves undefined with its options**: 0014jk with k =
+//!   1, 2 or 3 is a pass; 026ijk with k = 2 to 7 is the population count;
+//!   174ijk with k = 3 to 7 is the reciprocal.
 //! * **154 to 157**: the text of page 4-59 says 155 and 157 subtract; its
 //!   heading, the special cases on page 4-60, page 3-17 and Appendix D make
 //!   154 and 155 sums and 156 and 157 differences, which is what is done.
@@ -129,6 +147,48 @@
 //!   in monitor mode (page 3-36) and the manual does not say what is
 //!   executed; the instructions are not in the manual at all.
 
+//!
+//! # The X-MP mode
+//!
+//! `Machine::for_cpu(Cpu::Xmp)` is the same machine with what a
+//! one-processor CRAY X-MP has that the operating system COS needs.  The
+//! authority is the CRAY X-MP Series Model 14 mainframe reference manual
+//! CSM-0111000 ("X"); `research/notes/machine-spec.md` in the core's
+//! repository has the comparison and what COS was seen to use.
+//!
+//! * Four million words of memory; the I/O page is their top 16 words.
+//! * The exchange package of X figure 3-3: a 24-bit P; separate base and
+//!   limit registers for instructions (IBA, ILA) and for operands (DBA,
+//!   DLA), 19 bits each in units of 32 words; mode bits IOR, BDM and IMM
+//!   beside those of the CRAY-1; the status bits FPS and WS; the program
+//!   state bit and the cluster number.  Fields the model has no use for are
+//!   stored as zero.
+//! * A reference outside the data field reads zero and stores nothing; the
+//!   operand range flag also needs the mode bit IOR (0023 sets it, 0024
+//!   clears it).  Block and vector transfers go on after such a reference.
+//!   Only the low 22 bits of an operand address are used.
+//! * A branch takes 24 bits and raises no flag itself; a fetch outside the
+//!   instruction field is the program range error.
+//! * The cluster number (0014j3, monitor mode) and three clusters of shared
+//!   registers: eight SB (026ij7, 027ij7), eight ST (072ij3, 073ij3) and 32
+//!   semaphores (0034, 0036, 0037, 072i02, 073i02).  They are undefined
+//!   until written.  In cluster 0 the stores do nothing and the loads give
+//!   zero.  A test and set (0034) of a set semaphore cannot issue: outside
+//!   monitor mode the deadlock flag sets and the package stored has P at
+//!   the instruction and the WS bit; in monitor mode the model stops.
+//! * The status register (073i01), with ones in its low half and the
+//!   cluster number only in monitor mode, as the manual has it.
+//! * 0025 and 0026 switch the BDM bit and 0027 passes; none has another
+//!   effect here.
+//! * A vector register that is operand and result of one instruction is
+//!   not recursive: every operation takes the elements as they were before
+//!   the instruction.
+//! * 010 to 017 with the high bit of i set (the X-MP's `Ah exp`) stop the
+//!   model.
+//!
+//! Everything else is as on the CRAY-1, including VL, the programmable
+//! clock and the floating point arithmetic.
+
 mod event;
 mod exec;
 mod machine;
@@ -138,8 +198,8 @@ pub mod vector;
 pub use event::{Event, Observer};
 pub use exec::{CONST_0_5, CONST_0_75_2_48, CONST_1_0, CONST_2_0, CONST_4_0, FP_PROFILE};
 pub use machine::{
-    flag, mode, vl_count, ErrorKind, Machine, RunResult, StepResult, TestError, A_MASK, CON_DATA,
-    CON_STAT, CYCLES, IO_PAGE, MEMORY_WORDS, P_MASK, TEST_EXIT,
+    flag, mode, mode1, vl_count, ErrorKind, Machine, RunResult, StepResult, TestError, A_MASK,
+    CON_DATA, CON_STAT, CYCLES, IO_PAGE, MEMORY_WORDS, P_MASK, TEST_EXIT, XMP_MEMORY_WORDS,
 };
 
 #[cfg(test)]

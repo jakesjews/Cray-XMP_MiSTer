@@ -3,7 +3,11 @@
 use crate::expr::{self, Val};
 use crate::source::{split_list, Line, Msg};
 use crate::{Attr, Severity};
-use cray1_isa::{is_reserved_name, is_symbol_char, ExpUse, ExpValue};
+use cray1_isa::{is_reserved_name, is_symbol_char, Cpu, ExpUse, ExpValue};
+
+/// `S1 S1&S1`, the pass instruction CAL fills unused parcels with (CAL reference manual
+/// SR-0000, "unused parcels are filled with pass instructions").
+const PAD: u16 = 0o044111;
 use std::collections::HashMap;
 
 /// Largest image the assembler will build: the 22-bit address space.
@@ -59,6 +63,10 @@ pub(crate) struct Engine<'a> {
     pub entries: Vec<String>,
     listing_on: bool,
     overflow: bool,
+    /// The machine whose instructions are accepted (`MACHINE`).
+    pub cpu: Cpu,
+    /// The parcels just assembled are instructions, not data.
+    code_last: bool,
 }
 
 fn valid_symbol(name: &str) -> bool {
@@ -83,6 +91,8 @@ impl<'a> Engine<'a> {
             entries: Vec::new(),
             listing_on: true,
             overflow: false,
+            cpu: Cpu::Cray1,
+            code_last: false,
         }
     }
 
@@ -91,6 +101,8 @@ impl<'a> Engine<'a> {
             self.pass = pass;
             self.loc = 0;
             self.listing_on = true;
+            self.cpu = Cpu::Cray1;
+            self.code_last = false;
             self.waiting.clear();
             for idx in 0..self.lines.len() {
                 self.emits[idx].listed = self.listing_on;
@@ -298,11 +310,14 @@ impl<'a> Engine<'a> {
         }
     }
 
-    /// Pad with zero parcels to a word boundary.
+    /// Pad to a word boundary: with pass instructions behind code, so that a
+    /// program can run through, and with zero parcels behind data.
     fn align(&mut self, idx: usize) {
+        let fill = if self.code_last { PAD } else { 0 };
         while !self.loc.is_multiple_of(4) {
-            self.put_parcel(idx, 0);
+            self.put_parcel(idx, fill);
         }
+        self.code_last = false;
     }
 
     fn statement(&mut self, idx: usize) {
@@ -325,8 +340,19 @@ impl<'a> Engine<'a> {
                 self.no_label(idx, label, "IDENT");
                 self.ident = Some(operand.to_string());
             }
-            "END" | "ABS" | "EJECT" | "SPACE" | "TITLE" | "SUBTITLE" => {
+            "END" | "ABS" | "EJECT" | "SPACE" | "TITLE" | "SUBTITLE" | "COMMENT" => {
                 self.no_label(idx, label, result)
+            }
+            "MACHINE" => {
+                self.no_label(idx, label, result);
+                match Cpu::from_name(operand) {
+                    Some(cpu) => self.cpu = cpu,
+                    None if self.pass == 1 => self.error(
+                        idx,
+                        format!("MACHINE `{}` is not known: CRAY1 or XMP", operand),
+                    ),
+                    None => {}
+                }
             }
             "LIST" => {
                 self.no_label(idx, label, result);
@@ -418,7 +444,13 @@ impl<'a> Engine<'a> {
                 }
             }
             "ALIGN" => {
+                // zero parcels to the word boundary, then on to the next
+                // instruction buffer boundary: 20 octal words, 40 on an X-MP
+                self.code_last = false;
                 self.align(idx);
+                let block = if self.cpu == Cpu::Xmp { 128 } else { 64 };
+                self.advance(idx, (block - self.loc % block) % block);
+                self.reserve();
                 self.begin(idx, label, Attr::Word);
             }
             "VWD" => self.vwd(idx, label, operand),
@@ -489,6 +521,7 @@ impl<'a> Engine<'a> {
     }
 
     fn org(&mut self, idx: usize, label: &str, operand: &str) {
+        self.align(idx);
         if self.pass == 1 {
             let mut target = self.loc;
             if let Some(v) = self.eval_now(operand, idx, "ORG address") {
@@ -559,6 +592,7 @@ impl<'a> Engine<'a> {
     /// `VWD n/exp,...`: raw fields of whole parcels in the code stream.
     fn vwd(&mut self, idx: usize, label: &str, operand: &str) {
         self.begin(idx, label, Attr::Parcel);
+        self.code_last = false;
         if operand.is_empty() {
             self.operand_error(idx, "VWD needs width/value items");
         }
@@ -616,6 +650,8 @@ impl<'a> Engine<'a> {
 
     fn instruction(&mut self, idx: usize, label: &str, result: &str, operand: &str) {
         self.begin(idx, label, Attr::Parcel);
+        self.code_last = true;
+        let cpu = self.cpu;
         let pass = self.pass;
         let mut warnings = Vec::new();
         let assembled = {
@@ -642,7 +678,7 @@ impl<'a> Engine<'a> {
                     forward: v.forward,
                 })
             };
-            cray1_isa::assemble(result, operand, &mut eval)
+            cray1_isa::assemble_cpu(cpu, result, operand, &mut eval)
         };
         for w in warnings {
             self.warning(idx, w);

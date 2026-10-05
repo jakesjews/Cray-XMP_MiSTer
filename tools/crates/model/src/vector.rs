@@ -15,9 +15,9 @@
 //! are those of section 3: `unit_time`.
 
 use crate::exec::{and_values, double_shift_left, double_shift_right, FP_PROFILE};
-use crate::machine::{flag, vl_count, Machine, TestError, A_MASK};
+use crate::machine::{vl_count, Machine, TestError, A_MASK};
 use cray1_fp::{fadd, fmul, frecip, fsub, FpResult, MulKind};
-use cray1_isa::{Decoded, Op};
+use cray1_isa::{Cpu, Decoded, Op};
 
 /// Functional unit times in clock periods (HRM section 3).
 pub mod unit_time {
@@ -33,6 +33,9 @@ pub mod unit_time {
     pub const FP_MULTIPLY: usize = 7;
     /// Reciprocal approximation unit, 174 (page 3-18).
     pub const FP_RECIPROCAL: usize = 14;
+    /// Vector population count unit, 174ij1 and 174ij2.  Rev F page 4-70
+    /// gives a chain slot time of 8 clock periods, which is unit time + 2.
+    pub const VECTOR_POPULATION: usize = 6;
 }
 
 fn plain(value: u64) -> FpResult {
@@ -63,6 +66,10 @@ impl Machine {
     ) -> Option<u64> {
         if r != i {
             self.v[r][e]
+        } else if self.cpu == Cpu::Xmp {
+            // no recursion on the X-MP: every operand element is read before
+            // its result arrives, so the operation sees the old contents
+            self.v_before[e]
         } else if e < delay {
             old0
         } else {
@@ -223,18 +230,7 @@ impl Machine {
         let mut lost = false;
         for e in 0..count {
             let rel = a0.wrapping_add(step.wrapping_mul(e as u32)) & A_MASK;
-            let value = if lost {
-                None
-            } else {
-                match self.translate(rel) {
-                    Some(abs) => self.read_abs(abs),
-                    None => {
-                        lost = !self.monitor_mode();
-                        self.interrupt(flag::OPERAND_RANGE);
-                        None
-                    }
-                }
-            };
+            let value = self.transfer_read(rel, &mut lost);
             self.set_v(d.i as usize, e, value);
         }
         Ok(())
@@ -246,21 +242,30 @@ impl Machine {
         for e in 0..count {
             let rel = a0.wrapping_add(step.wrapping_mul(e as u32)) & A_MASK;
             let value = self.v[d.j as usize][e];
-            match self.translate(rel) {
-                Some(abs) => self.write_abs(abs, if lost { None } else { value })?,
-                None => {
-                    lost = !self.monitor_mode();
-                    self.interrupt(flag::OPERAND_RANGE);
-                }
-            }
+            self.transfer_write(rel, value, &mut lost)?;
         }
         Ok(())
     }
 
     pub(crate) fn execute_vector(&mut self, d: &Decoded) -> Result<(), TestError> {
         use unit_time::*;
+        if self.cpu == Cpu::Xmp {
+            self.v_before = self.v[d.i as usize];
+        }
         let mul = |kind: MulKind| move |a: u64, b: u64| fmul(a, b, kind, FP_PROFILE);
         match d.op {
+            // ---- 145 and 157 with j = k: an element less itself, or
+            // differing from itself, is zero whatever it holds.  `Vi Vi\Vi`
+            // is how later CAL clears a vector register, also one never
+            // written.  When i is that register too, both operands still
+            // come from the same element.
+            Op::XorVV | Op::SubVV if d.j == d.k => {
+                let count = self.vector_count()?;
+                for e in 0..count {
+                    self.set_v(d.i as usize, e, Some(0));
+                }
+                Ok(())
+            }
             // ---- 140 to 147: vector logical (pages 4-49 to 4-52)
             Op::AndSV => self.vector_and(d, true),
             Op::AndVV => self.vector_and(d, false),
@@ -313,6 +318,26 @@ impl Machine {
                         .operand(j, i, e, delay, old0)
                         .map(|x| frecip(x, FP_PROFILE));
                     let value = self.fp_result(r)?;
+                    self.set_v(i, e, value);
+                }
+                Ok(())
+            }
+            // ---- 174ij1, 174ij2: population count and its parity (rev F
+            // page 4-70).  The other bits of each element are zero.
+            Op::PopV | Op::ParityV => {
+                let (i, j) = (d.i as usize, d.j as usize);
+                let count = self.vector_count()?;
+                let (delay, old0) = (VECTOR_POPULATION + 2, self.v[i][0]);
+                let low_bit = d.op == Op::ParityV;
+                for e in 0..count {
+                    let value = self.operand(j, i, e, delay, old0).map(|x| {
+                        let n = x.count_ones() as u64;
+                        if low_bit {
+                            n & 1
+                        } else {
+                            n
+                        }
+                    });
                     self.set_v(i, e, value);
                 }
                 Ok(())

@@ -1,0 +1,83 @@
+* fpmode: a floating point error belongs to the interrupt mode that held
+* when its instruction issued (0021 EFI, 0022 DFI), although the error
+* comes out of the unit clocks later.
+         INCLUDE "rt_direct.cal"
+         INCLUDE "rt_user.cal"
+UPKG     =       3000
+FFPE     =       100                     ; flag bit 33: floating point error
+FNEX     =       1
+         TBEGIN
+* mode off at the multiply, switched on right behind it: no interrupt
+         UGO     KP1
+         UFLAG   S2
+         CHKS    S2,FNEX,2
+         A2      UPKG+1,0
+         CHKA    A2,5,3
+* mode on at the multiply, switched off right behind it: the interrupt, taken
+* behind the multiply, before 0022 issues
+         UGO     KP2
+         UFLAG   S2
+         CHKS    S2,FFPE,4
+         A2      UPKG+1,0
+         CHKA    A2,0,5
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,UP2D,6
+* the same with the error coming from a vector instruction
+         UGO     KP3
+         UFLAG   S2
+         CHKS    S2,FNEX,7
+         UGO     KP4
+         UFLAG   S2
+         CHKS    S2,FFPE,10
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,UP4D,11
+         TPASS
+         TEND
+*
+KBIG     CON     X'5FFF800000000000      ; exponent 57777: its square is out of range
+KVB      CON     X'4001800000000000      ; 1.0
+         CON     X'5FFF800000000000
+         CON     X'4001800000000000
+KP1      CON     UP1*T$P2_24
+KP2      CON     UP2*T$P2_24
+KP3      CON     UP3*T$P2_24
+KP4      CON     UP4*T$P2_24
+         UDATA
+*
+         ORG     3100
+UP1      S1      KBIG,0
+         S2      S1*FS1
+         EFI
+         A1      5
+         EX
+         ORG     3110
+UP2      S1      KBIG,0
+         EFI
+         S2      S1*FS1
+UP2D     DFI
+         A1      5
+         EX
+         ORG     3120
+UP3      S1      KBIG,0
+         A2      3
+         VL      A2
+         A0      KVB
+         V1      ,A0,1
+         V2      S1*FV1
+         EFI
+         A1      5
+         EX
+         ORG     3130
+UP4      S1      KBIG,0
+         A2      3
+         VL      A2
+         A0      KVB
+         V1      ,A0,1
+         EFI
+         V2      S1*FV1
+UP4D     DFI
+         A1      5
+         EX
+         END

@@ -3,8 +3,10 @@
 //! Sources: HR-0097B (CRAY X-MP four-processor mainframe reference manual) pages 4-24 to
 //! 4-30 for the exponent matrix (figure 4-7), the truncated pyramid (figure 4-10), the
 //! truncation compensation constant and the round bits; CRAY-1 HRM 2240004 rev C pages 3-22
-//! and 4-40 for the range rules shared by both machines. The 067 complement step follows
-//! cray-sim (`cray_float.cpp`); no manual describes it at bit level.
+//! and 4-40 for the range rules shared by both machines. No manual describes the 067
+//! complement step at bit level. It follows Cray's own simulation of the unit: subroutine
+//! SMLT of the floating point diagnostic JFPT (CRAY J90 offline diagnostic listing, January
+//! 1997; the code dates from 1980), which also confirms the constants of 064 to 066.
 //!
 //! Bit weights: the coefficient is `a = sum a_p 2^-p` for p = 1 (bit 47) to 48 (bit 0). The
 //! logical product `a_p b_q` has weight `2^-(p+q)` and lives in pyramid "column" p+q, so
@@ -28,6 +30,23 @@ pub struct MulModel {
     pub half_round_bits: [u32; 2],
     /// Number of result coefficient bits kept by the half-precision multiply.
     pub half_bits: u32,
+    /// How 067 forms `2 - product`.
+    pub two_minus: TwoMinus,
+}
+
+/// The complement step of the reciprocal iteration multiply (067).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TwoMinus {
+    /// Cray's diagnostic simulator (JFPT, subroutine SMLT): to the pyramid output with its
+    /// truncation constant add one bits at `2^-2` to `2^-48` and the "iteration constant"
+    /// `2^-51 + 2^-52`, drop the carry out of `2^-1`, then complement every bit below
+    /// `2^-1`. The result bits are those of `198 - P` in units of `2^-56`, `P` being the sum
+    /// of the logical products.
+    Cray,
+    /// cray-sim's guess: the two's complement of the pyramid output less the truncation
+    /// constant, `9 - P`. It is one or two units of the last place lower than `Cray` for
+    /// most reciprocal iterations.
+    CraySim,
 }
 
 impl MulModel {
@@ -41,6 +60,7 @@ impl MulModel {
         round_bits: [50, 51],
         half_round_bits: [31, 32],
         half_bits: 29,
+        two_minus: TwoMinus::Cray,
     };
 
     /// The multiplier core as cray-sim's `Mult` function computes it: one extra pyramid
@@ -54,6 +74,7 @@ impl MulModel {
         round_bits: [50, 51],
         half_round_bits: [32, 33],
         half_bits: 29,
+        two_minus: TwoMinus::CraySim,
     };
 
     /// Sum of the logical products the pyramid forms, in units of `2^-last_column`.
@@ -86,9 +107,16 @@ impl MulModel {
             MulKind::HalfRounded => {
                 sum + comp + self.unit(self.half_round_bits[0]) + self.unit(self.half_round_bits[1])
             }
-            // cray-sim: add the complemented constant, then complement the sum. Net effect:
-            // the two's complement of (sum - constant).
-            MulKind::TwoMinus => comp.wrapping_sub(sum),
+            MulKind::TwoMinus => match self.two_minus {
+                TwoMinus::Cray => {
+                    let ones = ((1u64 << 47) - 1) << (self.last_column - 48);
+                    let below_top = (1u64 << (self.last_column - 1)) - 1;
+                    (sum + comp + self.unit(51) + self.unit(52) + ones) ^ below_top
+                }
+                // add the complemented constant, then complement the sum: the two's
+                // complement of (sum - constant)
+                TwoMinus::CraySim => comp.wrapping_sub(sum),
+            },
         }
     }
 }
@@ -96,8 +124,9 @@ impl MulModel {
 /// Floating product for instructions 064 (`Full`), 065 (`HalfRounded`), 066 (`Rounded`) and
 /// 067 (`TwoMinus`, the reciprocal iteration `2 - a*b`).
 ///
-/// [`Profile::Cray1`] currently returns exactly what [`Profile::Xmp`] returns: the CRAY-1
-/// pyramid of figure 3-5 could not be reconstructed uniquely (see [`crate::cray1_pyramid`]).
+/// [`Profile::Cray1`] returns exactly what [`Profile::Xmp`] returns: the symmetric multiply
+/// unit the CRAY-1 had from 1980 is documented in the same words as the X-MP's. The original
+/// staircase pyramid of figure 3-5 is not used (see [`crate::cray1_pyramid`]).
 pub fn fmul(a: u64, b: u64, kind: MulKind, profile: Profile) -> FpResult {
     match profile {
         Profile::Xmp | Profile::Cray1 => fmul_model(a, b, kind, &MulModel::XMP_MANUAL),
@@ -192,6 +221,17 @@ mod tests {
         assert_eq!(m.pyramid_output(0, 0, MulKind::Full), 9);
         assert_eq!(m.pyramid_output(0, 0, MulKind::Rounded), 9 + 0x60);
         assert_eq!(m.pyramid_output(0, 0, MulKind::HalfRounded), 9 + (3 << 24));
+        // 067: the bits that can reach the result (2^-1 to 2^-49) are those of 198 - P.
+        for (x, y) in [
+            (0u64, 0u64),
+            (1 << 47, 1 << 47),
+            (0xFFFF_FFFF_FFFF, 0x8000_0000_0001),
+        ] {
+            let p = m.partial_product_sum(x, y);
+            let want = 198u64.wrapping_sub(p) & ((1 << 56) - 1);
+            let got = m.pyramid_output(x, y, MulKind::TwoMinus) & ((1 << 56) - 1);
+            assert_eq!(got >> 7, want >> 7, "{x:X} {y:X}");
+        }
         // cray-sim's register has one more bit on the right: 18, 0xC0, bits 24 and 25.
         let c = MulModel::CRAY_SIM;
         assert_eq!(c.pyramid_output(0, 0, MulKind::Full), 18);

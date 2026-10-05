@@ -11,9 +11,11 @@
 //          2  066  rounded product
 //          3  067  reciprocal iteration, 2 - a*b
 //
-// The multiplier is the truncated pyramid of the Cray manuals (HR-0097B
-// figure 4-10 and page 4-30; the reference model is tools/crates/fp/src/mul.rs,
-// which this unit matches bit for bit).  With the coefficients as fractions,
+// The multiplier is the truncated pyramid of the Cray manuals: the symmetric
+// unit the CRAY-1 had from 1980 (change packet E-01 of its manual), which the
+// X-MP manuals describe in the same words (HR-0097B figure 4-10 and page 4-30).
+// The reference model is tools/crates/fp/src/mul.rs, which this unit matches
+// bit for bit.  With the coefficients as fractions,
 // the logical product of bit 2^-p of one and bit 2^-q of the other belongs to
 // column p+q.  Only columns 2 to 56 are formed; everything to the right is
 // never generated, so each row of the pyramid is cut off at 2^-56.  A constant
@@ -112,14 +114,17 @@ module fp_mul (
 
 	// stage 4: the last add, with the constants.  The compensation is 9; the round
 	// bits are 2^-50 and 2^-51 (066) or 2^-31 and 2^-32 (065).  For 067 the unit
-	// forms 9 minus the pyramid sum, which is ~x + ~y + 11.
+	// forms 198 minus the pyramid sum, which is ~x + ~y + 200.  That is what
+	// Cray's own simulation of the unit comes to (see TwoMinus::Cray in mul.rs):
+	// it adds one bits at 2^-2 to 2^-48 and 2^-51 + 2^-52 to the sum and its
+	// constant, then complements everything below 2^-1.
 	reg [55:0] s4_out;
 	reg [55:0] konst;
 	always @(*) begin
 		case (c3_kind)
 			K_HALF:  konst = 56'd9 + (56'd1 << 25) + (56'd1 << 24);
 			K_ROUND: konst = 56'd9 + (56'd1 << 6) + (56'd1 << 5);
-			K_2M:    konst = 56'd11;
+			K_2M:    konst = 56'd200;
 			K_FULL:  konst = 56'd9;
 		endcase
 	end

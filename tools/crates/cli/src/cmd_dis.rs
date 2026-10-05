@@ -1,6 +1,7 @@
 //! `cray1 dis`: disassemble a memory image.
 
 use crate::args::Args;
+use cray1_isa::Cpu;
 use std::process::ExitCode;
 
 pub const DETAILS: &str = "
@@ -9,6 +10,7 @@ instruction parcels, starting with parcel a of the first word.
 
   --start WORD   first word to disassemble (default 0)
   --words N      number of words (default: to the end of the image)
+  --machine M    CRAY1 (default) or XMP: read the X-MP instructions too
 
 Numbers are decimal, or octal with 0o, or hex with 0x.
 
@@ -37,7 +39,13 @@ fn address(addr: u64) -> String {
 
 /// Disassemble `words[start..end]`; instructions may take their second
 /// parcel from beyond `end`.
+#[cfg(test)]
 pub fn disassemble(words: &[u64], start: u64, end: u64) -> String {
+    disassemble_cpu(Cpu::Cray1, words, start, end)
+}
+
+/// `disassemble` for the given machine.
+pub fn disassemble_cpu(cpu: Cpu, words: &[u64], start: u64, end: u64) -> String {
     let mut out = String::new();
     let mut addr = start * 4;
     let limit = end * 4;
@@ -56,9 +64,14 @@ pub fn disassemble(words: &[u64], start: u64, end: u64) -> String {
             }
         }
         let p0 = parcel(words, addr).unwrap_or(0);
-        let two = cray1_isa::length(p0) == 2;
+        let two = cray1_isa::length_cpu(cpu, p0) == 2;
         let p1 = if two { parcel(words, addr + 1) } else { None };
-        let d = cray1_isa::decode(p0, p1);
+        let d = cray1_isa::decode_cpu(cpu, p0, p1);
+        let spelled = if d.form.on(Cpu::Cray1) {
+            Cpu::Cray1
+        } else {
+            Cpu::Xmp
+        };
         let mut notes = Vec::new();
         let code = match (two, p1) {
             (false, _) => format!("{:06o}", p0),
@@ -73,7 +86,7 @@ pub fn disassemble(words: &[u64], start: u64, end: u64) -> String {
         }
         let (result, operand) = cray1_isa::disassemble_fields(&d);
         // does the text spell these very parcels, or only their canonical form?
-        let exact = match cray1_isa::assemble_numeric(&result, &operand) {
+        let exact = match cray1_isa::assemble_numeric_cpu(spelled, &result, &operand) {
             Ok(a) => a.encoding.parcel0 == p0 && a.encoding.parcel1 == p1,
             Err(_) => d.is_canonical(),
         };
@@ -97,7 +110,12 @@ pub fn disassemble(words: &[u64], start: u64, end: u64) -> String {
 }
 
 pub fn run(argv: &[String]) -> Result<ExitCode, String> {
-    let args = Args::parse(argv, &["--start", "--words"])?;
+    let args = Args::parse(argv, &["--start", "--words", "--machine"])?;
+    let cpu = match args.value("--machine") {
+        Some(name) => Cpu::from_name(name)
+            .ok_or_else(|| format!("--machine `{}` is not known: CRAY1 or XMP", name))?,
+        None => Cpu::Cray1,
+    };
     let path = args.one_positional("the image file")?;
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {}", path, e))?;
     if bytes.len() % 8 != 0 {
@@ -126,7 +144,7 @@ pub fn run(argv: &[String]) -> Result<ExitCode, String> {
         Some(n) => start.saturating_add(n).min(total),
         None => total,
     };
-    print!("{}", disassemble(&words, start, end));
+    print!("{}", disassemble_cpu(cpu, &words, start, end));
     Ok(ExitCode::SUCCESS)
 }
 

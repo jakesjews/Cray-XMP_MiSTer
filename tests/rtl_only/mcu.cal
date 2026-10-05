@@ -1,0 +1,93 @@
+* mcu: the MCU interrupt, flag bit 32 (HR-0004 rev F page 3-38), which in
+* this core is the console's request: CTRL-C, enabled by bit 0 of the
+* console status word.  The reference model has nobody at the console, so
+* this test checks itself and runs on the RTL only, with CTRL-C arriving
+* in the two clocks named on the next line.
+* SIM: --ctrl-c 30000,400000
+         INCLUDE "rt_direct.cal"
+         INCLUDE "rt_user.cal"
+UPKG     =       3000
+FMCU     =       200                     ; flag bit 32
+FNEX     =       1
+*
+* bits 2 and 3 of the status word: 1 enabled, 3 enabled and requested
+         MACRO   CSTAT %REG
+         %REG    T$CSTA,0
+         %REG    %REG<D'60
+         %REG    %REG>D'62
+         ENDM
+*
+         TBEGIN
+         S1      1
+         T$CSTA,0 S1                     ; enable
+         CSTAT   S2
+         CHKS    S2,1,2
+* the first CTRL-C finds a user program running
+         UGO     KP1
+         UFLAG   S2
+         CHKS    S2,FMCU,3
+         CSTAT   S2
+         CHKS    S2,3,4
+* the request stays until the status word is written: a program sent off
+* now is interrupted at once
+         UGO     KP1
+         UFLAG   S2
+         CHKS    S2,FMCU,5
+         A2      UPKG+1,0
+         A3      D'10
+         A0      A2-A3
+         JAM     L1
+         TFAIL   6
+L1       S1      1
+         T$CSTA,0 S1                     ; clear the request, stay enabled
+         CSTAT   S2
+         CHKS    S2,1,7
+         UGO     KP3
+         UFLAG   S2
+         CHKS    S2,FNEX,10
+* The second CTRL-C arrives in monitor mode: it sets no flag there.  A
+* user program looks at the F register of this test's own package while
+* it is stored.
+P1       S2      T$CSTA,0
+         S0      S2<D'60                 ; bit 3: requested
+         JSP     P1
+         A1      D'100
+W1       A1      A1-1
+         A0      A1
+         JAN     W1
+         S1      1
+         T$CSTA,0 S1                     ; clear the request
+         UGO     KP7
+         UFLAG   S2
+         CHKS    S2,FNEX,11
+         S2      UPKG+11,0               ; the program's S1
+         S2      S2<D'31
+         S2      S2>D'55
+         CHKS    S2,0,12
+         S1      0
+         T$CSTA,0 S1                     ; disable and clear
+         CSTAT   S2
+         CHKS    S2,0,13
+         UGO     KP3
+         UFLAG   S2
+         CHKS    S2,FNEX,14
+         TPASS
+         TEND
+*
+KP1      CON     UP1*T$P2_24
+KP3      CON     UP3*T$P2_24
+KP7      CON     UP7*T$P2_24
+         UDATA
+*
+         ORG     3100
+UP1      A1      A1+1                    ; count for ever
+         J       UP1
+         ORG     3120
+UP3      A1      A1+1                    ; count to (A2), then exit
+         A0      A2-A1
+         JAN     UP3
+         EX
+         ORG     3160
+UP7      S1      UPKG+3,0                ; word 3 of the package stored here
+         EX
+         END

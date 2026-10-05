@@ -35,20 +35,24 @@
 //! # Profiles
 //!
 //! [`Profile::Xmp`] is the X-MP arithmetic of the Cray manuals (HR-0097B section 4).
-//! [`Profile::Cray1`] currently returns **exactly the same results**:
+//! [`Profile::Cray1`] returns **exactly the same results**, and stands for the CRAY-1 with
+//! the symmetric multiply unit:
 //!
-//! * the CRAY-1 multiply pyramid (HRM 2240004 figure 3-5) could be reconstructed only up to
-//!   the ambiguities listed in [`cray1_pyramid`], so it is not used;
-//! * the CRAY-1 manual gives no bit-level description of its reciprocal unit.
-//!
-//! The CRAY-1 manual documents real differences that this crate therefore does **not**
-//! model for `Profile::Cray1`: a non-commutative staircase pyramid with its truncation
-//! constant at `2^-51` and `2^-52` (X-MP: a straight cut after `2^-56` and nine carries at
-//! `2^-56`), one round bit at `2^-49` for 066 (X-MP: `2^-50` and `2^-51`), and a 30-bit
-//! half-precision result (X-MP: 29 bits). With the staircase as far as it could be
-//! reconstructed, about one unrounded product in five differs from the X-MP result in its
-//! last bit (`tests/pyramid.rs`), so `Profile::Cray1` should be read as "X-MP arithmetic",
-//! not as a CRAY-1 reference, until the pyramid wiring is known.
+//! * The CRAY-1 changed its multiply unit. Revisions C (1977) and E (1979) of the hardware
+//!   manual describe a non-commutative staircase pyramid with its truncation constant at
+//!   `2^-51` and `2^-52`, one round bit at `2^-49` for 066 and a 30-bit half-precision
+//!   result. Change packet E-01 of May 1980, printed in revision F (1982), "documents
+//!   changes to the multiply functional unit that supports symmetrical multiply": a straight
+//!   cut after `2^-56`, nine carries at `2^-56`, round bits at `2^-50` and `2^-51`,
+//!   commutative. That text, the CRAY-1 S manual's and the X-MP manuals' are the same.
+//! * The original staircase unit is not modelled. [`cray1_pyramid`] has it as far as figure
+//!   3-5 of revision C allows; about one unrounded product in five differs from the
+//!   symmetric unit in its last bit (`tests/pyramid.rs`). Which serial numbers had which
+//!   unit is not known.
+//! * E-01 still calls the half-precision result "30-bit"; the CRAY-1 S and X-MP manuals and
+//!   Cray's diagnostic say 29 bits, which is what both profiles return.
+//! * The reciprocal unit is the same in both: Cray's diagnostic simulation of it names
+//!   CRAY-1 modules.
 //!
 //! [`fadd`] and [`fsub`] take no profile. The one point where the two manuals differ for
 //! the add unit is noted below.
@@ -57,7 +61,9 @@
 //!
 //! Reference vectors: the sum, product and reciprocal tables of cray-sim's `fp_test.cpp`
 //! (72 cases) and seven further cases from its `main()`, stored in
-//! `tests/fp/xmp_ref.vec`. All are reproduced. They cover in-range, mostly normalised
+//! `tests/fp/xmp_ref.vec`. All are reproduced. The 72 are the canned operands and answers
+//! of Cray's floating point diagnostic JFPT (tables COPA, COPB, ERFA, ERFM and ERRP in the
+//! CRAY J90 offline diagnostic listing of January 1997; the code dates from 1980). They cover in-range, mostly normalised
 //! operands of 062, 064 and 070 only. Three more cases in `main()` are left out because
 //! cray-sim itself does not reproduce them; one of them, a product, is matched by the
 //! reconstructed CRAY-1 staircase and by the X-MP rounded multiply but not by the X-MP
@@ -77,11 +83,20 @@
 //! * reciprocal 070: the complete algorithm for normalised operands, and the result for a
 //!   zero operand.
 //!
-//! Taken from the manuals or from cray-sim without any reference vector:
+//! Confirmed by Cray's own simulation of the units in that diagnostic (subroutines SMLT and
+//! SRP, transcribed and compared outside this crate on millions of operands; see
+//! `research/notes/fp-multiply.md` in the core's repository):
 //!
-//! * every range error and underflow rule, and every flag value;
-//! * 065, 066 and 067. The round bit positions are the manuals'. For 065 cray-sim places
-//!   them one bit lower; the manuals are followed. The complement step of 067 is cray-sim's;
+//! * 064, 065, 066 and 067 bit for bit, value and range flag, including the pyramid cut
+//!   after `2^-56`, the constant 9, the round bits, the 29-bit half-precision result and the
+//!   complement step of 067 (`mul::TwoMinus::Cray`);
+//! * the multiply's range and underflow rules, the integer multiply, and its sign: the
+//!   exclusive OR of the operand signs even when the coefficient comes out zero;
+//! * the reciprocal, bit for bit.
+//!
+//! Taken from the manuals without any reference:
+//!
+//! * the range error and underflow rules of the add unit, and its flag values;
 //! * add: operands with an exponent below `020000` take part normally (cray-sim replaces
 //!   them by zero first); a result exponent below `020000` gives zero (cray-sim stops
 //!   normalising at `020000`); the range error on a carry out of exponent `057777` is in the
@@ -103,14 +118,14 @@
 //!   descriptions (stated in the test comments);
 //! * `x * frecip(x)` differs from 1 by less than `2^-30` (largest seen `2^-30.43`): the
 //!   "30 bits" of HRM page 3-28, not the "27 bits" of page 4-42;
-//! * the four-instruction divide sequence ([`fdiv`]) is **not** within one unit of the last
-//!   coefficient bit. The quotient ranges from 3.72 units too small to 0.13 too large, is
-//!   1.52 units too small on average, and is within one unit a fifth of the time. This
-//!   follows from the arithmetic itself: the correction factor `2 - r*b` has a coefficient
-//!   just above one half, so its last bit is worth up to two units of the quotient (the
-//!   manual's "47 bits"), and two truncating multiplies follow. cray-sim's own arithmetic,
-//!   run through the same sequence on 50,000 pairs, was up to 3.66 units low with a similar
-//!   average.
+//! * the four-instruction divide sequence ([`fdiv`]) is **not** always within one unit of
+//!   the last coefficient bit. The quotient ranges from 2.28 units too small to 1.56 too
+//!   large, is 0.45 units too small on average, and is within one unit four times out of
+//!   five. This follows from the arithmetic itself: the correction factor `2 - r*b` has a
+//!   coefficient just above one half, so its last bit is worth up to two units of the
+//!   quotient (the manual's "47 bits"), and two truncating multiplies follow. W. Kahan's
+//!   figures from real machines ("How Cray's arithmetic hurts scientific computation",
+//!   1990) fit this rule and not cray-sim's, which would be 3.7 units low to 0.1 high.
 //!
 //! # Differences from cray-sim
 //!
@@ -127,8 +142,9 @@
 //! Everywhere else the two differ on purpose, as listed above: cray-sim implements no range
 //! errors, zeroes operands with small exponents, and has the wider pyramid. Between
 //! [`MulModel::XMP_MANUAL`] (what `fmul` uses) and [`MulModel::CRAY_SIM`], random normalised
-//! products differ in about 2.6 percent of cases for 064 and 066, 3.3 percent for 067 and 26
-//! percent for 065 (`tests/xmp_statistics.rs`).
+//! products differ in about 2.6 percent of cases for 064 and 066, 26 percent for 065 and 90
+//! percent for 067, where cray-sim's complement step is one or two units lower
+//! (`tests/xmp_statistics.rs`).
 
 #![forbid(unsafe_code)]
 

@@ -4,9 +4,9 @@
 //! rev C.
 
 use crate::event::Event;
-use crate::machine::{flag, mode, ErrorKind, Machine, TestError, A_MASK, P_MASK};
+use crate::machine::{flag, mode, mode1, ErrorKind, Machine, TestError, A_MASK, P_MASK};
 use cray1_fp::{fadd, fmul, frecip, fsub, FpResult, MulKind, Profile};
-use cray1_isa::{Decoded, Op};
+use cray1_isa::{Cpu, Decoded, Op};
 
 /// The floating point arithmetic used everywhere (a project decision: it
 /// currently equals the X-MP arithmetic, see `cray1-fp`).
@@ -106,6 +106,12 @@ impl Machine {
     /// if an interrupt could have been taken the run cannot go on.
     pub(crate) fn fp_result(&mut self, r: Option<FpResult>) -> Result<Option<u64>, TestError> {
         let armed = self.m & mode::FLOATING_POINT != 0 && !self.monitor_mode();
+        // X-MP: the status bit records an error whatever the modes are
+        match r {
+            Some(r) if r.range_error => self.fps = Some(true),
+            None if self.fps != Some(true) => self.fps = None,
+            _ => {}
+        }
         match r {
             Some(r) => {
                 if r.range_error && armed {
@@ -123,11 +129,32 @@ impl Machine {
 
     /// Set P from a branch address.  P holds the low 22 bits; an address
     /// with bit 2**22 or 2**23 set is a program range error (page 4-4).
+    /// The X-MP's P takes all 24 bits and the fetch finds any range error.
     fn branch(&mut self, target: u32) {
-        self.p = target & P_MASK;
-        if target & !P_MASK & A_MASK != 0 {
+        self.p = target & self.p_mask();
+        if self.cpu == Cpu::Cray1 && target & !P_MASK & A_MASK != 0 {
             self.interrupt(flag::PROGRAM_RANGE);
         }
+    }
+
+    /// X-MP: 010 to 017 with the high bit of i set are not branches there
+    /// but `Ah exp`, a 24-bit constant, which this machine does not have.
+    fn no_long_constant(&self, d: &Decoded) -> Result<(), TestError> {
+        if self.cpu == Cpu::Xmp && d.i & 4 != 0 {
+            return Err(self.error(
+                ErrorKind::NotDefinedByManual,
+                "01hijkm with the high bit of i set (the X-MP's 24-bit constant to Ah)",
+            ));
+        }
+        Ok(())
+    }
+
+    /// X-MP: the shared registers of the current cluster; `None` in cluster
+    /// 0, where "instructions regarding the shared registers become no-ops,
+    /// except for the instructions returning values to Ai or Si, which
+    /// return a zero value" (CSM-0111000 page 2-17).
+    fn cluster_index(&self) -> Option<usize> {
+        (self.cln != 0).then(|| self.cln as usize - 1)
     }
 
     /// 000 and 004: set the flag unless in monitor mode, then exchange in
@@ -151,20 +178,7 @@ impl Machine {
         let mut lost = false;
         for n in 0..count {
             let reg = (d.jk() as usize + n) & 0o77;
-            let value = if lost {
-                None
-            } else {
-                match self.translate(a0.wrapping_add(n as u32) & A_MASK) {
-                    Some(abs) => self.read_abs(abs),
-                    None => {
-                        // what follows an out-of-range reference in a user
-                        // program is not specified: the rest is undefined
-                        lost = !self.monitor_mode();
-                        self.interrupt(flag::OPERAND_RANGE);
-                        None
-                    }
-                }
-            };
+            let value = self.transfer_read(a0.wrapping_add(n as u32) & A_MASK, &mut lost);
             if t {
                 self.set_t(reg, value);
             } else {
@@ -185,13 +199,7 @@ impl Machine {
             } else {
                 self.b[reg].map(|v| v as u64)
             };
-            match self.translate(a0.wrapping_add(n as u32) & A_MASK) {
-                Some(abs) => self.write_abs(abs, if lost { None } else { value })?,
-                None => {
-                    lost = !self.monitor_mode();
-                    self.interrupt(flag::OPERAND_RANGE);
-                }
-            }
+            self.transfer_write(a0.wrapping_add(n as u32) & A_MASK, value, &mut lost)?;
         }
         Ok(())
     }
@@ -211,7 +219,7 @@ impl Machine {
             // ---- 000 to 004 (pages 4-7 to 4-13)
             Op::Err => self.exit_instruction(flag::ERROR_EXIT),
             // no channels are attached; a pass outside monitor mode anyway
-            Op::SetCa | Op::SetCl | Op::ClearCi | Op::MonitorPass => {}
+            Op::SetCa | Op::SetCl | Op::ClearCi | Op::ClockPass | Op::MonitorPass => {}
             Op::SetXa => {
                 if monitor {
                     // bits 2**11 to 2**4 of (Aj); cleared if j = 0 (page 4-8)
@@ -225,13 +233,141 @@ impl Machine {
                     self.emit(Event::Rtc(value));
                 }
             }
+            // ---- the programmable clock (rev F pages 4-10 and 6-23).  The
+            // interval and the countdown are clock period counts and are not
+            // modelled; what is kept is whether a request may be set.
+            Op::SetPci => {}
+            Op::Cci => {
+                if monitor {
+                    // while enabled the next request can follow at once
+                    self.clock_request_possible = self.clock_enabled;
+                }
+            }
+            Op::Eci => {
+                if monitor {
+                    self.clock_enabled = true;
+                    self.clock_request_possible = true;
+                }
+            }
+            Op::Dci => {
+                if monitor {
+                    // a request that is already set stays until 0014j5
+                    self.clock_enabled = false;
+                }
+            }
             Op::SetVl => {
                 // the low seven bits of (Ak), 1 if k = 0 (page 4-10)
                 let value = self.ak(d).map(|a| a as u8 & 0x7f);
                 self.set_vl(value);
             }
-            Op::Efi => self.set_m(self.m | mode::FLOATING_POINT),
-            Op::Dfi => self.set_m(self.m & !mode::FLOATING_POINT),
+            Op::Efi | Op::Dfi => {
+                if d.op == Op::Efi {
+                    self.set_m(self.m | mode::FLOATING_POINT);
+                } else {
+                    self.set_m(self.m & !mode::FLOATING_POINT);
+                }
+                // X-MP: both also clear the floating point error status
+                self.fps = Some(false);
+            }
+
+            // ---- X-MP only (CSM-0111000 pages 5-11 to 5-17, 5-32, 5-34, 5-59)
+            Op::SetCln => {
+                if monitor {
+                    self.cln = d.j & 3;
+                }
+            }
+            Op::Eri => self.set_m(self.m | mode::OPERAND_RANGE),
+            Op::Dri => self.set_m(self.m & !mode::OPERAND_RANGE),
+            Op::Ebm => self.m1 |= mode1::BIDIRECTIONAL,
+            Op::Dbm => self.m1 &= !mode1::BIDIRECTIONAL,
+            // memory references are complete after every instruction here
+            Op::Cmr => {}
+            Op::SemTestSet => {
+                if let Some(c) = self.cluster_index() {
+                    let n = jk & 0o37;
+                    let set = self.need(self.sm[c][n], "semaphore tested by 0034")?;
+                    if !set {
+                        self.sm[c][n] = Some(true);
+                    } else if monitor {
+                        // nothing can clear it on a one-processor machine
+                        return Err(self.error(
+                            ErrorKind::NotDefinedByManual,
+                            "test and set of a set semaphore in monitor mode: it waits for good",
+                        ));
+                    } else {
+                        // the instruction does not issue: deadlock interrupt
+                        // with P at this instruction
+                        self.p = self.cur_p;
+                        self.waiting_semaphore = true;
+                        self.interrupt(flag::DEADLOCK);
+                    }
+                }
+            }
+            Op::SemClear | Op::SemSet => {
+                if let Some(c) = self.cluster_index() {
+                    self.sm[c][jk & 0o37] = Some(d.op == Op::SemSet);
+                }
+            }
+            Op::AFromSb => {
+                let value = match self.cluster_index() {
+                    Some(c) => self.sb[c][j],
+                    None => Some(0),
+                };
+                self.set_a(i, value);
+            }
+            Op::SbFromA => {
+                if let Some(c) = self.cluster_index() {
+                    self.sb[c][j] = self.a[i];
+                }
+            }
+            Op::SFromSt => {
+                let value = match self.cluster_index() {
+                    Some(c) => self.st[c][j],
+                    None => Some(0),
+                };
+                self.set_s(i, value);
+            }
+            Op::StFromS => {
+                if let Some(c) = self.cluster_index() {
+                    self.st[c][j] = self.s[i];
+                }
+            }
+            Op::SFromSm => {
+                // SM0 is the sign bit; the low 32 bits are zero
+                let value = match self.cluster_index() {
+                    Some(c) => self.sm[c]
+                        .iter()
+                        .enumerate()
+                        .try_fold(0u64, |word, (n, bit)| {
+                            bit.map(|b| word | (b as u64) << (63 - n))
+                        }),
+                    None => Some(0),
+                };
+                self.set_s(i, value);
+            }
+            Op::SmFromS => {
+                if let Some(c) = self.cluster_index() {
+                    for n in 0..32 {
+                        self.sm[c][n] = self.s[i].map(|s| s >> (63 - n) & 1 != 0);
+                    }
+                }
+            }
+            Op::SFromSr => {
+                // the status register: ones in the low half; the processor
+                // number (always 0) and the cluster number only in monitor mode
+                let cln = if monitor { self.cln as u64 } else { 0 };
+                let value = self.fps.map(|fps| {
+                    ((self.cln != 0) as u64) << 63
+                        | (self.ps as u64) << 57
+                        | (fps as u64) << 51
+                        | ((self.m & mode::FLOATING_POINT != 0) as u64) << 50
+                        | ((self.m & mode::OPERAND_RANGE != 0) as u64) << 49
+                        | ((self.m1 & mode1::BIDIRECTIONAL != 0) as u64) << 48
+                        | cln << 32
+                        | 0xffff_ffff
+                });
+                self.set_s(i, value);
+            }
             Op::Undefined => {
                 return Err(self.error(
                     ErrorKind::NotDefinedByManual,
@@ -256,6 +392,7 @@ impl Machine {
                 self.branch(d.ijkm() & A_MASK);
             }
             Op::Jaz | Op::Jan | Op::Jap | Op::Jam => {
+                self.no_long_constant(d)?;
                 let a0 = self.need(self.a[0], "A0 (branch condition)")?;
                 let taken = match d.op {
                     Op::Jaz => a0 == 0,
@@ -268,6 +405,7 @@ impl Machine {
                 }
             }
             Op::Jsz | Op::Jsn | Op::Jsp | Op::Jsm => {
+                self.no_long_constant(d)?;
                 let s0 = self.need(self.s[0], "S0 (branch condition)")?;
                 let taken = match d.op {
                     Op::Jsz => s0 == 0,
@@ -294,6 +432,11 @@ impl Machine {
                 let value = self.sj(d).map(|s| s.count_ones());
                 self.set_a(i, value);
             }
+            Op::PopParity => {
+                // only the low bit of the count (rev F page 4-25)
+                let value = self.sj(d).map(|s| s.count_ones() & 1);
+                self.set_a(i, value);
+            }
             Op::LeadingZeros => {
                 let value = self.sj(d).map(|s| s.leading_zeros());
                 self.set_a(i, value);
@@ -303,7 +446,12 @@ impl Machine {
                 self.set_a(i, value);
             }
             Op::SubA => {
-                let value = both(self.aj(d), self.ak(d)).map(|(a, b)| a.wrapping_sub(b) & A_MASK);
+                // a register less itself is zero whatever it holds
+                let value = if d.j == d.k && d.j != 0 {
+                    Some(0)
+                } else {
+                    both(self.aj(d), self.ak(d)).map(|(a, b)| a.wrapping_sub(b) & A_MASK)
+                };
                 self.set_a(i, value);
             }
             Op::MulA => {
@@ -384,7 +532,12 @@ impl Machine {
                 self.set_s(i, value);
             }
             Op::SubS => {
-                let value = both(self.sj(d), self.sk(d)).map(|(a, b)| a.wrapping_sub(b));
+                // a register less itself is zero whatever it holds
+                let value = if d.j == d.k && d.j != 0 {
+                    Some(0)
+                } else {
+                    both(self.sj(d), self.sk(d)).map(|(a, b)| a.wrapping_sub(b))
+                };
                 self.set_s(i, value);
             }
             Op::FAddS | Op::FSubS | Op::FMulS | Op::HMulS | Op::RMulS | Op::IMulS => {
