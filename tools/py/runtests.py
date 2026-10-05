@@ -14,7 +14,8 @@
                                   research/Cray 1 Disk Image from Youtube), the system
                                   model dead starts it and runs a job, the I/O
                                   Processor follows the kernel's boot step by step,
-                                  and the three I/O Processors together boot it
+                                  the I/O Subsystem boots it, and the whole machine
+                                  loads and starts COS
 
 Needs the host tools (make tools) and the simulations (make sim).  Programs are
 compared with the reference model by difftest.py; see docs/DEVELOPMENT.md.
@@ -124,7 +125,8 @@ def main():
             ok &= step('system model: COS 1.17 dead starts and runs a job',
                        [SYS, SYSTEM, '--script', 'tests/sys/cos.script', '--quiet'])
             ok &= step('I/O Processor: the kernel boots on each of the three', [PY, IOP, 'kernel', SYSTEM])
-            ok &= step('I/O Processors together: the kernel boots', [PY, IOP, 'boot', SYSTEM])
+            ok &= step('I/O Subsystem: the kernel boots', [PY, IOP, 'boot', SYSTEM])
+            ok &= step('CPU and I/O Subsystem: COS is loaded and started', [PY, IOP, 'machine', SYSTEM, '--start'])
     print('ALL PASSED' if ok else 'FAILED')
     sys.exit(0 if ok else 1)
 

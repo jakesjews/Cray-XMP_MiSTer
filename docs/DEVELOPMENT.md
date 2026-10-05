@@ -13,8 +13,11 @@ programs, see [PROGRAMMING.md](PROGRAMMING.md).
   project is no longer maintained, so they are maintained here like the rest.
 - `rtl/ios/`: the I/O Subsystem. So far the I/O Processors with their Local
   Memories, clocks, Buffer Memory channels, the channels between them, the
-  consoles, the Peripheral Expander with its tape and disk, and the BIOP's
-  disk drives and channel into central memory; no build uses it yet.
+  consoles, the Peripheral Expander with its tape and disk, the BIOP's disk
+  drives and channel into central memory, and the MIOP's channel pair to the
+  mainframe; no build uses it yet.
+- `rtl/xmp_machine.v`: the CPU with the X-MP features and the I/O Subsystem
+  joined into the machine that runs COS. It exists in simulation only.
 - `rtl/terminal/`, `rtl/console_io.v`, `rtl/mister/`: console, serial port, DDR3 memory port.
 - `rtl/boot/`: the monitor ROM. `monitor.mem` is built from `software/monitor/`.
 - `sys/`: the MiSTer framework, an unmodified copy of
@@ -123,6 +126,10 @@ sim/build/fp/Vfp_tb tests/fp/xmp_ref.vec
   disk and of the nine drives (`--drive N=FILE`), which it serves the way the
   MiSTer framework does. `--type TEXT=KEYS` presses keys
   on the operator's console when it has shown TEXT.
+- `sim/build/xmp/Vxmp_machine` takes the same arguments and is the whole
+  machine (`rtl/xmp_machine.v`), CPU included, with central memory served by
+  the test bench. `--quick` leaves out the tests of memory and most of the
+  BIOP's test of its drives.
 
 ## Tests
 
@@ -195,7 +202,14 @@ python3 tools/py/ioptest.py kernel         # the real kernel's boot on each of t
   are on their own consoles. The test then types `FSTAT`, and the kernel
   lists the files on the expander disk as the system model lists them.
   Meanwhile the BIOP runs its own test of its nine drives and must have
-  nothing to report. The links to the mainframe do not exist yet.
+  nothing to report.
+- `python3 tools/py/ioptest.py machine` runs the whole machine: the operator
+  types `START COS_117 DEADSTART`, and the kernel checks the mainframe. It
+  holds the CPU with Master Clear, loads a test program into central memory
+  through the BIOP, lets the CPU go, takes a word from it over the channel
+  pair and reports `MFINIT: COMPLETE`. With `--start` the run goes on: COS
+  is loaded from the expander disk and started, and the kernel reports the
+  linkage with it and `START COMPLETE`. That is about two minutes.
 - `python3 tools/py/ioptest.py selftest` runs `tests/ios/selftest.py`, a
   program for the I/O Processors that takes the kernel's place, on the system
   model and on the same hardware. It checks what the kernel's start does not

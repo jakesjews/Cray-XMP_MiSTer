@@ -189,9 +189,10 @@ beyond a CRAY-1 (the study is in `research/cos-cray1/`, the specification in
 `research/notes/machine-spec.md`). The reference is the CRAY X-MP Series
 Model 14 mainframe reference manual, CSM-0111000. It is simulated and tested
 against the reference model. No MiSTer build uses it yet: COS also needs the
-I/O Subsystem with its I/O processors, which exists as a model only
-(`docs/DEVELOPMENT.md`, "The system model"). On that model, with this CPU's
-reference model as the mainframe, COS 1.17 dead starts and runs batch jobs.
+I/O Subsystem with its I/O processors. That exists as a model, on which
+COS 1.17 dead starts and runs batch jobs with this CPU's reference model as
+the mainframe, and as hardware in `rtl/ios/`, which with this CPU loads and
+starts COS in simulation (`docs/DEVELOPMENT.md`).
 
 What changes with `XMP = 1`:
 

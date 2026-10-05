@@ -73,6 +73,7 @@ module cray_system #(
 		.rst          (cpu_rst),
 		.i_single_step(1'b0),
 		.i_mcu_int    (con_int_req),
+		.i_io_clear   (1'b0),
 
 		.o_mem_req  (cpu_req),
 		.o_mem_we   (cpu_we),

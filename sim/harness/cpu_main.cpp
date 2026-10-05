@@ -63,6 +63,7 @@ int main(int argc, char **argv) {
     top->rst = 1;
     top->i_single_step = single_step;
     top->i_mcu_int = 0;
+    top->i_io_clear = 0;
     top->i_mem_ack = 0;
     top->i_mem_rdata = 0;
     top->i_ch_in_ready = 0;

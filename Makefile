@@ -6,10 +6,10 @@ VERILATOR ?= verilator
 help:
 	@echo "make format        Format project RTL and testbenches in place"
 	@echo "make format-check  Check formatting without changing files"
-	@echo "make lint          Lint the emu top, the self-test build, the X-MP setting and the I/O Processors with Verilator"
+	@echo "make lint          Lint the emu top, the self-test build, the X-MP setting, the I/O Subsystem and the X-MP machine with Verilator"
 	@echo "make lint-prepare  Prepare dependencies for a direct Verilator invocation"
 	@echo "make tools         Build the assembler and the reference model (tools/target/release)"
-	@echo "make sim           Build the CPU, floating-point, whole-core and I/O Processor simulations (sim/build)"
+	@echo "make sim           Build the CPU, floating-point, whole-core, I/O Subsystem and X-MP machine simulations (sim/build)"
 	@echo "make rom           Assemble the monitor into rtl/boot/monitor.mem"
 	@echo "make test-quick    Smoke and directed tests, reference vectors, 200 random programs"
 	@echo "make test          test-quick, then long floating-point and random program runs"
@@ -22,7 +22,8 @@ lint: lint-prepare
 	$(VERILATOR) --lint-only -Wall --top-module emu -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module emu +define+SHELL_TEST -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module cray_cpu -GXMP=1 -f lint/rtl.f
-	$(VERILATOR) --lint-only -Wall --top-module ios lint/exclusions.vlt rtl/ios/iop_cpu.v rtl/ios/iop.v rtl/ios/ios_core.v rtl/ios/ios_console.v rtl/ios/ios_expander.v rtl/ios/ios_hsp.v rtl/ios/ios_disks.v rtl/ios/ios.v
+	$(VERILATOR) --lint-only -Wall --top-module ios lint/exclusions.vlt rtl/ios/iop_cpu.v rtl/ios/iop.v rtl/ios/ios_core.v rtl/ios/ios_console.v rtl/ios/ios_expander.v rtl/ios/ios_link.v rtl/ios/ios_hsp.v rtl/ios/ios_disks.v rtl/ios/ios.v
+	$(VERILATOR) --lint-only -Wall --top-module xmp_machine lint/exclusions.vlt +incdir+rtl/cray/cray-1x -y rtl/cray -y rtl/cray/cray-1x -y rtl/ios rtl/xmp_machine.v
 
 lint-prepare:
 	@mkdir -p lint/gen
@@ -32,7 +33,7 @@ tools:
 	cargo build --release --examples --bins --manifest-path tools/Cargo.toml
 
 sim:
-	$(MAKE) -C sim cpu cpu-xmp fp emu iop ios
+	$(MAKE) -C sim cpu cpu-xmp fp emu iop ios xmp
 
 rom: tools
 	@mkdir -p build

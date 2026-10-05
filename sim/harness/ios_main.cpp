@@ -16,10 +16,26 @@
 // or after N milliseconds of machine time (default 20000).  --type presses
 // KEYS on that console once it has shown TEXT (\r is RETURN); several are
 // taken in order.  --poke changes a parcel of the kernel (hexadecimal).
+// --quick leaves out what only takes time: the kernel's test of Local Memory,
+// most of its test of Buffer Memory, and 499 of the 500 passes of the BIOP's
+// test of each disk drive (the three changes are the cray-sim project's).
+//
+// Built with XMP_MACHINE the hardware is the whole machine (rtl/xmp_machine.v):
+// the CPU as well, with central memory served to it here.
 // Exit status: 0 if TEXT was shown (or none was asked for), 1 if not.
+#ifdef XMP_MACHINE
+#include "Vxmp_machine.h"
+#include "Vxmp_machine___024root.h"
+typedef Vxmp_machine Top;
+#define LOCAL_MEMORY(n) in->xmp_machine__DOT__subsystem__DOT__core__DOT__g_iop__BRA__##n##__KET____DOT__u__DOT__mem
+#else
 #include "Vios.h"
 #include "Vios___024root.h"
+typedef Vios Top;
+#define LOCAL_MEMORY(n) in->ios__DOT__core__DOT__g_iop__BRA__##n##__KET____DOT__u__DOT__mem
+#endif
 #include "verilated.h"
+#include "ios_media.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -28,70 +44,12 @@
 #include <string>
 #include <vector>
 
-static std::vector<uint8_t> read_file(const std::string &path) {
-    std::vector<uint8_t> out;
-    FILE *f = fopen(path.c_str(), "rb");
-    if (!f) return out;
-    uint8_t b[65536]; size_t n;
-    while ((n = fread(b, 1, sizeof b, f)) > 0) out.insert(out.end(), b, b + n);
-    fclose(f);
-    return out;
-}
-
-// The disk of the Peripheral Expander as the MiSTer framework serves it: a
-// request for a sector of 512 bytes is acknowledged, the bytes go one at a
-// time into (or come out of) the core's buffer, and the acknowledge drops.
-// It serves several drives that share the buffer signals; a request moves
-// `bytes` bytes (512, or 4,096 as eight blocks) from block lba of one drive.
-struct SectorDisks {
-    int bytes;
-    std::vector<FILE *> file;
-    std::vector<std::map<uint32_t, std::vector<uint8_t>>> written;
-    int state = 0, wait = 0, at = 0, drive = 0; bool writing = false; uint32_t lba = 0;
-    std::vector<uint8_t> sector;
-    long reads = 0, writes = 0;
-    // what the core is given: the acknowledge of each drive, and the buffer signals
-    unsigned ack = 0, buff_addr = 0, buff_dout = 0; bool buff_wr = false;
-    SectorDisks(int drives, int bytes) : bytes(bytes), file(drives, nullptr), written(drives), sector(bytes) {}
-    void load() {
-        std::fill(sector.begin(), sector.end(), 0);
-        auto w = written[drive].find(lba);
-        if (w != written[drive].end()) sector = w->second;
-        else if (file[drive] && fseek(file[drive], (long)lba * 512, SEEK_SET) == 0) { size_t n = fread(sector.data(), 1, bytes, file[drive]); (void)n; }
-    }
-    // one clock: the outputs of the core before the edge
-    void clock(unsigned rd, unsigned wr, uint32_t want, uint8_t din) {
-        buff_wr = false;
-        switch (state) {
-        case 0:
-            for (size_t n = 0; n < file.size(); n++)
-                if ((rd | wr) >> n & 1) { drive = n; writing = wr >> n & 1; lba = want; state = 1; wait = 3; break; }
-            break;
-        case 1: if (--wait == 0) { ack = 1u << drive; at = 0; state = 2; wait = 4; if (!writing) load(); } break;
-        case 2:
-            if (--wait > 0) break;
-            wait = 4;
-            if (writing) {
-                // the byte at the address given four clocks ago
-                if (at > 0) sector[at - 1] = din;
-                if (at == bytes) { written[drive][lba] = sector; writes++; state = 3; break; }
-                buff_addr = at++;
-            } else {
-                if (at == bytes) { reads++; state = 3; break; }
-                buff_addr = at; buff_dout = sector[at]; buff_wr = true; at++;
-            }
-            break;
-        case 3: ack = 0; state = 0; break;
-        }
-    }
-};
-
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
     std::vector<std::string> files;
     std::string until;
     long ms = 20000;
-    bool quiet = false;
+    bool quiet = false, quick = false;
     std::vector<std::pair<unsigned, unsigned>> pokes;
     std::vector<std::pair<std::string, std::string>> typing;
     std::vector<std::pair<int, std::string>> drive_files;
@@ -109,6 +67,7 @@ int main(int argc, char **argv) {
         }
         else if (a == "--ms") ms = atol(next().c_str());
         else if (a == "--quiet") quiet = true;
+        else if (a == "--quick") quick = true;
         else if (a == "--drive") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) drive_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a == "--poke") { unsigned p = 0, v = 0; sscanf(next().c_str(), "%x=%x", &p, &v); pokes.push_back({p, v}); }
         else files.push_back(a);
@@ -122,28 +81,38 @@ int main(int argc, char **argv) {
     for (auto &d : drive_files)
         if (d.first < 0 || d.first > 8 || !(drives.file[d.first] = fopen(d.second.c_str(), "rb"))) { fprintf(stderr, "cannot read drive %d\n", d.first); return 2; }
     std::vector<uint64_t> cm(1 << 22, 0);                // central memory
+    if (quick) {
+        pokes.push_back({0x42B7, 0x0200});
+        pokes.push_back({0x43DA, 0});
+        // overlay INDD29 on the tape: A = 500 becomes A = 1.  Byte 0x8C20 of
+        // the first file, behind nine record lengths of four bytes.
+        size_t at = 0x8C20 + 4 + 8 * (0x8C20 / 4096);
+        if (at + 1 < tape.size() && tape[at] == 0x11 && tape[at + 1] == 0xF4) { tape[at] = 0x10; tape[at + 1] = 0x01; }
+    }
+    for (auto &p : pokes) if (2 * p.first + 1 < kernel.size()) { kernel[2 * p.first] = p.second >> 8; kernel[2 * p.first + 1] = p.second; }
+
     // the tape as the hardware reads it: words, the first byte of the file on top
     std::vector<uint64_t> tape_words((tape.size() + 7) / 8, 0);
     for (size_t n = 0; n < tape.size(); n++) tape_words[n / 8] |= (uint64_t)tape[n] << (56 - 8 * (n % 8));
-    for (auto &p : pokes) if (2 * p.first + 1 < kernel.size()) { kernel[2 * p.first] = p.second >> 8; kernel[2 * p.first + 1] = p.second; }
-
     std::vector<uint64_t> bm(1 << 22, 0);
     for (size_t n = 0; n + 1 < kernel.size(); n += 2)
         bm[n / 8] |= (uint64_t)(kernel[n] << 8 | kernel[n + 1]) << (48 - 16 * (n / 2 % 4));
 
-    Vios *top = new Vios;
+    Top *top = new Top;
     auto *in = top->rootp;
     // Local Memory holds something at power-up; zero is as good as anything
-    for (int i = 0; i < 65536; i++) {
-        in->ios__DOT__core__DOT__g_iop__BRA__0__KET____DOT__u__DOT__mem[i] = 0;
-        in->ios__DOT__core__DOT__g_iop__BRA__1__KET____DOT__u__DOT__mem[i] = 0;
-        in->ios__DOT__core__DOT__g_iop__BRA__2__KET____DOT__u__DOT__mem[i] = 0;
-    }
+    for (int i = 0; i < 65536; i++) { LOCAL_MEMORY(0)[i] = 0; LOCAL_MEMORY(1)[i] = 0; LOCAL_MEMORY(2)[i] = 0; }
     top->clk = 0; top->rst = 1;
     top->i_bm_ack = 0; top->i_bm_rdata = 0;
     top->i_key_valid = 0; top->i_key = 0; top->i_char_ready = 077;
     top->i_tape_ack = 0; top->i_tape_data = 0; top->i_tape_bytes = tape.size();
     top->i_sd_ack = 0; top->i_sd_buff_addr = 0; top->i_sd_buff_dout = 0; top->i_sd_buff_wr = 0;
+#ifdef XMP_MACHINE
+    top->i_mem_ack = 0; top->i_mem_rdata = 0;
+#else
+    // no mainframe on the other end of the MIOP's channel pair
+    top->i_cpu_ready = 0; top->i_cpu_parcel = 0; top->i_cpu_disconnect = 0; top->i_cpu_resume = 0;
+#endif
     top->i_cm_ack = 0; top->i_cm_rdata = 0;
     top->i_drive_ack = 0; top->i_drive_buff_addr = 0; top->i_drive_buff_dout = 0; top->i_drive_buff_wr = 0;
 
@@ -153,6 +122,8 @@ int main(int argc, char **argv) {
     size_t printed = 0, said = 0, at_key = 0, typed_from = 0;
     long key_gap = 0;
     bool asked = false;
+    uint32_t burst_at = 0; int burst_left = 0; long cpu_clocks = 0;
+    (void)burst_at; (void)burst_left; (void)cpu_clocks;
 
     const long limit = ms * 80000;
     while (clocks < limit && !(shown && !until.empty())) {
@@ -164,6 +135,10 @@ int main(int argc, char **argv) {
         bool sd_rd = top->o_sd_rd, sd_wr = top->o_sd_wr; uint32_t sd_lba = top->o_sd_lba; uint8_t sd_din = top->o_sd_buff_din;
         unsigned dr_rd = top->o_drive_rd, dr_wr = top->o_drive_wr; uint32_t dr_lba = top->o_drive_lba; uint8_t dr_din = top->o_drive_buff_din;
         bool cm_req = top->o_cm_req && !top->i_cm_ack, cm_we = top->o_cm_we; uint32_t cm_addr = top->o_cm_addr; uint64_t cm_wdata = top->o_cm_wdata;
+#ifdef XMP_MACHINE
+        bool mem_req = top->o_mem_req, mem_we = top->o_mem_we, mem_burst = top->o_mem_burst;
+        uint32_t mem_addr = top->o_mem_addr; uint64_t mem_wdata = top->o_mem_wdata; bool mem_acked = top->i_mem_ack;
+#endif
         // a character a console holds out is taken in this clock
         for (int c = 0; c < 6; c++)
             if (top->o_char_valid >> c & 1) (c < 4 ? console[0][c] : console[c - 3][1]).push_back(top->o_char >> (7 * c) & 0x7F);
@@ -192,6 +167,17 @@ int main(int argc, char **argv) {
         top->i_drive_ack = drives.ack; top->i_drive_buff_addr = drives.buff_addr; top->i_drive_buff_dout = drives.buff_dout; top->i_drive_buff_wr = drives.buff_wr;
         top->i_cm_ack = cm_req;
         if (cm_req) { if (cm_we) cm[cm_addr] = cm_wdata; else top->i_cm_rdata = cm[cm_addr]; }
+#ifdef XMP_MACHINE
+        // central memory for the CPU: a word a clock; a burst is 16 words read
+        top->i_mem_ack = 0;
+        if (burst_left > 0) { top->i_mem_ack = 1; top->i_mem_rdata = cm[burst_at++ & 0x3FFFFF]; burst_left--; }
+        else if (mem_req && !mem_acked) {
+            top->i_mem_ack = 1;
+            if (mem_we) cm[mem_addr] = mem_wdata;
+            else { top->i_mem_rdata = cm[mem_addr]; if (mem_burst) { burst_at = mem_addr + 1; burst_left = 15; } }
+        }
+        cpu_clocks += !top->o_cpu_held;
+#endif
         top->eval();
         for (int g = 0; g < 3; g++) steps[g] += top->o_step >> g & 1;
         top->clk = 0; top->eval();
@@ -206,6 +192,9 @@ int main(int argc, char **argv) {
     printf("\n%.3f s of machine time; steps: MIOP %ld, BIOP %ld, XIOP %ld; P %04x %04x %04x; expander disk sectors read %ld, written %ld; drive sectors read %ld, written %ld\n",
            clocks / 8e7, steps[0], steps[1], steps[2], (unsigned)(top->o_p & 0xFFFF), (unsigned)(top->o_p >> 16 & 0xFFFF),
            (unsigned)(top->o_p >> 32 & 0xFFFF), disk.reads, disk.writes, drives.reads, drives.writes);
+#ifdef XMP_MACHINE
+    printf("the CPU ran for %.3f s and is %s\n", cpu_clocks / 8e7, top->o_cpu_held ? "held by Master Clear" : "running");
+#endif
     for (int g = 1; g < 3; g++) {
         std::string first;
         for (char c : console[g][1]) { if (c >= 0x20 && c < 0x7F) first.push_back(c); else if (!first.empty() && first.back() != '|') first.push_back('|'); }

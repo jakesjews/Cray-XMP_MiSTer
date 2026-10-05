@@ -27,6 +27,9 @@
 // flag is set, a current address, or an error flag.  Nothing here sets the
 // error flag: there is no parity, and a pulse out of turn is ignored.
 //
+// I/O Master Clear, a line from the I/O Subsystem, stops every channel and
+// clears its addresses and flags (CSM-0111000 page 3-21).
+//
 // An order (0010 or 0012) can overtake a memory reference of its channel.  A
 // reference that still waits for memory is dropped; if it was the store of an
 // input word, the Ready of that word's fourth parcel counts as held.  A
@@ -37,6 +40,7 @@
 module xmp_channels (
 	input wire clk,
 	input wire rst,
+	input wire i_io_clear, // I/O Master Clear from the I/O Subsystem: every channel stops
 
 	// orders from the program, one clock each
 	input wire        i_set_ca,  // 0010: enter CA and activate
@@ -136,15 +140,16 @@ module xmp_channels (
 		o_out_ready      <= 4'b0;
 		o_out_disconnect <= 4'b0;
 
-		if (rst) begin
-			active    <= 8'b0;
-			intr      <= 8'b0;
-			want      <= 8'b0;
-			stale     <= 8'b0;
-			held      <= 4'b0;
-			tail      <= 4'b0;
-			sent      <= 4'b0;
-			o_out_mc  <= 4'b0;
+		if (rst || i_io_clear) begin
+			active <= 8'b0;
+			intr   <= 8'b0;
+			want   <= 8'b0;
+			stale  <= 8'b0;
+			held   <= 4'b0;
+			tail   <= 4'b0;
+			sent   <= 4'b0;
+			// the Master Clear lines to the devices are 0012's and stay
+			if (rst) o_out_mc <= 4'b0;
 			busy      <= 1'b0;
 			o_mem_req <= 1'b0;
 			for (n = 0; n < 8; n = n + 1) begin

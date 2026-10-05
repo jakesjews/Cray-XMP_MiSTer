@@ -16,6 +16,7 @@ module cray_cpu #(
 	input wire rst,  // released to dead start from the exchange package at address 0
 	input wire i_single_step,  // issue one instruction at a time (test aid)
 	input wire i_mcu_int,  // request of the maintenance control unit: sets the MCU interrupt flag outside monitor mode
+	input wire i_io_clear,  // X-MP: I/O Master Clear, which stops the 6 Mbyte channels
 
 	output wire        o_mem_req,
 	output wire        o_mem_we,
@@ -194,8 +195,9 @@ module cray_cpu #(
 	generate
 		if (XMP != 0) begin : g_chan
 			xmp_channels channels (
-				.clk(clk),
-				.rst(rst),
+				.clk       (clk),
+				.rst       (rst),
+				.i_io_clear(i_io_clear),
 
 				.i_set_ca (ch_set_ca),
 				.i_set_cl (ch_set_cl),

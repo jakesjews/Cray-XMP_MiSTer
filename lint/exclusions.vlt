@@ -119,6 +119,7 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Bits of signal 
 // The 6 Mbyte channels exist only in the X-MP setting. In the CRAY-1 build
 // their orders, the values 033 reads back and the device lines go nowhere.
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'i_ch_*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'i_io_clear'*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'ch_*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'i_ch_*"
 
@@ -197,6 +198,13 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/ios/ios_core.v" -match "*Bits of signal a
 lint_off -rule UNUSEDSIGNAL -file "rtl/ios/ios.v" -match "*Bits of signal are not used: 'a'[47:39]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/ios/ios.v" -match "*Bits of signal are not used: 'dma_ack'[2]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/ios/ios.v" -match "*Bits of signal are not used: 'dma_rdata'[47:32]*"
+
+// Of the CPU's four channel pairs only the first, 10 and 11, leads anywhere:
+// to the MIOP.
+lint_off -rule UNUSEDSIGNAL -file "rtl/xmp_machine.v" -match "*Bits of signal are not used: 'out_ready'[3:1]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/xmp_machine.v" -match "*Bits of signal are not used: 'out_disconnect'[3:1]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/xmp_machine.v" -match "*Bits of signal are not used: 'in_resume'[3:1]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/xmp_machine.v" -match "*Bits of signal are not used: 'out_data'[63:16]*"
 
 // Keep the MiSTer framework out of lint diagnostics while using its real
 // module interfaces for elaboration. Generic lint_off covers lint/style

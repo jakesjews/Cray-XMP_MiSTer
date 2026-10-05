@@ -3,6 +3,8 @@
 //
 //   MIOP   17                            the Peripheral Expander with its
 //                                        tape, disk and printer
+//          20, 21                        the channel pair to the mainframe
+//                                        and its master clear lines
 //          40/41, 42/43, 44/45, 46/47    four consoles; the fourth is the
 //                                        kernel's, the first the station's
 //   BIOP   14, 15                        the 100 Mbyte channel pair into
@@ -60,6 +62,21 @@ module ios #(
 	output wire [ 7:0] o_sd_buff_din,
 	input  wire        i_sd_buff_wr,
 
+	// the mainframe: its output channel 11 octal to the MIOP's channel 20,
+	// the MIOP's channel 21 to its input channel 10; a parcel with Ready,
+	// answered by Resume, the end by Disconnect, each a pulse of one clock.
+	// And the lines that hold the CPU and stop its channels.
+	input  wire        i_cpu_ready,
+	input  wire [15:0] i_cpu_parcel,
+	output wire        o_cpu_resume,
+	input  wire        i_cpu_disconnect,
+	output wire        o_cpu_ready,
+	output wire [15:0] o_cpu_parcel,
+	input  wire        i_cpu_resume,
+	output wire        o_cpu_disconnect,
+	output wire        o_cpu_master_clear,
+	output wire        o_io_master_clear,
+
 	// central memory, for the BIOP's 100 Mbyte channel: one word a request,
 	// held until its acknowledge
 	output wire        o_cm_req,
@@ -108,9 +125,16 @@ module ios #(
 	endfunction
 
 	// ---- the MIOP: the Peripheral Expander on channel 17 octal
-	localparam EXB = 15;
+	localparam EXB = 15, CIA = 16, COA = 17;  // and the pair to the mainframe on 20 and 21
 	wire [15:0] x_data, x_dma_addr, x_dma_wdata;
 	wire x_busy, x_done, x_ask, x_dma_req, x_dma_we;
+	wire [15:0] l_data, l_dma_addr, l_dma_wdata;
+	wire [1:0] l_busy, l_done;
+	wire l_dma_req, l_dma_we;
+	// the MIOP's Local Memory port: the pair to the mainframe goes first
+	wire m_dma_req = l_dma_req || x_dma_req;
+	wire l_dma_ack = dma_ack[0] && l_dma_req;
+	wire x_dma_ack = dma_ack[0] && !l_dma_req;
 
 	// ---- the BIOP: the 100 Mbyte channel pair on 14 and 15 octal, and the drives
 	localparam HIA = 12, HOA = 13;
@@ -150,10 +174,14 @@ module ios #(
 		busy            = 84'd0;
 		done            = 84'd0;
 		ask             = 84'd0;
-		data[15:0]      = x_data;
+		data[15:0]      = x_data | l_data;
 		busy[EXB-12]    = x_busy;
 		done[EXB-12]    = x_done;
 		ask[EXB-12]     = x_ask;
+		busy[CIA-12]    = l_busy[0];
+		done[CIA-12]    = l_done[0];
+		busy[COA-12]    = l_busy[1];
+		done[COA-12]    = l_done[1];
 		data[31:16]     = k_data;
 		busy[28+HIA-12] = h_busy[0];
 		done[28+HIA-12] = h_done[0];
@@ -192,10 +220,10 @@ module ios #(
 		.i_ch_busy     (busy),
 		.i_ch_done     (done),
 		.i_ch_ask      (ask),
-		.i_dma_req     ({1'b0, b_dma_req, x_dma_req}),
-		.i_dma_we      ({1'b0, h_dma_req ? h_dma_we : k_dma_we, x_dma_we}),
-		.i_dma_addr    ({16'b0, h_dma_req ? h_dma_addr : k_dma_addr, x_dma_addr}),
-		.i_dma_wdata   ({16'b0, h_dma_req ? h_dma_wdata : k_dma_wdata, x_dma_wdata}),
+		.i_dma_req     ({1'b0, b_dma_req, m_dma_req}),
+		.i_dma_we      ({1'b0, h_dma_req ? h_dma_we : k_dma_we, l_dma_req ? l_dma_we : x_dma_we}),
+		.i_dma_addr    ({16'b0, h_dma_req ? h_dma_addr : k_dma_addr, l_dma_req ? l_dma_addr : x_dma_addr}),
+		.i_dma_wdata   ({16'b0, h_dma_req ? h_dma_wdata : k_dma_wdata, l_dma_req ? l_dma_wdata : x_dma_wdata}),
 		.o_dma_ack     (dma_ack),
 		.o_dma_rdata   (dma_rdata),
 		.o_step        (o_step),
@@ -218,7 +246,7 @@ module ios #(
 		.o_dma_we      (x_dma_we),
 		.o_dma_addr    (x_dma_addr),
 		.o_dma_wdata   (x_dma_wdata),
-		.i_dma_ack     (dma_ack[0]),
+		.i_dma_ack     (x_dma_ack),
 		.i_dma_rdata   (dma_rdata[15:0]),
 		.o_tape_req    (o_tape_req),
 		.o_tape_addr   (o_tape_addr),
@@ -233,6 +261,34 @@ module ios #(
 		.i_sd_buff_dout(i_sd_buff_dout),
 		.o_sd_buff_din (o_sd_buff_din),
 		.i_sd_buff_wr  (i_sd_buff_wr)
+	);
+
+	ios_link mainframe (
+		.clk               (clk),
+		.rst               (master_clear[0]),
+		.i_in              (strobe[0] && (number[5:0] == CIA)),
+		.i_out             (strobe[0] && (number[5:0] == COA)),
+		.i_function        (fn[3:0]),
+		.i_a               (a[15:0]),
+		.o_data            (l_data),
+		.o_busy            (l_busy),
+		.o_done            (l_done),
+		.o_dma_req         (l_dma_req),
+		.o_dma_we          (l_dma_we),
+		.o_dma_addr        (l_dma_addr),
+		.o_dma_wdata       (l_dma_wdata),
+		.i_dma_ack         (l_dma_ack),
+		.i_dma_rdata       (dma_rdata[15:0]),
+		.i_ready           (i_cpu_ready),
+		.i_parcel          (i_cpu_parcel),
+		.o_resume          (o_cpu_resume),
+		.i_disconnect      (i_cpu_disconnect),
+		.o_ready           (o_cpu_ready),
+		.o_parcel          (o_cpu_parcel),
+		.i_resume          (i_cpu_resume),
+		.o_disconnect      (o_cpu_disconnect),
+		.o_cpu_master_clear(o_cpu_master_clear),
+		.o_io_master_clear (o_io_master_clear)
 	);
 
 	ios_hsp high_speed (

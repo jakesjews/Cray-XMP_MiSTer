@@ -5,6 +5,7 @@
     ioptest.py kernel [SYSTEM]
     ioptest.py boot [SYSTEM] [--full]
     ioptest.py selftest
+    ioptest.py machine [SYSTEM] [--start]
 
 rand runs random programs, seeds FIRST to LAST, each in two kinds (every parcel
 random; mostly register work with functions on the processor's own channels)
@@ -29,10 +30,20 @@ processor by another, a drive of the BIOP and its channel into central
 memory, and a word from each processor to each other one.  Both must report
 OK three times.
 
+machine runs the whole machine in hardware description (module xmp_machine: the
+CPU with the X-MP features and the I/O Subsystem) on the same software, without
+the tests that only take time.  The operator gives the date and the time and
+types START COS_117 DEADSTART.  The kernel then checks the mainframe: it holds
+the CPU with Master Clear, loads a test program into central memory through
+the BIOP's channel, lets the CPU go, takes a word from it over the channel
+pair and reads memory back; the run ends when it reports MFINIT: COMPLETE.
+With --start it goes on until COS has been loaded from the expander disk and
+started and the kernel reports START COMPLETE, which takes much longer.
+
 The model writes a record of each step (tools/crates/ios/src/replay.rs) and
 the simulation of the hardware description follows it: same interrupts, same
 functions, same registers after every step, same memory at the end.
-Needs make tools and make -C sim iop ios.  Failing records stay in build/iop.
+Needs make tools and make -C sim iop ios xmp.  Failing records stay in build/iop.
 """
 import os
 import subprocess
@@ -44,6 +55,9 @@ SIM = os.environ.get('CRAY_IOP_SIM', os.path.join(ROOT, 'sim/build/iop/Viop_cpu'
 RANDOM = os.path.join(ROOT, 'tools/target/release/examples/iop_random')
 SYS = os.path.join(ROOT, 'tools/target/release/cray1-sys')
 BOOT = os.environ.get('CRAY_IOS_SIM', os.path.join(ROOT, 'sim/build/ios/Vios'))
+MACHINE = os.environ.get('CRAY_XMP_SIM', os.path.join(ROOT, 'sim/build/xmp/Vxmp_machine'))
+# the channels of the BIOP's nine drives, in order
+DRIVES = [0o20, 0o21, 0o22, 0o24, 0o25, 0o26, 0o30, 0o31, 0o32]
 OUT = os.path.join(ROOT, 'build/iop')
 
 
@@ -131,6 +145,30 @@ def boot(system, full):
     return not missing and r.returncode == 0
 
 
+def machine(system, start):
+    """The CPU and the I/O Subsystem in hardware description, through START."""
+    cmd = [MACHINE, os.path.join(system, 'target/cos_117/iop_kern.bin'), os.path.join(system, 'boot_tape.tap'),
+           os.path.join(system, 'exp_disk.img'), '--quick',
+           '--type', 'ENTER DATE [MM/DD/YY]=10/05/89\\r', '--type', 'ENTER TIME [HH:MM:SS]=01:02:03\\r',
+           '--type', '10/05/89  01:02:03=START COS_117 DEADSTART\\r']
+    wanted = ['MFINIT: COMPLETE']
+    if start:
+        for n, channel in enumerate(DRIVES):
+            cmd += ['--drive', '%d=%s' % (n, os.path.join(system, 'biop_dk%o.img' % channel))]
+        cmd += ['--until', 'START COMPLETE', '--ms', '20000']
+        wanted += ['CPU <-> MIOP CHANNEL INIT', 'CPU <-> MIOP LINKAGE COMPLETE', 'START COMPLETE']
+    else:
+        cmd += ['--until', 'MFINIT: COMPLETE', '--ms', '3000']
+    r = subprocess.run(cmd, capture_output=True, text=True, errors='replace')
+    missing = [w for w in wanted if w not in r.stdout]
+    for line in r.stdout.strip().splitlines()[-4:-2]:
+        print(line[:110])
+    for w in missing:
+        print('FAIL: `%s` was not shown' % w)
+    print('1 runs, %d failed' % (1 if missing or r.returncode != 0 else 0))
+    return not missing and r.returncode == 0
+
+
 def selftest():
     """The self-checking program on the model and on the hardware description."""
     there = os.path.join(OUT, 'selftest')
@@ -162,10 +200,15 @@ def main():
         ok = rand(int(a[1]), int(a[2]), steps, jobs)
     elif a and a[0] == 'selftest':
         ok = selftest()
-    elif a and a[0] in ('kernel', 'boot'):
+    elif a and a[0] in ('kernel', 'boot', 'machine'):
         rest = [x for x in a[1:] if not x.startswith('--')]
         system = rest[0] if rest else os.environ.get('CRAY1_SYSTEM', os.path.join(ROOT, 'research/Cray 1 Disk Image from Youtube'))
-        ok = kernel(system) if a[0] == 'kernel' else boot(system, '--full' in a)
+        if a[0] == 'kernel':
+            ok = kernel(system)
+        elif a[0] == 'boot':
+            ok = boot(system, '--full' in a)
+        else:
+            ok = machine(system, '--start' in a)
     else:
         sys.exit(__doc__)
     sys.exit(0 if ok else 1)

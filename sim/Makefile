@@ -2,7 +2,7 @@
 ROOT  := $(abspath ..)
 BUILD := $(ROOT)/sim/build
 
-.PHONY: emu cpu cpu-xmp fp iop ios clean
+.PHONY: emu cpu cpu-xmp fp iop ios xmp clean
 
 # Core-level simulation of the MiSTer wrapper
 emu: $(BUILD)/emu/Vemu
@@ -32,8 +32,13 @@ $(BUILD)/iop/Viop_cpu: $(ROOT)/sim/iop.vc $(ROOT)/sim/harness/iop_main.cpp $(wil
 
 # The I/O Subsystem booting its kernel
 ios: $(BUILD)/ios/Vios
-$(BUILD)/ios/Vios: $(ROOT)/sim/ios.vc $(ROOT)/sim/harness/ios_main.cpp $(wildcard $(ROOT)/rtl/ios/*.v)
+$(BUILD)/ios/Vios: $(ROOT)/sim/ios.vc $(wildcard $(ROOT)/sim/harness/ios_*) $(wildcard $(ROOT)/rtl/ios/*.v)
 	mkdir -p $(BUILD)/ios && cd $(ROOT) && verilator -f sim/ios.vc --Mdir $(BUILD)/ios -o Vios
+
+# The whole X-MP machine: the CPU and the I/O Subsystem
+xmp: $(BUILD)/xmp/Vxmp_machine
+$(BUILD)/xmp/Vxmp_machine: $(ROOT)/sim/xmp.vc $(wildcard $(ROOT)/sim/harness/ios_*) $(ROOT)/rtl/xmp_machine.v $(wildcard $(ROOT)/rtl/ios/*.v $(ROOT)/rtl/cray/*.v $(ROOT)/rtl/cray/cray-1x/*.v $(ROOT)/rtl/cray/cray-1x/*.vh)
+	mkdir -p $(BUILD)/xmp && cd $(ROOT) && verilator -f sim/xmp.vc --Mdir $(BUILD)/xmp -o Vxmp_machine
 
 clean:
 	rm -rf $(BUILD)
