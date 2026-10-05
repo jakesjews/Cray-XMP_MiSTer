@@ -93,7 +93,9 @@ time, and a second random seed. All five must agree with the model.
 - `tests/smoke/` are short programs for each area of the machine. Each runs
   under up to four start-ups from `tests/rt/`: direct, through an exchange, in
   user mode, and in user mode at a non-zero base address.
-- `tests/directed/` are the bring-up tests for exchange, floating point and vectors.
+- `tests/directed/` are the bring-up tests for exchange, floating point and
+  vectors, and `vload.cal`, vector loads at every alignment, step and length
+  (written by `gen_vload.py`).
 - `tests/rtl_only/` holds programs that check themselves, for what the model
   cannot predict: the real-time clock. They run on the RTL alone.
 - `tools/py/randprog.py` writes random programs. `tools/py/difftest.py rand FIRST LAST`
@@ -116,6 +118,7 @@ python3 tools/py/hil.py launch -t 3             # start it and print the console
 python3 tools/py/mkbatch.py build/hwbatch -I tests/rt --rand 1 300 build/smoke/*.cal
 python3 tools/py/hil.py batch build/hwbatch     # run every program and compare memory
 python3 tools/py/hil.py run prog.cry -t 5       # load one image and print the console
+python3 tools/py/hil.py keys '3\r'              # type on a virtual keyboard
 ```
 
 The console is mirrored on the HPS serial port, `/dev/ttyS1` at 115200 baud.

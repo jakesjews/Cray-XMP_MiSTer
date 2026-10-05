@@ -80,8 +80,11 @@ about it has been tested. The X-MP vector population count is not built.
   times in clock periods follow the upstream tables, but memory references
   take longer than on the real machine and vary. Programs get the same results
   as on a CRAY-1 but not in the same number of clock periods.
-- **No chaining.** A vector operation waits until its operand registers are
-  free. Results are the same; chained sequences are slower.
+- **Chaining is looser than on the real machine.** An operation may start on
+  a register that a functional unit is still filling as soon as the first
+  element is in, and at any time after that, not only in the one chain slot
+  clock. A register being filled by a vector load is never chained, because
+  memory does not deliver at a steady rate. Results are the same.
 - **Floating-point multiply rounding.** The manual's figure of the CRAY-1
   multiply pyramid does not fix every bit that is dropped. The multiply
   follows the arithmetic the X-MP manual spells out instead. Some products may
@@ -122,7 +125,15 @@ memory and operators work through front-end computers. This core adds:
 
 `rtl/mister/ddr3_mem.sv` maps Cray word n to the 8 bytes at HPS address
 `0x30000000 + 8n`, most significant byte first, so a memory image file is
-simply the words in order. Instruction buffers fill with 16-word bursts.
+simply the words in order. Instruction buffers fill with 16-word bursts. A
+vector load stepping by 1 to 7 words also reads whole lines in bursts when
+three or more of its elements lie in a line, except in the I/O page, and
+picks its elements out as they arrive. A block or vector store reads the next
+word from its register while the one before is on its way to memory.
+
+With these and chaining, the monitor's SAXPY demonstration runs its vector
+loop about 9 times faster than its scalar loop on a DE10-Nano: 7,413 clock
+periods against 67,742 for 1024 elements.
 
 Measured on a DE10-Nano at 29.4 MHz: a store takes 2 clocks, a single read 8
 clocks typically and 22 at worst, a 16-word burst 23 typically and 32 at worst.

@@ -19,6 +19,9 @@ module func_top (
 	o_p_addr,
 	o_clear_ibufs,
 	o_mem_ce,
+	o_mem_burst,
+	o_mem_seq,
+	i_mem_take,
 	o_mem_addr,
 	i_data_from_mem,
 	o_data_to_mem,
@@ -70,6 +73,9 @@ module func_top (
 	output wire o_clear_ibufs;
 	//memory interface
 	output wire o_mem_ce;
+	output wire o_mem_burst;
+	output wire o_mem_seq;
+	input wire i_mem_take;
 	output wire [21:0] o_mem_addr;
 	input wire [63:0] i_data_from_mem;
 	output reg [63:0] o_data_to_mem;
@@ -194,6 +200,8 @@ module func_top (
 	wire        mem_type;
 	wire        mem_issue;
 	wire        mem_ce;
+	wire        mem_burst;
+	wire        mem_seq;
 	wire [63:0] data_to_mem;
 	wire        mem_wr_en;
 	wire [21:0] mem_addr;
@@ -331,6 +339,7 @@ module func_top (
 	wire [       7:0] vfu_start;
 	wire [       7:0] vreg_busy;
 	wire [       7:0] vreg_chain_n;
+	wire [       7:0] vreg_reading;
 	wire [       7:0] vfu_busy;
 	wire [(64*8-1):0] v_rd_data;
 	wire              v_issue;
@@ -506,6 +515,8 @@ module func_top (
 	//The data memory port belongs to the exchange sequence while it swaps
 	assign o_mem_wr_en = x_swap ? x_mem_we : mem_wr_en;
 	assign o_mem_ce    = x_swap ? x_mem_req : mem_ce;
+	assign o_mem_burst = !x_swap && mem_burst;
+	assign o_mem_seq   = !x_swap && mem_seq;
 	assign o_mem_addr  = x_swap ? x_mem_addr : mem_addr;
 	assign mem_ack     = i_mem_ack && !x_swap;
 
@@ -981,12 +992,29 @@ localparam VLOG      = 3'b000,   //vector logical
 				.i_wr_en    (wr_en),
 				.i_wr_idx   (wr_idx),
 				.i_wr_data  (wr_data),
-				.o_busy     (vreg_busy[gr])
+				.o_busy     (vreg_busy[gr]),
+				.o_reading  (vreg_reading[gr])
 			);
+
+			//Chaining.  Once a functional unit has delivered element 0 of this
+			//register it delivers one element every clock, so an operation that
+			//starts now reads each element after it was written and need not wait
+			//for the whole result.  A vector load does not deliver at a steady
+			//rate and is never chained.
+			reg     fu_wr;
+			reg     chain;
+			integer c;
+			always @* begin
+				fu_wr = 1'b0;
+				for (c = 0; c < 6; c = c + 1)
+				if (tk_out_valid[c] && tk_out_wr_v[c] && (tk_out_dest[c] == gr)) fu_wr = 1'b1;
+			end
+			always @(posedge clk)
+				if (rst || vwrite_start[gr]) chain <= 1'b0;
+				else if (fu_wr) chain <= 1'b1;
+			assign vreg_chain_n[gr] = !(chain && !vreg_reading[gr]);
 		end
 	endgenerate
-
-	assign vreg_chain_n = 8'hFF;  //results are not chained into a following operation yet
 
 	//operands for the units, picked by the instruction each tracker holds
 	function [63:0] vreg_sel;
@@ -1347,6 +1375,9 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_mem_busy       (mem_busy),
 		.o_range_err      (mem_range_err),
 		.o_mem_ce         (mem_ce),
+		.o_mem_burst      (mem_burst),
+		.o_mem_seq        (mem_seq),
+		.i_mem_take       (i_mem_take && !x_swap),
 		.o_mem_data       (data_from_mem_to_regs),
 		.o_mem_addr       (mem_addr),
 		.i_mem_rd_data    (i_data_from_mem),

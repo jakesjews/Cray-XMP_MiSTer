@@ -47,7 +47,8 @@ module v_regfile (
 	input wire [ 5:0] i_wr_idx,
 	input wire [63:0] i_wr_data,
 
-	output wire o_busy
+	output wire o_busy,
+	output wire o_reading  // an operation or a vector store is reading the register
 );
 
 	reg [63:0] data[0:63];
@@ -62,7 +63,8 @@ module v_regfile (
 	reg       res_busy;
 	reg [6:0] wr_left;
 
-	assign o_busy = rd_active | res_busy | i_mem_rd;
+	assign o_busy    = rd_active | res_busy | i_mem_rd;
+	assign o_reading = rd_active | i_mem_rd;
 
 	// element an operation reads
 	function [5:0] map;

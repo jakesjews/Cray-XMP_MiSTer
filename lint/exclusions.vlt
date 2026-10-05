@@ -118,6 +118,10 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not u
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'intercpu_*'*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Signal is not used: 'cln'*"
 
+// Only the memory unit works ahead of the multiplexer; the instruction buffers
+// and the channels wait for each acknowledge and have no use for take.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Bits of signal are not used: 'mux_take'[2,0]*"
+
 // A vector length of 0 and of 100 octal both mean 64 elements, so the top bit
 // of VL does not change the count. The base address is a 22-bit word address
 // carried in a 24-bit register.

@@ -37,6 +37,9 @@ module cray_cpu #(
 	wire [63:0] fu_mem_wr_data;
 	wire        fu_mem_wr_en;
 	wire        fu_mem_ce;
+	wire        fu_mem_burst;
+	wire        fu_mem_seq;
+	wire [ 2:0] mux_take;
 	wire        fu_mem_ack;
 
 	wire [63:0] mem_read_data;
@@ -88,7 +91,9 @@ module cray_cpu #(
 
 		.i_req  ({dma_req, fu_mem_ce, instr_buf_mem_ce}),
 		.i_we   ({dma_wr, fu_mem_wr_en, 1'b0}),
-		.i_burst({2'b00, instr_buf_mem_burst}),
+		.i_burst({1'b0, fu_mem_burst, instr_buf_mem_burst}),
+		.i_seq  ({1'b0, fu_mem_seq, 1'b0}),
+		.o_take (mux_take),
 		.i_addr ({dma_addr, fu_mem_addr, instr_buf_mem_addr}),
 		.i_wdata({dma_wr_data, fu_mem_wr_data, 64'b0}),
 		.o_ack  (mux_ack),
@@ -315,6 +320,9 @@ module cray_cpu #(
 		.o_data_to_mem       (fu_mem_wr_data),
 		.o_mem_wr_en         (fu_mem_wr_en),
 		.o_mem_ce            (fu_mem_ce),
+		.o_mem_burst         (fu_mem_burst),
+		.o_mem_seq           (fu_mem_seq),
+		.i_mem_take          (mux_take[1]),
 		.i_mem_ack           (fu_mem_ack),
 		// inter-CPU interface
 		.o_cln               (cln),

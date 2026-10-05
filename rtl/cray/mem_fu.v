@@ -11,10 +11,20 @@
 //             (A0) and stepping by (Ak)
 //
 // A memory instruction stays the current instruction until its last word is
-// done, and issues in the DONE clock.  Each word is its own request to memory,
-// and nothing here assumes how long memory takes: a read word is handed to its
-// register the clock after the acknowledge, and a write word is requested only
-// once its register has been read.
+// done, and issues in the DONE clock.  Nothing here assumes how long memory
+// takes: a read word is handed to its register the clock after the
+// acknowledge, and a write word is requested only once its register has been
+// read.  A store works ahead: it reads the next word from its register while
+// the one before is on its way, and hands it to the memory multiplexer as
+// soon as that takes it (seq and take), so the words of a block or vector
+// store follow each other closely.
+//
+// A word is normally its own request to memory.  A vector load stepping by a
+// small positive amount instead reads whole 16-word lines in one burst when
+// three or more of its elements lie in the line, and hands the elements to
+// the V register as their words go by.  That is several times faster on
+// memory with a long latency.  The line SINGLE_LINE is never read that way,
+// because reading a word there can have an effect.
 //
 // All addresses are relative to the data base address and are checked against
 // the limit address (manual 3-43).  Addresses are 24 bits, as the A registers
@@ -71,6 +81,9 @@ module mem_fu (
 	o_mem_wr_data,
 	o_mem_wr_en,
 	o_mem_ce,
+	o_mem_burst,
+	o_mem_seq,
+	i_mem_take,
 	i_mem_ack,
 	o_mem_type,
 	o_mem_issue,
@@ -78,7 +91,8 @@ module mem_fu (
 	o_range_err
 );
 
-	parameter V_READ_WAIT = 2;  // clocks from asking a V register for an element to its data
+	parameter        V_READ_WAIT = 2;          // clocks from asking a V register for an element to its data
+	parameter [17:0] SINGLE_LINE = 18'h0FFFF;  // a 16-word line never read as a burst: the core's I/O page
 
 	//system signals
 	input wire clk;
@@ -125,6 +139,9 @@ module mem_fu (
 	output reg [63:0] o_mem_wr_data;
 	output wire o_mem_wr_en;
 	output wire o_mem_ce;
+	output wire o_mem_burst;  //the request is a 16-word read of the line at o_mem_addr
+	output wire o_mem_seq;  //a store: the next word is presented as soon as one is taken
+	input wire i_mem_take;  //the word presented is being taken this clock
 	input wire i_mem_ack;
 	//instruction issue
 	output wire o_mem_type;
@@ -134,9 +151,9 @@ module mem_fu (
 
 	localparam IDLE = 3'd0, RD = 3'd1,  // read request outstanding
 	RD_PUT = 3'd2,  // hand the word to its register
-	WR_PREP = 3'd3,  // wait for the source register to be read
-	WR = 3'd4,  // write request outstanding
-	DONE = 3'd5;
+	WR = 3'd4,  // a store: words are read from the register and written
+	DONE = 3'd5, RD_SEL = 3'd6,  // a vector load chooses between one word and a line
+	RD_BURST = 3'd7;  // a line is arriving
 
 	reg [ 2:0] state;
 	reg [23:0] address;
@@ -145,6 +162,11 @@ module mem_fu (
 	reg [ 5:0] reg_idx;  // B or T register in hand
 	reg [ 3:0] wait_cnt;
 	reg [ 5:0] put_idx;  // B or T register a word just read goes to
+	reg [ 3:0] bcnt;  // word of the line that arrives next
+	reg [17:0] burst_line;
+	reg [63:0] wr_word;  // a store: the word in hand, at `address`
+	reg        wr_valid;  // it has not been taken yet
+	reg [ 6:0] fetch_left;  // words not yet read from the register
 
 	//-----------------------------------------------------------------
 	// Decode
@@ -213,12 +235,34 @@ module mem_fu (
 			case (state)
 				IDLE:
 				if (start) begin
-					address   <= start_addr;
-					stride    <= start_stride;
-					remaining <= start_count;
-					reg_idx   <= v_type ? 6'd0 : i_cip[5:0];
-					wait_cnt  <= from_b || from_t ? 4'd1 : (v_type ? V_READ_WAIT[3:0] : 4'd0);
-					state     <= (start_count == 7'd0) ? DONE : (is_read ? RD : WR_PREP);
+					address    <= start_addr;
+					stride     <= start_stride;
+					remaining  <= start_count;
+					reg_idx    <= v_type ? 6'd0 : i_cip[5:0];
+					wait_cnt   <= src_wait;
+					fetch_left <= start_count;
+					wr_valid   <= 1'b0;
+					state      <= (start_count == 7'd0) ? DONE : (is_read ? (v_type ? RD_SEL : RD) : WR);
+				end
+
+				RD_SEL: begin
+					bcnt       <= 4'd0;
+					burst_line <= absolute[21:4];
+					state      <= want_burst ? RD_BURST : RD;
+				end
+
+				//the elements in the line go to the register as their words pass
+				RD_BURST:
+				if (i_mem_ack) begin
+					bcnt <= bcnt + 4'd1;
+					if (burst_hit) begin
+						o_v_wr    <= 1'b1;
+						put_idx   <= reg_idx;
+						reg_idx   <= reg_idx + 6'd1;
+						remaining <= remaining - 7'd1;
+						address   <= address + stride;
+					end
+					if (bcnt == 4'd15) state <= (burst_hit ? last : (remaining == 7'd0)) ? DONE : RD_SEL;
 				end
 
 				RD:
@@ -236,21 +280,29 @@ module mem_fu (
 					reg_idx   <= reg_idx + 6'd1;
 					remaining <= remaining - 7'd1;
 					address   <= address + stride;
-					state     <= last ? DONE : RD;
+					state     <= last ? DONE : (v_type ? RD_SEL : RD);
 				end
 
-				WR_PREP:
-				if (wait_cnt == 4'd0) state <= WR;
-				else wait_cnt <= wait_cnt - 4'd1;
-
-				WR:
-				if (i_mem_ack || out_of_field) begin
-					o_range_err <= out_of_field;
-					remaining   <= remaining - 7'd1;
-					address     <= address + stride;
-					reg_idx     <= reg_idx + 6'd1;
-					wait_cnt    <= from_b || from_t ? 4'd1 : V_READ_WAIT[3:0];
-					state       <= last ? DONE : WR_PREP;
+				//A store.  The register word for reg_idx is ready when wait_cnt
+				//reaches zero.  It moves into wr_word when that is free or being
+				//taken, and the register is asked for the word after it.  `remaining`
+				//counts the words not yet written or dropped.
+				WR: begin
+					if (wait_cnt != 4'd0) wait_cnt <= wait_cnt - 4'd1;
+					if (wr_gone) begin
+						address  <= address + stride;
+						wr_valid <= 1'b0;
+					end
+					if ((wait_cnt == 4'd0) && (fetch_left != 7'd0) && (!wr_valid || wr_gone)) begin
+						wr_word    <= src_word;
+						wr_valid   <= 1'b1;
+						reg_idx    <= reg_idx + 6'd1;
+						wait_cnt   <= src_wait;
+						fetch_left <= fetch_left - 7'd1;
+					end
+					o_range_err <= wr_skip;
+					remaining   <= remaining - wr_ended;
+					if ((wr_ended != 7'd0) && (remaining == wr_ended)) state <= DONE;
 				end
 
 				DONE: state <= IDLE;
@@ -268,22 +320,28 @@ module mem_fu (
 
 	always @(posedge clk) if (i_mem_ack) o_mem_data <= i_mem_rd_data;
 
-	//The word to store.  The source register is not changing while this unit runs.
+	//The register word for reg_idx, valid src_wait clocks after reg_idx is set.
+	//The source register is not changing while this unit runs.
+	wire [ 3:0] src_wait = from_b || from_t ? 4'd1 : (v_type ? V_READ_WAIT[3:0] : 4'd0);
+	reg  [63:0] src_word;
 	always @*
-		if (from_b) o_mem_wr_data = {40'b0, i_b_rd_data};
-		else if (from_t) o_mem_wr_data = i_t_rd_data;
-		else if (a_s_type) o_mem_wr_data = i_cip[13] ? i_si_data : {40'b0, i_ai_data};
+		if (from_b) src_word = {40'b0, i_b_rd_data};
+		else if (from_t) src_word = i_t_rd_data;
+		else if (a_s_type) src_word = i_cip[13] ? i_si_data : {40'b0, i_ai_data};
 		else
 			case (i_cip[5:3])
-				3'd0: o_mem_wr_data = i_v0_data;
-				3'd1: o_mem_wr_data = i_v1_data;
-				3'd2: o_mem_wr_data = i_v2_data;
-				3'd3: o_mem_wr_data = i_v3_data;
-				3'd4: o_mem_wr_data = i_v4_data;
-				3'd5: o_mem_wr_data = i_v5_data;
-				3'd6: o_mem_wr_data = i_v6_data;
-				3'd7: o_mem_wr_data = i_v7_data;
+				3'd0: src_word = i_v0_data;
+				3'd1: src_word = i_v1_data;
+				3'd2: src_word = i_v2_data;
+				3'd3: src_word = i_v3_data;
+				3'd4: src_word = i_v4_data;
+				3'd5: src_word = i_v5_data;
+				3'd6: src_word = i_v6_data;
+				3'd7: src_word = i_v7_data;
 			endcase
+
+	//The word being stored is held here, so the registers can move on to the next.
+	always @* o_mem_wr_data = wr_word;
 
 	//-----------------------------------------------------------------
 	// Memory port and issue
@@ -300,9 +358,24 @@ module mem_fu (
 	wire [24:0] absolute = {1'b0, address} + {3'b0, base};
 	wire        out_of_field = (absolute >= {4'b0, limit});
 
-	assign o_mem_addr  = absolute[21:0];
-	assign o_mem_ce    = ((state == RD) || (state == WR)) && !out_of_field;
-	assign o_mem_wr_en = (state == WR) && !out_of_field;
+	// A burst pays off with three elements in the line: the element in hand and
+	// two more, the second of them still short of the end of the line.
+	wire third_fits = ({1'b0, absolute[3:0]} + {1'b0, stride[2:0], 1'b0}) < 5'd16;
+	wire       want_burst = !out_of_field && (stride[23:3] == 21'd0) && (stride[2:0] != 3'd0) &&
+		(remaining >= 7'd3) && third_fits && (absolute[21:4] != SINGLE_LINE);
+	wire burst_hit = (remaining != 7'd0) && (absolute[21:4] == burst_line) && (absolute[3:0] == bcnt);
+
+	assign o_mem_addr = (state == RD_BURST) ? {burst_line, 4'b0} : absolute[21:0];
+	// A store word outside the field is dropped without a request; one inside
+	// leaves when the multiplexer takes it.
+	wire       wr_skip = (state == WR) && wr_valid && out_of_field;
+	wire       wr_gone = (state == WR) && wr_valid && (out_of_field || i_mem_take);
+	wire [6:0] wr_ended = {6'd0, i_mem_ack} + {6'd0, wr_skip};  // words finished this clock
+
+	assign o_mem_ce    = ((state == RD) && !out_of_field) || (state == RD_BURST) || o_mem_wr_en;
+	assign o_mem_burst = (state == RD_BURST);
+	assign o_mem_wr_en = (state == WR) && wr_valid && !out_of_field;
+	assign o_mem_seq   = (state == WR);
 
 	assign o_mem_issue = (state == DONE);
 	assign o_mem_busy  = (state != IDLE);

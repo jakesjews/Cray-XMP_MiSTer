@@ -21,13 +21,15 @@
 struct MemProfile {
     std::string name = "fixed";
     int lat_min = 1, lat_max = 1;       // clocks from accepting a request to its first ack
+    int wlat_min = 0, wlat_max = 0;     // the same for a write, if it differs (0: as for a read)
     int gap_pct = 0;                    // chance of an idle clock between burst words
     int stall_x1000 = 0;                // chance (per 100000) of a long stall on a request
     int stall_min = 30, stall_max = 100;
     static MemProfile parse(const std::string &s) {
         MemProfile p; p.name = s;
         if (s == "0" || s == "fast")      { p.lat_min = p.lat_max = 1; }
-        else if (s == "ddr3")             { p.lat_min = 6; p.lat_max = 12; p.gap_pct = 5; p.stall_x1000 = 300; }
+        // as measured on a DE10-Nano: a store is acknowledged in 2 clocks, a read in about 8
+        else if (s == "ddr3")             { p.lat_min = 6; p.lat_max = 12; p.wlat_min = 2; p.wlat_max = 3; p.gap_pct = 5; p.stall_x1000 = 300; }
         else if (s == "slow")             { p.lat_min = 10; p.lat_max = 40; p.gap_pct = 30; p.stall_x1000 = 2000; }
         else if (s.rfind("fixed:", 0) == 0) { p.lat_min = p.lat_max = std::max(1, atoi(s.c_str() + 6)); }
         else if (s.rfind("rand:", 0) == 0)  { sscanf(s.c_str() + 5, "%d-%d", &p.lat_min, &p.lat_max); if (p.lat_min < 1) p.lat_min = 1; if (p.lat_max < p.lat_min) p.lat_max = p.lat_min; }
@@ -92,7 +94,7 @@ public:
         } else if (req && !was_ack) {
             busy = true; cur_addr = addr; cur_we = we; done = 0;
             total = (burst && !we) ? 16 : 1;
-            wait = range(prof.lat_min, prof.lat_max);
+            wait = (we && prof.wlat_min) ? range(prof.wlat_min, prof.wlat_max) : range(prof.lat_min, prof.lat_max);
             if (prof.stall_x1000 && (int)(rng() % 100000) < prof.stall_x1000) wait += range(prof.stall_min, prof.stall_max);
         }
     }

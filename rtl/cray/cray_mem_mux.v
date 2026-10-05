@@ -10,6 +10,12 @@
 // The requester-side timing is the one the original mem_arb gave: ack arrives
 // the clock after the memory answers, and the next request is looked at the
 // clock after that.
+//
+// A requester that raises seq works ahead instead.  take tells it, in the
+// clock its word is latched here, that it may present its next word; that
+// word is then latched in the very clock memory answers the one before, so
+// consecutive words follow each other without the idle clocks in between.
+// ack still reports each word as it completes.
 
 module cray_mem_mux #(
 	parameter N = 2
@@ -20,6 +26,8 @@ module cray_mem_mux #(
 	input  wire [   N-1:0] i_req,
 	input  wire [   N-1:0] i_we,
 	input  wire [   N-1:0] i_burst,
+	input  wire [   N-1:0] i_seq,
+	output wire [   N-1:0] o_take,
 	input  wire [N*22-1:0] i_addr,
 	input  wire [N*64-1:0] i_wdata,
 	output reg  [   N-1:0] o_ack,
@@ -54,6 +62,10 @@ module cray_mem_mux #(
 
 	assign o_mem_req = (state == BUSY);
 
+	// the granted requester has its next word waiting as memory answers this one
+	wire again = (state == BUSY) && i_mem_ack && (left == 5'd1) && (|(grant & i_seq & i_req));
+	assign o_take = (state == IDLE) ? pick : (again ? grant : {N{1'b0}});
+
 	integer n;
 	always @(posedge clk) begin
 		o_ack <= {N{1'b0}};
@@ -85,7 +97,17 @@ module cray_mem_mux #(
 					o_rdata <= i_mem_rdata;
 					o_ack   <= grant;
 					left    <= left - 1'd1;
-					if (left == 5'd1) state <= DONE;
+					if (again) begin
+						for (n = 0; n < N; n = n + 1) begin
+							if (grant[n]) begin
+								o_mem_addr  <= i_addr[n*22+:22];
+								o_mem_wdata <= i_wdata[n*64+:64];
+								o_mem_we    <= i_we[n];
+							end
+						end
+						o_mem_burst <= 1'b0;
+						left        <= 5'd1;
+					end else if (left == 5'd1) state <= DONE;
 				end
 
 				DONE: state <= IDLE;
