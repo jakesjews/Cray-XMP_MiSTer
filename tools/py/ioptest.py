@@ -15,16 +15,17 @@ question, once for each of the three processors, and replays every step.
 
 boot runs the I/O Subsystem in hardware description (module ios: the three
 processors, their Local Memories, real-time clocks, Buffer Memory channels,
-the channels between them and the consoles) on the same kernel, with stand-ins
-for Buffer Memory and the tape, until the MIOP has asked for the date and the
-time and has been told.  Without --full the kernel's long tests of memory are
-left out.
+the channels between them, the consoles and the Peripheral Expander) on the
+same kernel.  The MIOP loads its overlays from the tape, asks for the date and
+the time, is told, and is asked to list the files on the expander disk.
+Without --full the kernel's long tests of memory are left out.
 
 selftest runs the self-checking program of tests/ios/selftest.py in place of
 the kernel, on the system model and on the same three processors in hardware
 description: the real-time clock, the order in which channels that ask for an
-interrupt are reported, the start of one processor by another, and a word
-from each processor to each other one.  Both must report OK three times.
+interrupt are reported, two sectors written to the expander disk and read
+back, the start of one processor by another, and a word from each processor
+to each other one.  Both must report OK three times.
 
 The model writes a record of each step (tools/crates/ios/src/replay.rs) and
 the simulation of the hardware description follows it: same interrupts, same
@@ -102,8 +103,9 @@ def kernel(system):
 def boot(system, full):
     """The three processors in hardware description boot the kernel."""
     cmd = [BOOT, os.path.join(system, 'target/cos_117/iop_kern.bin'), os.path.join(system, 'boot_tape.tap'),
-           '--type', 'ENTER DATE=10/05/89\\r', '--type', 'ENTER TIME=01:02:03\\r', '--until', '10/05/89  01:02:03',
-           '--ms', '20000' if full else '3000']
+           os.path.join(system, 'exp_disk.img'),
+           '--type', 'ENTER DATE [MM/DD/YY]=10/05/89\\r', '--type', 'ENTER TIME [HH:MM:SS]=01:02:03\\r',
+           '--type', '10/05/89  01:02:03=FSTAT\\r', '--until', 'FSTAT COMPLETE', '--ms', '20000' if full else '3000']
     if not full:
         # the memory test returns at once and the Buffer Memory test is short
         cmd += ['--poke', '42B7=0200', '--poke', '43DA=0']
@@ -111,6 +113,10 @@ def boot(system, full):
     out = r.stdout
     wanted = ['MOS TEST COMPLETE', 'IOP-0 KERNEL, VERSION 4.2.2', 'IOP1 A->A', 'IOP3 A->A', 'MOS SIZE  100K',
               'AUTODMP ON', 'ENTER DATE', 'ENTER TIME', '10/05/89  01:02:03',
+              # the files on the expander disk, as the system model lists them
+              'IOPKERNEL             01/01/89 01:01:01         5120', 'COS_117               01/01/89 01:01:01         279040',
+              'MINSTALL              01/01/89 01:01:01         80', 'TOTAL                  ---------------          850596',
+              'FSTAT COMPLETE',
               'console of the BIOP: CHANNEL 20 CHANNEL TIMEOUT',
               'console of the XIOP: IOP-3 KERNEL, VERSION 4.2.2']
     missing = [w for w in wanted if w not in out]

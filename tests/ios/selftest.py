@@ -11,14 +11,23 @@ not depend on:
   1. the real-time clock sets its Done flag
   2. of two channels that ask for an interrupt the lower numbered one is
      reported: the clock, then Buffer Memory, then none
-  3. the MIOP starts the BIOP and the XIOP as the kernel does, telling each
+  3. the MIOP reads the tape on the Peripheral Expander: a record, a short
+     record of an odd number of bytes, a file mark, the end of the tape; it
+     rewinds, reads part of a record and finds the rest passed over
+  4. it writes two sectors to the expander's disk, reads them back to another
+     place under another name for the same sectors, and finds them the same;
+     the drive's interrupt request obeys the mask and the interrupt mode
+  5. the MIOP starts the BIOP and the XIOP as the kernel does, telling each
      who it is through a parcel it changes in Buffer Memory
-  4. every processor sends a word of its own to each of the others, and
+  6. every processor sends a word of its own to each of the others, and
      each word arrives where it should and is seen to be taken
 
 Each processor then writes its number and OK on its console (channel 47 on
 the MIOP, 43 on the others), or F and a letter: C clock, P Q R priority,
-L no word came, D wrong word, T a word was not taken.
+a to m the tape, n the Done flag of the expander, W a drive did not finish,
+B wrong address after the read, X what was read is not what was written,
+I J K M N the interrupt request of the disk, L no word came, D wrong word,
+T a word was not taken.
 """
 import os
 import sys
@@ -82,8 +91,13 @@ class Program:
 
 
 WHO = 4          # the parcel that tells a processor its number; word 1 of Buffer Memory
-R_WHO, R_AT, R_CONSOLE, R_COUNT, R_WORD, R_TABLE, R_EXPECT, R_SLOT = 1, 2, 3, 4, 5, 6, 7, 8
-CLOCK, MOS = 4, 5
+R_WHO, R_AT, R_CONSOLE, R_COUNT, R_WORD, R_TABLE, R_EXPECT, R_SLOT, R_FROM, R_TO = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+CLOCK, MOS, EXB = 4, 5, 0o17
+TAPE, DISK = 0o22, 0o60          # addresses on the Peripheral Expander
+# the tape: a record of 300 bytes, one of 5, a file mark
+RECORD = bytes((7 * n + 3) & 0xFF for n in range(300))
+SHORT = bytes([1, 2, 3, 4, 5])
+WRITTEN, READ, PARCELS = 0x2000, 0x3000, 512
 
 
 def program():
@@ -163,7 +177,176 @@ def program():
         if channel:
             p.fn(channel, 0)
             p.fn(channel, 6)
-    # ---- 3. start the BIOP (output channel 7) and the XIOP (output channel 13)
+    # ---- 3 and 4. the tape and the disk of the Peripheral Expander
+    def exb(function, value=None):
+        """A function of the expander, and the wait for the channel a delayed one needs."""
+        if value is not None:
+            p.a(value)
+        p.fn(EXB, function)
+        busy = fresh('busy')
+        p.label(busy)
+        p.ins(0o041, EXB)
+        p.jump_if('C=1', busy)
+
+    def check(expected, failure):
+        """The accumulator must hold this."""
+        ok = fresh('is')
+        if expected:
+            p.ink(0o017, expected)
+        p.jump_if('A=0', ok)
+        p.a(ord(failure))
+        p.jump('fail')
+        p.label(ok)
+
+    def register(n, expected, failure):
+        """Register A (1), B (2) or C (3) of the selected device."""
+        exb(n)
+        exb(0o10)
+        check(expected, failure)
+
+    def parcel(address, expected, failure):
+        p.a(address)
+        p.ins(0o024, R_FROM)
+        p.ins(0o030, R_FROM)
+        check(expected, failure)
+
+    def start():
+        """Start the device and wait for it as the kernel does: bit 15 of status 1."""
+        exb(0o17, 1)
+        loop, done = fresh('drive'), fresh('driven')
+        p.a(0)
+        p.ins(0o024, R_COUNT)
+        p.label(loop)
+        exb(4)
+        exb(0o11)
+        p.ins(0o005, 1)                  # the Done flag of the drive into the carry
+        p.jump_if('C=1', done)
+        p.ins(0o027, R_COUNT)
+        p.jump_if('A#0', loop)
+        p.a(ord('W'))
+        p.jump('fail')
+        p.label(done)
+
+    def tape(command, address=0, count=0):
+        exb(0o15, address)
+        exb(0o16, (0x10000 - count) & 0xFFFF)
+        exb(0o14, command << 3)
+        start()
+        exb(0o17, 2)                     # Clear
+
+    def disk(command, address):
+        exb(0o15, address)
+        exb(0o16, command)
+        start()
+
+    def place(cylinder, head, sector):
+        for value, name in ((cylinder, 5), (head, 1), (sector, 2), (PARCELS // 256, 3)):
+            exb(0o15, value)
+            exb(0o16, name)
+
+    def asks(expected, failure):
+        """The channel that asks for an interrupt."""
+        p.fn(0, 0o10)
+        check(expected, failure)
+
+    exb(6, 0)
+    # a delayed function leaves the channel Done, and function 0 clears that
+    p.ins(0o040, EXB)
+    p.jump_if('C=1', 'expander_done')
+    p.a(ord('n'))
+    p.jump('fail')
+    p.label('expander_done')
+    exb(0)
+    p.ins(0o040, EXB)
+    p.jump_if('C=0', 'expander_idle')
+    p.a(ord('n'))
+    p.jump('fail')
+    p.label('expander_idle')
+
+    exb(5, TAPE)
+    register(1, 0x0080, 'a')             # at the load point
+    exb(0o15, 0x4000)
+    exb(0o16, 0x10000 - 200)
+    exb(0o14, 0)
+    start()                              # read: the record is shorter than the count
+    exb(4)
+    exb(0o11)
+    p.ins(0o011, 0o77)                   # the device that asks
+    check(TAPE, 'b')
+    exb(0o17, 2)
+    register(1, 0x0001, 'c')
+    register(2, 0x4000 + 150, 'd')
+    register(3, 0x10000 - 50, 'e')
+    parcel(0x4000, RECORD[0] << 8 | RECORD[1], 'f')
+    parcel(0x4000 + 149, RECORD[298] << 8 | RECORD[299], 'f')
+    tape(0, 0x4100, 200)                 # five bytes: the last parcel is half filled
+    register(2, 0x4103, 'g')
+    parcel(0x4102, 0x0500, 'g')
+    tape(0, 0x4400, 200)
+    register(1, 0x8101, 'h')             # a file mark
+    tape(0, 0x4400, 200)
+    register(1, 0x8201, 'i')             # the end of the tape
+    tape(1)
+    register(1, 0x0081, 'j')             # rewound
+    tape(0, 0x4200, 2)                   # two parcels of the record; the rest is passed over
+    register(2, 0x4202, 'k')
+    parcel(0x4202, 0, 'k')
+    tape(0, 0x4300, 200)
+    parcel(0x4300, 0x0102, 'm')
+
+    exb(5, DISK)
+    place(1, 2, 8)                       # cylinder 1, head 2, sector 8: 5 heads, 35 sectors
+    # something different in every parcel: three times its address
+    p.a(WRITTEN)
+    p.ins(0o024, R_FROM)
+    fill = fresh('fill')
+    p.label(fill)
+    p.ins(0o020, R_FROM)
+    p.ins(0o005, 1)
+    p.ins(0o022, R_FROM)
+    p.ins(0o034, R_FROM)
+    p.ins(0o026, R_FROM)
+    p.ink(0o017, WRITTEN + PARCELS)
+    p.jump_if('A#0', fill)
+    disk(0o10, WRITTEN)
+    exb(4)
+    exb(0o11)
+    p.ins(0o011, 0o77)                   # the device that asks
+    check(DISK, 'M')
+    # the drive asks for an interrupt: only with interrupts from the devices
+    # on, and only when the mask lets it
+    asks(0, 'I')
+    exb(7, 2)
+    asks(EXB, 'J')
+    exb(6, 1 << 6)
+    asks(0, 'K')
+    exb(6, 0)
+    exb(0o17, 2)                         # Clear
+    asks(0, 'N')
+    exb(7, 0)
+    place(0, 6, 35 + 8)                  # the same two sectors, named another way
+    disk(0, READ)
+    exb(0o17, 2)
+    register(2, READ + PARCELS, 'B')     # the address behind what was read
+    p.a(WRITTEN)
+    p.ins(0o024, R_FROM)
+    p.a(READ)
+    p.ins(0o024, R_TO)
+    compare, equal = fresh('compare'), fresh('equal')
+    p.label(compare)
+    p.ins(0o030, R_FROM)
+    p.ins(0o033, R_TO)
+    p.jump_if('A=0', equal)
+    p.a(ord('X'))
+    p.jump('fail')
+    p.label(equal)
+    p.ins(0o026, R_TO)
+    p.ins(0o026, R_FROM)
+    p.ink(0o017, WRITTEN + PARCELS)
+    p.jump_if('A#0', compare)
+    exb(0)
+
+    # ---- 5. start the BIOP (output channel 7) and the XIOP (output channel 13)
     for target, channel in ((1, 0o7), (3, 0o13)):
         p.a(target)
         p.ins(0o034, R_AT)               # the parcel WHO = the number of the target
@@ -184,7 +367,7 @@ def program():
         mos(WHO, 1, 5)
     p.fn(MOS, 0)
 
-    # ---- 4. a word to each of the others: 120000 + 20 * number + pair (octal)
+    # ---- 6. a word to each of the others: 120000 + 20 * number + pair (octal)
     p.label('links')
     p.ins(0o020, R_WHO)
     p.ins(0o005, 4)                      # A = A < 4
@@ -259,8 +442,10 @@ def main():
     with open(os.path.join(out, 'target/cos_117/iop_kern.bin'), 'wb') as f:
         for parcel in program():
             f.write(bytes([parcel >> 8, parcel & 0xFF]))
-    # a tape with one file mark, and a disk with nothing on it
+    # the tape, and a disk with nothing on it
     with open(os.path.join(out, 'boot_tape.tap'), 'wb') as f:
+        for record in (RECORD, SHORT):
+            f.write(len(record).to_bytes(4, 'little') + record + len(record).to_bytes(4, 'little'))
         f.write(bytes(4))
     open(os.path.join(out, 'exp_disk.img'), 'wb').close()
 

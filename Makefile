@@ -22,7 +22,7 @@ lint: lint-prepare
 	$(VERILATOR) --lint-only -Wall --top-module emu -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module emu +define+SHELL_TEST -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module cray_cpu -GXMP=1 -f lint/rtl.f
-	$(VERILATOR) --lint-only -Wall --top-module ios lint/exclusions.vlt rtl/ios/iop_cpu.v rtl/ios/iop.v rtl/ios/ios_core.v rtl/ios/ios_console.v rtl/ios/ios.v
+	$(VERILATOR) --lint-only -Wall --top-module ios lint/exclusions.vlt rtl/ios/iop_cpu.v rtl/ios/iop.v rtl/ios/ios_core.v rtl/ios/ios_console.v rtl/ios/ios_expander.v rtl/ios/ios.v
 
 lint-prepare:
 	@mkdir -p lint/gen
