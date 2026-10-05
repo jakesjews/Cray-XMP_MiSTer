@@ -101,10 +101,9 @@ lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Bits of signal are not use
 lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Bits of signal are not used: 'buttons'[0]*"
 
 // The memory self-test build (SHELL_TEST) replaces the machine and has no use
-// for the dead start choice or the console input tap.
-lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Signal is not used: 'rom_boot'*"
-lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Signal is not used: 'con_in_data'*"
-lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Signal is not used: 'con_in_stb'*"
+// for the dead start choice or the CTRL-C pulse.
+lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Signal is not used: 'rom_boot_cpu'*"
+lint_off -rule UNUSEDSIGNAL -file "Cray1.sv" -match "*Signal is not used: 'm_ctrl_c'*"
 
 // The text area is 384 lines at most, so the tenth bit of the line number is
 // only set outside it. A character cell is fetched once per column; the pixel

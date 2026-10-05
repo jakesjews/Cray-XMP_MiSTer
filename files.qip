@@ -7,6 +7,7 @@ set_global_assignment -name VERILOG_FILE rtl/console_io.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mister/ddr3_mem.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mister/shell_test.sv
 set_global_assignment -name VERILOG_FILE rtl/mister/con_fifo.v
+set_global_assignment -name VERILOG_FILE rtl/mister/cdc.v
 set_global_assignment -name VERILOG_FILE rtl/mister/uart.v
 set_global_assignment -name VERILOG_FILE rtl/terminal/cray_terminal.v
 set_global_assignment -name VERILOG_FILE rtl/terminal/term_ctrl.v

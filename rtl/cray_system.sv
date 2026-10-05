@@ -47,8 +47,7 @@ module cray_system #(
 	input  wire [7:0] rx_data,
 	input  wire       rx_valid,
 	output reg        rx_pop,
-	input  wire [7:0] in_data,   // a byte as it enters the input queue
-	input  wire       in_stb,
+	input  wire       ctrl_c,    // a CTRL-C has entered the input queue
 
 	output wire        mem_active,  // a memory request is pending (activity light)
 	output reg         test_done,
@@ -151,7 +150,7 @@ module cray_system #(
 		rx_pop <= 0;
 		cycles <= cycles + 1'd1;
 		if (tx_valid && tx_ready) tx_valid <= 0;
-		if (con_int_en && in_stb && in_data == 8'h03) con_int_req <= 1;
+		if (con_int_en && ctrl_c) con_int_req <= 1;
 
 		if (reset) begin
 			tx_valid    <= 0;

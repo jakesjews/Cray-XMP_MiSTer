@@ -77,6 +77,8 @@ sim/build/fp/Vfp_tb tests/fp/xmp_ref.vec
 - `Vemu` is the whole core with stand-ins for `hps_io`, the PLL and DDR3. It
   runs with no image to boot the monitor, types keys, sends serial bytes and
   saves a frame of video. Run it from `rtl/terminal` so the font files are found.
+  The machine has its own clock; `--cpu-ratio R` sets how many of its cycles
+  run per video clock cycle.
 
 ## Tests
 

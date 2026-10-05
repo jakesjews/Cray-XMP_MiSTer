@@ -5,6 +5,7 @@
 //
 //   Vemu [--image FILE] [--cycles N] [--frame OUT.ppm] [--type TEXT] [--serial TEXT]
 //        [--break-at CYCLE] [--font8] [--ddr fast|normal|slow] [--seed N] [--quiet]
+//        [--cpu-ratio R]   machine clock cycles per video clock cycle (default 81.67/29.4)
 //        [--dump START:COUNT]   (octal word address and count)
 #include "Vemu.h"
 #include "Vemu___024root.h"
@@ -122,6 +123,7 @@ int main(int argc, char **argv) {
     std::string image, frame, type_text, serial_text, ddr = "normal", dump;
     long cycles = 16000000, break_at = -1, type_at = -1;
     bool font8 = false, quiet = false;
+    double cpu_ratio = 81.67 / 29.4;       // machine clock cycles per video clock cycle
     uint32_t seed = 1;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -134,6 +136,7 @@ int main(int argc, char **argv) {
         else if (a == "--serial") serial_text = next();
         else if (a == "--break-at") break_at = atol(next().c_str());
         else if (a == "--font8") font8 = true;
+        else if (a == "--cpu-ratio") cpu_ratio = atof(next().c_str());
         else if (a == "--ddr") ddr = next();
         else if (a == "--seed") seed = (uint32_t)atol(next().c_str());
         else if (a == "--quiet") quiet = true;
@@ -182,6 +185,7 @@ int main(int argc, char **argv) {
     bool serial_sent = false;
     size_t key_pos = 0;
     long key_next = (type_at >= 0) ? type_at : cycles;
+    double cpu_acc = 0;
 
     for (long t = 0; t < cycles && !Verilated::gotFinish(); t++) {
         if (t == 20) top->RESET = 0;
@@ -201,20 +205,33 @@ int main(int argc, char **argv) {
             }
         }
 
-        // values the core drove during this clock
-        bool rd = top->DDRAM_RD, we = top->DDRAM_WE;
-        uint32_t addr = top->DDRAM_ADDR; uint8_t bc = top->DDRAM_BURSTCNT, be = top->DDRAM_BE;
-        uint64_t din = top->DDRAM_DIN;
+        // values the core drove during this video clock
         mon.step(top->UART_TXD);
         if (top->CE_PIXEL) vid.step(top->VGA_HS, top->VGA_VS, top->VGA_DE, top->VGA_R, top->VGA_G, top->VGA_B);
 
-        top->CLK_50M = 1; top->eval();              // clock edge: the core samples its inputs
-        ram.step(rd, we, addr, bc, din, be);
-        top->DDRAM_BUSY = ram.busy;
-        top->DDRAM_DOUT_READY = ram.dout_ready;
-        top->DDRAM_DOUT = ram.dout;
+        top->CLK_50M = 1; top->eval();              // video clock edge: the core samples its inputs
         top->UART_RXD = drv.step();
         top->eval();
+
+        // The machine's clock is a separate, faster one.  Its edges fall between
+        // the video clock's, sometimes before the falling edge and sometimes after.
+        cpu_acc += cpu_ratio;
+        int n_cpu = (int)cpu_acc;
+        cpu_acc -= n_cpu;
+        int before = (t & 1) ? n_cpu : n_cpu / 2;
+        for (int k = 0; k < n_cpu; k++) {
+            if (k == before) { top->CLK_50M = 0; top->eval(); }
+            bool rd = top->DDRAM_RD, we = top->DDRAM_WE;      // driven during the machine clock that ends here
+            uint32_t addr = top->DDRAM_ADDR; uint8_t bc = top->DDRAM_BURSTCNT, be = top->DDRAM_BE;
+            uint64_t din = top->DDRAM_DIN;
+            r->emu__DOT__pll__DOT__sim_clk1 = 1; top->eval();
+            ram.step(rd, we, addr, bc, din, be);
+            top->DDRAM_BUSY = ram.busy;
+            top->DDRAM_DOUT_READY = ram.dout_ready;
+            top->DDRAM_DOUT = ram.dout;
+            top->eval();
+            r->emu__DOT__pll__DOT__sim_clk1 = 0; top->eval();
+        }
         top->CLK_50M = 0; top->eval();
     }
 

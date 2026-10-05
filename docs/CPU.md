@@ -79,10 +79,11 @@ about it has been tested. The X-MP vector population count is not built.
 
 ## Differences from a real CRAY-1
 
-- **Timing.** One clock period is one 29.4 MHz FPGA clock. Functional unit
-  times in clock periods follow the upstream tables, but memory references
-  take longer than on the real machine and vary. Programs get the same results
-  as on a CRAY-1 but not in the same number of clock periods.
+- **Timing.** One clock period is one cycle of the machine's own FPGA clock,
+  81.67 MHz against the real machine's 80 MHz. Functional unit times in clock
+  periods follow the upstream tables, but memory references take longer than
+  on the real machine and vary. Programs get the same results as on a CRAY-1
+  but not in the same number of clock periods.
 - **Chaining is looser than on the real machine.** An operation may start on
   a register that a functional unit is still filling as soon as the first
   element is in, and at any time after that, not only in the one chain slot
@@ -152,6 +153,37 @@ build uses, and all of which wait for the X-MP work:
   002700 are carried through the exchange package or not decoded, and do nothing.
 - The X-MP add unit also reports an out-of-range result; this one does not.
 
+## Clocks
+
+The machine (CPU, dead start, I/O page) and its memory port run on their own
+PLL output. The terminal, the console queues, the serial port and the HPS
+interface stay on the 29.4 MHz video clock. The two meet only in
+`rtl/mister/cdc.v`: a two-flip-flop synchroniser for reset and the dead start
+choice, a handshake that carries one console character at a time in each
+direction, and a toggle for CTRL-C. `Cray1.sdc` tells the timing analyser the
+two clocks are unrelated, and the whole-core simulation runs them at
+unrelated rates (`--cpu-ratio`).
+
+The machine clock is set in `rtl/pll/pll_0002.v` (`output_clock_frequency1`).
+With the PLL's 735 MHz oscillator the exact choices are 735 divided by a whole
+number: 49, 52.5, 56.5, 61.25, 66.8, 73.5 MHz.
+
+What limits the clock is the path every result takes in one clock period: off
+the result bus, through the register file's bypass, through operand selection
+and into the first stage of a functional unit, and the instruction issue loop
+beside it. Told the real target, the fitter closes those paths in 12.2 ns,
+which is what allows 81.67 MHz. Only 0.03 ns is to spare there, so 73.5 MHz is
+the setting to fall back to if a later change no longer fits. Two changes were
+needed to get from 79.6 to 81.67 MHz: a memory transfer under way goes by
+flags latched at its start instead of choosing between the live and the
+latched instruction, and 077 writes its V register element in the clock after
+it issues, which nothing can observe.
+
+Clock periods are as fast as the real machine's, so work between registers
+runs at its speed. Memory does not: a scalar load takes about 25 clock periods
+here against 11 on a CRAY-1, and vector transfers move about one word every
+two clock periods, not one per clock period.
+
 ## Memory
 
 `rtl/mister/ddr3_mem.sv` maps Cray word n to the 8 bytes at HPS address
@@ -170,8 +202,9 @@ instead, so the range error interrupt is taken right behind it. Scalar
 references and block transfers hold issue until they are done.
 
 With these and chaining, the monitor's SAXPY demonstration runs its vector
-loop about 10 times faster than its scalar loop on a DE10-Nano: 6,740 clock
-periods against 67,766 for 1024 elements.
+loop about 10 times faster than its scalar loop on a DE10-Nano: 7,417 clock
+periods against 77,404 for 1024 elements at 81.67 MHz, which is 91
+microseconds against 948. The 64 by 64 matrix product takes 10.2 ms.
 
 Measured on a DE10-Nano at 29.4 MHz: a store takes 2 clocks, a single read 8
 clocks typically and 22 at worst, a 16-word burst 23 typically and 32 at worst.
@@ -199,5 +232,6 @@ vector from a real machine covers.
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: about 19,000 ALMs (45%), 121 memory blocks,
-36 DSP blocks. Timing is met; the 29.4 MHz clock path is good for about 50 MHz.
+Quartus 17.0 for the DE10-Nano: about 19,800 ALMs (47%), 121 memory blocks,
+37 DSP blocks. Timing is met with the machine at 81.67 MHz and the video side
+at 29.4 MHz.

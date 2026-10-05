@@ -84,7 +84,7 @@ def main():
     ok &= step('smoke tests, %d start-up variants' % len(smoke),
                [PY, DIFF, 'file'] + smoke + ['-I', 'tests/rt', '-j', jobs])
     ok &= step('directed tests',
-               [PY, DIFF, 'file'] + sorted(glob.glob(os.path.join(ROOT, 'tests/directed/*.cal'))) + ['-j', jobs])
+               [PY, DIFF, 'file'] + sorted(glob.glob(os.path.join(ROOT, 'tests/directed/*.cal'))) + ['-I', 'tests/rt', '-j', jobs])
     ok &= rtl_only()
     ok &= step('floating-point reference vectors', [FPBENCH, 'tests/fp/xmp_ref.vec'])
     if a[0] == 'quick':

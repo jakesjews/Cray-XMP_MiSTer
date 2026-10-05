@@ -102,13 +102,17 @@ module emu (
 
 	///////////////////////   CLOCKS   ///////////////////////////////
 
+	// clk_sys is the video clock and runs the terminal, the console queues, the
+	// serial port and the HPS interface.  The machine and its memory have their
+	// own, faster clock; everything between the two goes through rtl/mister/cdc.v.
 	localparam CLK_HZ = 29400000;
 
-	wire clk_sys;
+	wire clk_sys, clk_cpu;
 	pll pll (
 		.refclk  (CLK_50M),
 		.rst     (1'b0),
 		.outclk_0(clk_sys),
+		.outclk_1(clk_cpu),
 		.locked  ()
 	);
 
@@ -138,6 +142,19 @@ module emu (
 		else reset <= 0;
 	end
 
+	// the same in the machine's clock domain
+	wire reset_cpu, rom_boot_cpu;
+	cdc_bit sync_reset (
+		.clk(clk_cpu),
+		.d  (reset),
+		.q  (reset_cpu)
+	);
+	cdc_bit sync_rom_boot (
+		.clk(clk_cpu),
+		.d  (rom_boot),
+		.q  (rom_boot_cpu)
+	);
+
 	///////////////////////   MEMORY   ///////////////////////////////
 
 	wire mem_req, mem_we, mem_burst, mem_ack;
@@ -145,8 +162,8 @@ module emu (
 	wire [63:0] mem_wdata, mem_rdata;
 
 	ddr3_mem ddr3_mem (
-		.clk  (clk_sys),
-		.reset(reset),
+		.clk  (clk_cpu),
+		.reset(reset_cpu),
 
 		.req  (mem_req),
 		.we   (mem_we),
@@ -207,6 +224,68 @@ module emu (
 
 	///////////////////////   MACHINE   //////////////////////////////
 
+	// The console as the machine sees it, in the machine's clock domain.
+	wire [7:0] m_tx_data, m_rx_data, rxc_data;
+	wire m_tx_valid, m_tx_ready, m_rx_valid, m_rx_pop, m_rx_full;
+	wire rxc_valid, rx_src_ready;
+
+	cdc_stream tx_cdc (
+		.src_clk  (clk_cpu),
+		.src_reset(reset_cpu),
+		.src_data (m_tx_data),
+		.src_valid(m_tx_valid),
+		.src_ready(m_tx_ready),
+		.dst_clk  (clk_sys),
+		.dst_reset(reset),
+		.dst_data (con_tx_data),
+		.dst_valid(con_tx_valid),
+		.dst_ready(con_tx_ready)
+	);
+
+	cdc_stream rx_cdc (
+		.src_clk  (clk_sys),
+		.src_reset(reset),
+		.src_data (con_rx_data),
+		.src_valid(con_rx_valid),
+		.src_ready(rx_src_ready),
+		.dst_clk  (clk_cpu),
+		.dst_reset(reset_cpu),
+		.dst_data (rxc_data),
+		.dst_valid(rxc_valid),
+		.dst_ready(~m_rx_full)
+	);
+	assign con_rx_pop = con_rx_valid && rx_src_ready;
+
+	con_fifo #(
+		.AW(4)
+	) m_rx_fifo (
+		.clk  (clk_cpu),
+		.reset(reset_cpu),
+		.din  (rxc_data),
+		.wr   (rxc_valid),
+		.full (m_rx_full),
+		.dout (m_rx_data),
+		.valid(m_rx_valid),
+		.rd   (m_rx_pop)
+	);
+
+	// A CTRL-C entering the input queue, as one pulse in the machine's domain.
+	wire ctrlc = con_in_stb && (con_in_data == 8'h03);
+	reg ctrlc_d, ctrlc_tgl = 1'b0;
+	always @(posedge clk_sys) begin
+		ctrlc_d <= ctrlc;
+		if (ctrlc && !ctrlc_d) ctrlc_tgl <= ~ctrlc_tgl;
+	end
+	wire ctrlc_s;
+	cdc_bit sync_ctrlc (
+		.clk(clk_cpu),
+		.d  (ctrlc_tgl),
+		.q  (ctrlc_s)
+	);
+	reg ctrlc_s_d;
+	always @(posedge clk_cpu) ctrlc_s_d <= ctrlc_s;
+	wire m_ctrl_c = ctrlc_s ^ ctrlc_s_d;
+
 	wire mem_active, test_done;
 
 `ifdef SHELL_TEST
@@ -214,8 +293,8 @@ module emu (
 	wire running, failed;
 
 	shell_test machine (
-		.clk  (clk_sys),
-		.reset(reset),
+		.clk  (clk_cpu),
+		.reset(reset_cpu),
 
 		.mem_req  (mem_req),
 		.mem_we   (mem_we),
@@ -225,12 +304,12 @@ module emu (
 		.mem_ack  (mem_ack),
 		.mem_rdata(mem_rdata),
 
-		.tx_data (con_tx_data),
-		.tx_valid(con_tx_valid),
-		.tx_ready(con_tx_ready),
-		.rx_data (con_rx_data),
-		.rx_valid(con_rx_valid),
-		.rx_pop  (con_rx_pop),
+		.tx_data (m_tx_data),
+		.tx_valid(m_tx_valid),
+		.tx_ready(m_tx_ready),
+		.rx_data (m_rx_data),
+		.rx_valid(m_rx_valid),
+		.rx_pop  (m_rx_pop),
 
 		.running(running),
 		.failed (failed)
@@ -242,9 +321,9 @@ module emu (
 	cray_system #(
 		.XMP(0)
 	) machine (
-		.clk     (clk_sys),
-		.reset   (reset),
-		.rom_boot(rom_boot),
+		.clk     (clk_cpu),
+		.reset   (reset_cpu),
+		.rom_boot(rom_boot_cpu),
 
 		.mem_req  (mem_req),
 		.mem_we   (mem_we),
@@ -254,14 +333,13 @@ module emu (
 		.mem_ack  (mem_ack),
 		.mem_rdata(mem_rdata),
 
-		.tx_data (con_tx_data),
-		.tx_valid(con_tx_valid),
-		.tx_ready(con_tx_ready),
-		.rx_data (con_rx_data),
-		.rx_valid(con_rx_valid),
-		.rx_pop  (con_rx_pop),
-		.in_data (con_in_data),
-		.in_stb  (con_in_stb),
+		.tx_data (m_tx_data),
+		.tx_valid(m_tx_valid),
+		.tx_ready(m_tx_ready),
+		.rx_data (m_rx_data),
+		.rx_valid(m_rx_valid),
+		.rx_pop  (m_rx_pop),
+		.ctrl_c  (m_ctrl_c),
 
 		.mem_active(mem_active),
 		.test_done (test_done),
@@ -271,7 +349,7 @@ module emu (
 
 	// stretch memory activity so it is visible
 	reg [19:0] act_cnt;
-	always @(posedge clk_sys) begin
+	always @(posedge clk_cpu) begin
 		if (mem_active) act_cnt <= '1;
 		else if (act_cnt != 0) act_cnt <= act_cnt - 1'd1;
 	end

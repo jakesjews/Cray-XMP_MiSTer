@@ -4,6 +4,7 @@ module pll (
 	input  wire refclk,
 	input  wire rst,
 	output wire outclk_0,
+	output wire outclk_1,
 	output wire locked
 );
 endmodule

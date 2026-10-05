@@ -183,11 +183,10 @@ module mem_fu (
 	//-----------------------------------------------------------------
 	// Decode
 	//-----------------------------------------------------------------
-	//The instruction being carried out.  A vector transfer goes on after its
-	//instruction has issued, so nothing looks at i_cip once a transfer has started.
-	reg  [15:0] cur;
-	wire [15:0] ins = (state == IDLE) ? i_cip : cur;
-
+	//What the current instruction asks for.  This is looked at to start only: a
+	//vector transfer goes on after its instruction has issued, so a transfer under
+	//way goes by what was latched at the start (the r_ registers below).
+	wire [15:0] ins = i_cip;
 	wire [ 6:0] op = ins[15:9];
 	wire        b_t_type = (ins[15:11] == 5'b00111);  //034-037, 1 parcel
 	wire        a_s_type = (ins[15:14] == 2'b10);  //100-137, 2 parcels
@@ -248,12 +247,23 @@ module mem_fu (
 		o_v_wr      <= 1'b0;
 		o_range_err <= 1'b0;
 
-		if (rst) state <= IDLE;
-		else
+		if (rst) begin
+			state    <= IDLE;
+			r_vstore <= 1'b0;
+		end else
 			case (state)
 				IDLE:
 				if (start) begin
-					cur        <= i_cip;
+					r_v        <= v_type;
+					r_to_b     <= to_b;
+					r_to_t     <= to_t;
+					r_from_b   <= from_b;
+					r_from_t   <= from_t;
+					r_scalar   <= a_s_type;
+					r_from_s   <= ins[13];
+					r_vnum     <= is_read ? ins[8:6] : ins[5:3];
+					r_vstore   <= v_type && !is_read;
+					r_wait     <= src_wait;
 					address    <= start_addr;
 					stride     <= start_stride;
 					remaining  <= start_count;
@@ -292,14 +302,14 @@ module mem_fu (
 
 				//o_mem_data now holds the word
 				RD_PUT: begin
-					o_b_wr_en <= to_b;
-					o_t_wr_en <= to_t;
-					o_v_wr    <= v_type;
+					o_b_wr_en <= r_to_b;
+					o_t_wr_en <= r_to_t;
+					o_v_wr    <= r_v;
 					put_idx   <= reg_idx;
 					reg_idx   <= reg_idx + 6'd1;
 					remaining <= remaining - 7'd1;
 					address   <= address + stride;
-					state     <= last ? DONE : (v_type ? RD_SEL : RD);
+					state     <= last ? DONE : (r_v ? RD_SEL : RD);
 				end
 
 				//A store.  The register word for reg_idx is ready when wait_cnt
@@ -316,7 +326,7 @@ module mem_fu (
 						wr_word    <= src_word;
 						wr_valid   <= 1'b1;
 						reg_idx    <= reg_idx + 6'd1;
-						wait_cnt   <= src_wait;
+						wait_cnt   <= r_wait;
 						fetch_left <= fetch_left - 7'd1;
 					end
 					o_range_err <= wr_skip;
@@ -324,7 +334,10 @@ module mem_fu (
 					if ((wr_ended != 7'd0) && (remaining == wr_ended)) state <= DONE;
 				end
 
-				DONE: state <= IDLE;
+				DONE: begin
+					state    <= IDLE;
+					r_vstore <= 1'b0;
+				end
 
 				default: state <= IDLE;
 			endcase
@@ -339,16 +352,21 @@ module mem_fu (
 
 	always @(posedge clk) if (i_mem_ack) o_mem_data <= i_mem_rd_data;
 
+	//What the transfer under way is, latched when it started.
+	reg r_v, r_to_b, r_to_t, r_from_b, r_from_t, r_scalar, r_from_s, r_vstore;
+	reg [2:0] r_vnum;  // the V register of a vector transfer
+	reg [3:0] r_wait;
+
 	//The register word for reg_idx, valid src_wait clocks after reg_idx is set.
 	//The source register is not changing while this unit runs.
 	wire [ 3:0] src_wait = from_b || from_t ? 4'd1 : (v_type ? V_READ_WAIT[3:0] : 4'd0);
 	reg  [63:0] src_word;
 	always @*
-		if (from_b) src_word = {40'b0, i_b_rd_data};
-		else if (from_t) src_word = i_t_rd_data;
-		else if (a_s_type) src_word = ins[13] ? i_si_data : {40'b0, i_ai_data};
+		if (r_from_b) src_word = {40'b0, i_b_rd_data};
+		else if (r_from_t) src_word = i_t_rd_data;
+		else if (r_scalar) src_word = r_from_s ? i_si_data : {40'b0, i_ai_data};
 		else
-			case (ins[5:3])
+			case (r_vnum)
 				3'd0: src_word = i_v0_data;
 				3'd1: src_word = i_v1_data;
 				3'd2: src_word = i_v2_data;
@@ -418,13 +436,13 @@ module mem_fu (
 		end else begin
 			if (age != 2'd3) age <= age + 2'd1;
 			if (age == 2'd0) span <= $signed({1'b0, remaining} - 8'sd1) * $signed(stride);
-			if (age == 2'd1) fits <= v_type && !out_of_field && last_in;
+			if (age == 2'd1) fits <= r_v && !out_of_field && last_in;
 			if (o_mem_issue && i_issue) released <= 1'b1;
 		end
 
 	assign o_mem_issue = ((state == DONE) || fits) && !released;
 	assign o_mem_busy  = (state != IDLE);
-	assign o_v_num     = is_read ? ins[8:6] : ins[5:3];
-	assign o_v_store   = (state != IDLE) && v_type && !is_read;
+	assign o_v_num     = r_vnum;
+	assign o_v_store   = r_vstore;
 
 endmodule

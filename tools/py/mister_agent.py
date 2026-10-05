@@ -261,7 +261,7 @@ def cmd_keys(args):
     # struct uinput_user_dev: name, bus/vendor/product/version, ff effects, 4 x 64 axis limits
     os.write(fd, struct.pack('80sHHHHi', b'Cray1 test keyboard', 3, 0x1209, 0xC1A1, 1, 0) + bytes(4 * 64 * 4))
     fcntl.ioctl(fd, UI_DEV_CREATE)
-    time.sleep(3.0)                           # Main_MiSTer needs a moment to open the new device
+    time.sleep(5.0)                           # Main_MiSTer needs a while to open the new device
 
     def emit(code, value):
         os.write(fd, struct.pack('llHHi', 0, 0, EV_KEY, code, value) + struct.pack('llHHi', 0, 0, EV_SYN, 0, 0))

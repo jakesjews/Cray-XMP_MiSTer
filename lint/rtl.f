@@ -22,6 +22,7 @@ rtl/console_io.v
 rtl/mister/ddr3_mem.sv
 rtl/mister/shell_test.sv
 rtl/mister/con_fifo.v
+rtl/mister/cdc.v
 rtl/mister/uart.v
 rtl/terminal/cray_terminal.v
 rtl/terminal/term_ctrl.v

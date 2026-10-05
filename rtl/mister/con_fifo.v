@@ -1,4 +1,6 @@
-// Small synchronous first-word-fall-through FIFO (LUT RAM).
+// Small synchronous first-word-fall-through FIFO, kept in registers: these
+// queues are a few dozen bytes, and LUT RAM brought a hold-time violation on
+// its write address in one fit.
 
 module con_fifo #(
 	parameter AW = 5,
@@ -16,7 +18,7 @@ module con_fifo #(
 	input  wire          rd      // ignored when empty
 );
 
-	(* ramstyle = "MLAB, no_rw_check" *) reg [DW-1:0] mem[0:(1<<AW)-1];
+	(* ramstyle = "logic" *) reg [DW-1:0] mem[0:(1<<AW)-1];
 	reg [AW:0] wp, rp;
 
 	assign valid = (wp != rp);

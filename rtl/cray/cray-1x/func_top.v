@@ -953,6 +953,19 @@ localparam VLOG      = 3'b000,   //vector logical
 	wire       vmem_store;  //a 177 is storing register vmem_num
 	wire [2:0] vmem_num;  //the V register of the vector transfer under way
 
+	//077 writes its element in the clock after it issues.  Nothing can tell: the
+	//register is free when a 077 issues, and whatever issues next reads a V
+	//register a clock or more after it issues itself.  It keeps the issue logic
+	//out of the path to the registers' write ports.
+	reg [ 7:0] sw_en;
+	reg [ 5:0] sw_idx;
+	reg [63:0] sw_data;
+	always @(posedge clk) begin
+		sw_en   <= rst ? 8'b0 : vreg_swrite;
+		sw_idx  <= a_k_data[5:0];
+		sw_data <= s_j_data;
+	end
+
 	genvar gr;
 	generate
 		for (gr = 0; gr < 8; gr = gr + 1) begin : g_vreg
@@ -963,9 +976,9 @@ localparam VLOG      = 3'b000,   //vector logical
 			integer        u;
 			always @* begin
 				wr_en   = 1'b0;
-				wr_idx  = a_k_data[5:0];
-				wr_data = s_j_data;
-				if (vreg_swrite[gr])  //077: (Sj) to element (Ak)
+				wr_idx  = sw_idx;
+				wr_data = sw_data;
+				if (sw_en[gr])  //077: (Sj) to element (Ak), issued in the clock before
 					wr_en = 1'b1;
 				if (vmem_wr && (vmem_num == gr)) begin
 					wr_en   = 1'b1;
