@@ -19,15 +19,20 @@ not depend on:
      the drive's interrupt request obeys the mask and the interrupt mode
   5. the MIOP starts the BIOP and the XIOP as the kernel does, telling each
      who it is through a parcel it changes in Buffer Memory
-  6. every processor sends a word of its own to each of the others, and
+  6. the BIOP tries its first disk drive: the buffer echo, the Status
+     Response register, reserving, seeking, a sector written and read back
+     under another name; and it writes four words to central memory and
+     reads them back
+  7. every processor sends a word of its own to each of the others, and
      each word arrives where it should and is seen to be taken
 
 Each processor then writes its number and OK on its console (channel 47 on
 the MIOP, 43 on the others), or F and a letter: C clock, P Q R priority,
 a to m the tape, n the Done flag of the expander, W a drive did not finish,
 B wrong address after the read, X what was read is not what was written,
-I J K M N the interrupt request of the disk, L no word came, D wrong word,
-T a word was not taken.
+I J K M N the interrupt request of the disk, p to z the BIOP's drive and
+its channel into central memory, L no word came, D wrong word, T a word was
+not taken.
 """
 import os
 import sys
@@ -93,6 +98,7 @@ class Program:
 WHO = 4          # the parcel that tells a processor its number; word 1 of Buffer Memory
 R_WHO, R_AT, R_CONSOLE, R_COUNT, R_WORD, R_TABLE, R_EXPECT, R_SLOT, R_FROM, R_TO = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 CLOCK, MOS, EXB = 4, 5, 0o17
+HIA, HOA, DRIVE = 0o14, 0o15, 0o20      # channels of the BIOP
 TAPE, DISK = 0o22, 0o60          # addresses on the Peripheral Expander
 # the tape: a record of 300 bytes, one of 5, a file mark
 RECORD = bytes((7 * n + 3) & 0xFF for n in range(300))
@@ -157,7 +163,7 @@ def program():
     p.ins(0o024, R_CONSOLE)
     p.ins(0o054)                         # B = A
     p.ins(0o020, R_WHO)
-    p.jump_if('A#0', 'links')
+    p.jump_if('A#0', 'others')
 
     # ---- 1. the clock (the MIOP only)
     wait_done(CLOCK, 'C')
@@ -367,7 +373,147 @@ def program():
         mos(WHO, 1, 5)
     p.fn(MOS, 0)
 
-    # ---- 6. a word to each of the others: 120000 + 20 * number + pair (octal)
+    p.jump('links')
+
+    def check(expected, failure):
+        """The accumulator must hold this."""
+        ok = fresh('is')
+        if expected:
+            p.ink(0o017, expected)
+        p.jump_if('A=0', ok)
+        p.a(ord(failure))
+        p.jump('fail')
+        p.label(ok)
+
+    def fill(first, parcels):
+        """Something different in every parcel: three times its address."""
+        p.a(first)
+        p.ins(0o024, R_FROM)
+        loop = fresh('fill')
+        p.label(loop)
+        p.ins(0o020, R_FROM)
+        p.ins(0o005, 1)
+        p.ins(0o022, R_FROM)
+        p.ins(0o034, R_FROM)
+        p.ins(0o026, R_FROM)
+        p.ink(0o017, first + parcels)
+        p.jump_if('A#0', loop)
+
+    def compare(one, other, parcels, failure):
+        p.a(one)
+        p.ins(0o024, R_FROM)
+        p.a(other)
+        p.ins(0o024, R_TO)
+        loop, equal = fresh('compare'), fresh('equal')
+        p.label(loop)
+        p.ins(0o030, R_FROM)
+        p.ins(0o033, R_TO)
+        p.jump_if('A=0', equal)
+        p.a(ord(failure))
+        p.jump('fail')
+        p.label(equal)
+        p.ins(0o026, R_TO)
+        p.ins(0o026, R_FROM)
+        p.ink(0o017, one + parcels)
+        p.jump_if('A#0', loop)
+
+    def dk(function, value=None, drive=DRIVE):
+        if value is not None:
+            p.a(value)
+        p.fn(drive, function)
+
+    def reads(function, expected, failure):
+        p.fn(DRIVE, function)
+        check(expected, failure)
+
+    def central(channel, high, local, function, failure):
+        """Four words between Local Memory and central memory at high * 512 + 0x123."""
+        p.fn(channel, 0)
+        p.a(0x123)
+        p.fn(channel, 3)
+        p.a(high)
+        p.fn(channel, 2)
+        p.a(local)
+        p.fn(channel, 1)
+        p.a(4)
+        p.fn(channel, function)
+        wait_done(channel, failure)
+        p.fn(channel, 0)
+
+    # ---- 6. the BIOP: its first drive, and central memory
+    p.label('others')
+    p.ins(0o013, 1)
+    p.jump_if('A#0', 'links')
+    # the buffer echo: 512 parcels out and back, with no disk involved; the
+    # second drive is given other parcels in between and keeps them to itself
+    fill(WRITTEN, 2048)
+    dk(0)
+    dk(0o14, WRITTEN)
+    dk(3, 0)
+    wait_done(DRIVE, 'p')
+    reads(0o10, WRITTEN + 512, 'p')
+    dk(0, drive=DRIVE + 1)
+    dk(0o14, WRITTEN + 1024, drive=DRIVE + 1)
+    dk(3, 0, drive=DRIVE + 1)
+    wait_done(DRIVE + 1, 'p')
+    dk(0o14, READ)
+    dk(2, 0)
+    wait_done(DRIVE, 'p')
+    reads(0o10, READ + 512, 'p')
+    compare(WRITTEN, READ, 512, 'q')
+    dk(0o15, 0xBEEF)                     # the Status Response register keeps what it is given
+    reads(0o11, 0xBEEF, 'r')
+    dk(0)
+    dk(1, 0o7001)                        # the head register of a drive that is not reserved
+    wait_done(DRIVE, 's')
+    reads(0o11, 0, 's')
+    dk(1, 0o1000)                        # reserve it
+    wait_done(DRIVE, 's')
+    dk(4, 3)                             # head group 3
+    dk(1, 0o7001)
+    wait_done(DRIVE, 's')
+    reads(0o11, 0o143, 's')
+    dk(5, 5)                             # cylinder 5
+    wait_done(DRIVE, 't')
+    reads(0o11, 5 << 5, 't')
+    dk(0)
+    p.ins(0o040, DRIVE)
+    p.jump_if('C=0', 'drive_idle')
+    p.a(ord('t'))
+    p.jump('fail')
+    p.label('drive_idle')
+    dk(0o14, WRITTEN)                    # sector 7 of that track: 10 head groups, 18 sectors
+    dk(3, 7)
+    wait_done(DRIVE, 'u')
+    reads(0o10, WRITTEN + 2048, 'u')
+    dk(5, 4)                             # the same sector, named another way:
+    wait_done(DRIVE, 'u')                # cylinder 4, head group 12, sector 25
+    dk(0)
+    dk(4, 12)
+    dk(0o14, READ)
+    dk(2, 18 + 7)
+    wait_done(DRIVE, 'u')
+    reads(0o10, READ + 2048, 'u')
+    compare(WRITTEN, READ, 2048, 'v')
+    dk(0)
+    # four words to central memory, four others to an address that differs
+    # in its upper part only, and the first four back to another place
+    central(HOA, 2, WRITTEN, 5, 'w')
+    central(HOA, 0, WRITTEN + 16, 5, 'w')
+    central(HIA, 2, READ + 0x800, 4, 'x')
+    compare(WRITTEN, READ + 0x800, 16, 'z')
+    # the output channel does not read, and the input channel does not write
+    for channel, function in ((HOA, 4), (HIA, 5)):
+        p.a(4)
+        p.fn(channel, function)
+        idle = fresh('idle')
+        p.ins(0o041, channel)
+        p.jump_if('C=0', idle)
+        p.a(ord('y'))
+        p.jump('fail')
+        p.label(idle)
+
+    # ---- 7. a word to each of the others: 120000 + 20 * number + pair (octal)
     p.label('links')
     p.ins(0o020, R_WHO)
     p.ins(0o005, 4)                      # A = A < 4
@@ -448,6 +594,8 @@ def main():
             f.write(len(record).to_bytes(4, 'little') + record + len(record).to_bytes(4, 'little'))
         f.write(bytes(4))
     open(os.path.join(out, 'exp_disk.img'), 'wb').close()
+    for drive in (0o20, 0o21):
+        open(os.path.join(out, 'biop_dk%o.img' % drive), 'wb').close()
 
 
 main()

@@ -9,5 +9,7 @@ rtl/ios/iop.v
 rtl/ios/ios_core.v
 rtl/ios/ios_console.v
 rtl/ios/ios_expander.v
+rtl/ios/ios_hsp.v
+rtl/ios/ios_disks.v
 rtl/ios/ios.v
 sim/harness/ios_main.cpp

@@ -13,8 +13,8 @@ programs, see [PROGRAMMING.md](PROGRAMMING.md).
   project is no longer maintained, so they are maintained here like the rest.
 - `rtl/ios/`: the I/O Subsystem. So far the I/O Processors with their Local
   Memories, clocks, Buffer Memory channels, the channels between them, the
-  consoles and the Peripheral Expander with its tape and disk; no build uses
-  it yet.
+  consoles, the Peripheral Expander with its tape and disk, and the BIOP's
+  disk drives and channel into central memory; no build uses it yet.
 - `rtl/terminal/`, `rtl/console_io.v`, `rtl/mister/`: console, serial port, DDR3 memory port.
 - `rtl/boot/`: the monitor ROM. `monitor.mem` is built from `software/monitor/`.
 - `sys/`: the MiSTer framework, an unmodified copy of
@@ -118,9 +118,10 @@ sim/build/fp/Vfp_tb tests/fp/xmp_ref.vec
 - `sim/build/iop/Viop_cpu RECORD` is the I/O Processor following a record of
   the reference model's steps; `tools/py/ioptest.py` makes the records.
 - `sim/build/ios/Vios KERNEL TAPE [DISK]` is the I/O Subsystem
-  (`rtl/ios/ios.v`) booting its kernel. The test bench is Buffer Memory, the
-  file that is the tape, and the sectors of the expander disk, which it
-  serves the way the MiSTer framework does. `--type TEXT=KEYS` presses keys
+  (`rtl/ios/ios.v`) booting its kernel. The test bench is Buffer Memory,
+  central memory, the file that is the tape, and the sectors of the expander
+  disk and of the nine drives (`--drive N=FILE`), which it serves the way the
+  MiSTer framework does. `--type TEXT=KEYS` presses keys
   on the operator's console when it has shown TEXT.
 
 ## Tests
@@ -192,15 +193,16 @@ python3 tools/py/ioptest.py kernel         # the real kernel's boot on each of t
   overlays from the tape, dead starts the BIOP and the XIOP and asks for the
   date and the time, which the test types; the BIOP and the XIOP say who they
   are on their own consoles. The test then types `FSTAT`, and the kernel
-  lists the files on the expander disk as the system model lists them. The
-  disk drives of the BIOP and the links to the mainframe do not exist yet.
+  lists the files on the expander disk as the system model lists them.
+  Meanwhile the BIOP runs its own test of its nine drives and must have
+  nothing to report. The links to the mainframe do not exist yet.
 - `python3 tools/py/ioptest.py selftest` runs `tests/ios/selftest.py`, a
   program for the I/O Processors that takes the kernel's place, on the system
   model and on the same hardware. It checks what the kernel's start does not
   depend on: the real-time clock, the order in which channels that ask for an
-  interrupt are reported, two sectors written to the expander disk and read
-  back, and that a word from each processor reaches each other one. Each
-  processor writes its verdict on its console.
+  interrupt are reported, the expander's tape and disk, a drive of the BIOP
+  and its channel into central memory, and that a word from each processor
+  reaches each other one. Each processor writes its verdict on its console.
 
 ## Testing on a MiSTer
 

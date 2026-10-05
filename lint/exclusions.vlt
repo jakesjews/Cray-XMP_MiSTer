@@ -192,6 +192,12 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/ios/iop_cpu.v" -match "*Bits of signal ar
 // dead dump, which nothing here does.
 lint_off -rule UNUSEDSIGNAL -file "rtl/ios/ios_core.v" -match "*Bits of signal are not used: 'over_*'[2]*"
 
+// The XIOP has a console and nothing else: no interface takes the upper bits
+// of its accumulator or uses its Local Memory port.
+lint_off -rule UNUSEDSIGNAL -file "rtl/ios/ios.v" -match "*Bits of signal are not used: 'a'[47:39]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/ios/ios.v" -match "*Bits of signal are not used: 'dma_ack'[2]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/ios/ios.v" -match "*Bits of signal are not used: 'dma_rdata'[47:32]*"
+
 // Keep the MiSTer framework out of lint diagnostics while using its real
 // module interfaces for elaboration. Generic lint_off covers lint/style
 // warnings; the named diagnostics below need explicit exclusions.

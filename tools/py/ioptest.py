@@ -15,17 +15,19 @@ question, once for each of the three processors, and replays every step.
 
 boot runs the I/O Subsystem in hardware description (module ios: the three
 processors, their Local Memories, real-time clocks, Buffer Memory channels,
-the channels between them, the consoles and the Peripheral Expander) on the
-same kernel.  The MIOP loads its overlays from the tape, asks for the date and
-the time, is told, and is asked to list the files on the expander disk.
-Without --full the kernel's long tests of memory are left out.
+the channels between them, the consoles, the Peripheral Expander, and the
+BIOP's disk drives and channel into central memory) on the same kernel.  The
+MIOP loads its overlays from the tape, asks for the date and the time, is
+told, and is asked to list the files on the expander disk; the BIOP tests its
+nine drives.  Without --full the kernel's long tests of memory are left out.
 
 selftest runs the self-checking program of tests/ios/selftest.py in place of
 the kernel, on the system model and on the same three processors in hardware
 description: the real-time clock, the order in which channels that ask for an
-interrupt are reported, two sectors written to the expander disk and read
-back, the start of one processor by another, and a word from each processor
-to each other one.  Both must report OK three times.
+interrupt are reported, the expander's tape and disk, the start of one
+processor by another, a drive of the BIOP and its channel into central
+memory, and a word from each processor to each other one.  Both must report
+OK three times.
 
 The model writes a record of each step (tools/crates/ios/src/replay.rs) and
 the simulation of the hardware description follows it: same interrupts, same
@@ -105,7 +107,7 @@ def boot(system, full):
     cmd = [BOOT, os.path.join(system, 'target/cos_117/iop_kern.bin'), os.path.join(system, 'boot_tape.tap'),
            os.path.join(system, 'exp_disk.img'),
            '--type', 'ENTER DATE [MM/DD/YY]=10/05/89\\r', '--type', 'ENTER TIME [HH:MM:SS]=01:02:03\\r',
-           '--type', '10/05/89  01:02:03=FSTAT\\r', '--until', 'FSTAT COMPLETE', '--ms', '20000' if full else '3000']
+           '--type', '10/05/89  01:02:03=FSTAT\\r', '--until', 'FSTAT COMPLETE', '--ms', '25000' if full else '8000']
     if not full:
         # the memory test returns at once and the Buffer Memory test is short
         cmd += ['--poke', '42B7=0200', '--poke', '43DA=0']
@@ -117,12 +119,14 @@ def boot(system, full):
               'IOPKERNEL             01/01/89 01:01:01         5120', 'COS_117               01/01/89 01:01:01         279040',
               'MINSTALL              01/01/89 01:01:01         80', 'TOTAL                  ---------------          850596',
               'FSTAT COMPLETE',
-              'console of the BIOP: CHANNEL 20 CHANNEL TIMEOUT',
+              'console of the BIOP: IOP-1 KERNEL, VERSION 4.2.2',
               'console of the XIOP: IOP-3 KERNEL, VERSION 4.2.2']
     missing = [w for w in wanted if w not in out]
+    # the BIOP tests its nine drives and has nothing to report
+    missing += ['not ' + w for w in ('CHANNEL TIMEOUT', 'DATA ERROR', 'SELECT ERROR') if w in out]
     print((out.strip().splitlines() or ['no output'])[-3][:100])
     for w in missing:
-        print('FAIL: `%s` was not shown' % w)
+        print('FAIL: `%s` was shown' % w[4:] if w.startswith('not ') else 'FAIL: `%s` was not shown' % w)
     print('1 boots, %d failed' % (1 if missing or r.returncode != 0 else 0))
     return not missing and r.returncode == 0
 
