@@ -3,7 +3,7 @@
 # workspace builds offline.
 [workspace]
 resolver = "2"
-members = ["crates/isa", "crates/asm", "crates/fp", "crates/model", "crates/cli"]
+members = ["crates/isa", "crates/asm", "crates/fp", "crates/model", "crates/cli", "crates/ios"]
 
 [workspace.package]
 edition = "2021"

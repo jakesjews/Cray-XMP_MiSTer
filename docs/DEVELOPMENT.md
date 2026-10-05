@@ -59,6 +59,36 @@ values a program has no right to rely on, such as registers at power-up or a
 load from outside the program's field, and stops if one decides a branch, an
 address or console output.
 
+### The system model
+
+`cray1-sys` joins that CPU model, with the X-MP features, to a model of the
+I/O Subsystem: three I/O Processors with their channels, Buffer Memory, the
+Peripheral Expander with its tape and disk, nine DD-29 disk drives, the
+consoles, and the two links to the mainframe. It runs the I/O Subsystem's
+own software, and through it COS 1.17. Nothing of this is in the FPGA yet;
+the model is what the hardware will be written and checked against.
+
+The software is not part of this repository. `cray1-sys` takes the directory
+of the ready-to-run COS 1.17 system of the cray-sim project (the IOP kernel,
+the boot tape, the expander disk and the drive images) and never writes to
+it. What the operator types comes from a script:
+
+```sh
+tools/target/release/cray1-sys DIRECTORY --script tests/sys/cos.script
+```
+
+`tests/sys/cos.script` gives the date, dead starts COS, logs the station on,
+answers the start-up questions and submits a batch job. The kernel console
+is copied to the terminal; a `screen` step prints a console as the 24 lines
+an operator would see. `--log FILE` writes every channel function of every
+I/O Processor. The header of `tools/crates/ios/src/bin/cray1-sys.rs` lists
+the script steps and the options, among them the timing of the devices.
+
+`cargo test` in `tools/` boots the kernel as far as its first question if
+the software is in `research/Cray 1 Disk Image from Youtube` or in the
+directory `CRAY1_SYSTEM` names, and compares the start of the boot with one
+recorded on the cray-sim simulator. `make test` runs the script above.
+
 ## Simulations
 
 With Verilator 5 on `PATH`:

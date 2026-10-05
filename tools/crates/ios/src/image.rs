@@ -1,0 +1,346 @@
+//! Media: disk images that are read from a file and written to memory only,
+//! and the boot tape.
+//!
+//! The formats are those of the cray-sim project's ready-to-run system
+//! (`research/notes/ios-devices-spec.md`, parts 8.6, 10.2 and 10.3): they
+//! are what the surviving COS 1.17 system exists in.
+
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
+
+/// A disk image: blocks of a fixed size, no header.  Parcels are stored high
+/// byte first.  Blocks that are written are kept in memory and the file is
+/// never changed; a block that the file does not have reads as zeros.
+pub struct Image {
+    file: Option<File>,
+    block: usize,
+    written: HashMap<u64, Box<[u8]>>,
+}
+
+impl Image {
+    /// An image with no file behind it: all zeros.
+    pub fn empty(block: usize) -> Image {
+        Image {
+            file: None,
+            block,
+            written: HashMap::new(),
+        }
+    }
+
+    /// The image in the file at `path`.
+    pub fn open(path: &Path, block: usize) -> std::io::Result<Image> {
+        Ok(Image {
+            file: Some(File::open(path)?),
+            block,
+            written: HashMap::new(),
+        })
+    }
+
+    /// Bytes in a block.
+    pub fn block(&self) -> usize {
+        self.block
+    }
+
+    /// Blocks written since the image was opened.
+    pub fn written_blocks(&self) -> usize {
+        self.written.len()
+    }
+
+    /// Block `index` as parcels.
+    pub fn read(&mut self, index: u64) -> Vec<u16> {
+        let mut bytes = vec![0u8; self.block];
+        if let Some(block) = self.written.get(&index) {
+            bytes.copy_from_slice(block);
+        } else if let Some(file) = &mut self.file {
+            // a short read leaves zeros: the end of a file that is too small
+            if file
+                .seek(SeekFrom::Start(index * self.block as u64))
+                .is_ok()
+            {
+                let mut got = 0;
+                while got < bytes.len() {
+                    match file.read(&mut bytes[got..]) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => got += n,
+                    }
+                }
+            }
+        }
+        bytes
+            .chunks(2)
+            .map(|b| (b[0] as u16) << 8 | b[1] as u16)
+            .collect()
+    }
+
+    /// Replace block `index`.  Parcels that `parcels` does not have are zero.
+    pub fn write(&mut self, index: u64, parcels: &[u16]) {
+        let mut bytes = vec![0u8; self.block].into_boxed_slice();
+        for (n, parcel) in parcels.iter().take(self.block / 2).enumerate() {
+            bytes[2 * n] = (parcel >> 8) as u8;
+            bytes[2 * n + 1] = *parcel as u8;
+        }
+        self.written.insert(index, bytes);
+    }
+}
+
+/// What the tape drive found at the end of its last motion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TapeState {
+    /// At the load point.
+    Beginning,
+    /// Behind a record.
+    Record,
+    /// Behind a file mark.
+    FileMark,
+    /// Nothing more on the tape.
+    End,
+}
+
+/// A tape: records and file marks.
+///
+/// The `.tap` format is a sequence of records, each a 4-byte little-endian
+/// length, the data, and the same length again; a length of 0 alone is a
+/// file mark.
+pub struct Tape {
+    /// `None` is a file mark.
+    items: Vec<Option<Vec<u8>>>,
+    position: usize,
+    state: TapeState,
+}
+
+impl Tape {
+    /// A tape with nothing on it.
+    pub fn blank() -> Tape {
+        Tape {
+            items: Vec::new(),
+            position: 0,
+            state: TapeState::Beginning,
+        }
+    }
+
+    /// The tape in a `.tap` file's bytes.
+    pub fn from_tap(bytes: &[u8]) -> Result<Tape, String> {
+        let mut items = Vec::new();
+        let mut at = 0;
+        let length = |at: usize| -> Option<usize> {
+            let b = bytes.get(at..at + 4)?;
+            Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+        };
+        while at < bytes.len() {
+            let n = length(at).ok_or("tape image ends inside a record length")?;
+            at += 4;
+            if n == 0 {
+                items.push(None);
+                continue;
+            }
+            let data = bytes
+                .get(at..at + n)
+                .ok_or("tape image ends inside a record")?;
+            at += n;
+            if length(at) != Some(n) {
+                return Err(format!(
+                    "tape record ending at byte {} has no matching length",
+                    at
+                ));
+            }
+            at += 4;
+            items.push(Some(data.to_vec()));
+        }
+        Ok(Tape {
+            items,
+            position: 0,
+            state: TapeState::Beginning,
+        })
+    }
+
+    /// Change one byte of a file, counted from the start of the file's
+    /// data.  For the patches the cray-sim configuration applies to the
+    /// overlay file.  False if the file has no such byte.
+    pub fn poke(&mut self, file: usize, mut offset: usize, value: u8) -> bool {
+        let mut at = 0;
+        for item in self.items.iter_mut() {
+            match item {
+                None => at += 1,
+                Some(_) if at < file => {}
+                Some(_) if at > file => return false,
+                Some(data) => {
+                    if offset < data.len() {
+                        data[offset] = value;
+                        return true;
+                    }
+                    offset -= data.len();
+                }
+            }
+        }
+        false
+    }
+
+    pub fn state(&self) -> TapeState {
+        self.state
+    }
+
+    pub fn rewind(&mut self) {
+        self.position = 0;
+        self.state = TapeState::Beginning;
+    }
+
+    /// Read the next record: at most `parcels` of it, the rest is passed
+    /// over.  At a file mark or the end of the tape nothing is read.
+    pub fn read(&mut self, parcels: usize) -> Vec<u16> {
+        match self.items.get(self.position) {
+            None => {
+                self.state = TapeState::End;
+                Vec::new()
+            }
+            Some(None) => {
+                self.position += 1;
+                self.state = TapeState::FileMark;
+                Vec::new()
+            }
+            Some(Some(data)) => {
+                self.position += 1;
+                self.state = TapeState::Record;
+                data.chunks(2)
+                    .take(parcels)
+                    .map(|b| (b[0] as u16) << 8 | *b.get(1).unwrap_or(&0) as u16)
+                    .collect()
+            }
+        }
+    }
+
+    /// Pass over the next record.  False at a file mark, which is passed
+    /// over too, and at the end of the tape.
+    pub fn space_forward(&mut self) -> bool {
+        match self.items.get(self.position) {
+            None => {
+                self.state = TapeState::End;
+                false
+            }
+            Some(item) => {
+                self.position += 1;
+                self.state = if item.is_some() {
+                    TapeState::Record
+                } else {
+                    TapeState::FileMark
+                };
+                item.is_some()
+            }
+        }
+    }
+
+    /// Back over the record before the heads.  False at a file mark, which
+    /// is passed over too, and at the load point.
+    pub fn space_backward(&mut self) -> bool {
+        if self.position == 0 {
+            self.state = TapeState::Beginning;
+            return false;
+        }
+        self.position -= 1;
+        let record = self.items[self.position].is_some();
+        self.state = if self.position == 0 {
+            TapeState::Beginning
+        } else if record {
+            TapeState::Record
+        } else {
+            TapeState::FileMark
+        };
+        record
+    }
+
+    /// Write a record at the heads; what was on the tape from there on is
+    /// gone.
+    pub fn write(&mut self, parcels: &[u16]) {
+        self.items.truncate(self.position);
+        self.items
+            .push(Some(parcels.iter().flat_map(|p| p.to_be_bytes()).collect()));
+        self.position += 1;
+        self.state = TapeState::Record;
+    }
+
+    /// Write a file mark at the heads.
+    pub fn write_mark(&mut self) {
+        self.items.truncate(self.position);
+        self.items.push(None);
+        self.position += 1;
+        self.state = TapeState::FileMark;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tap(items: &[Option<&[u8]>]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for item in items {
+            match item {
+                None => out.extend(0u32.to_le_bytes()),
+                Some(data) => {
+                    out.extend((data.len() as u32).to_le_bytes());
+                    out.extend(*data);
+                    out.extend((data.len() as u32).to_le_bytes());
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn tape_records_and_marks() {
+        let bytes = tap(&[Some(&[1, 2, 3, 4]), Some(&[5, 6, 7]), None, Some(&[8, 9])]);
+        let mut tape = Tape::from_tap(&bytes).unwrap();
+        assert_eq!(tape.state(), TapeState::Beginning);
+        assert_eq!(tape.read(10), [0x0102, 0x0304]);
+        assert_eq!(tape.state(), TapeState::Record);
+        // an odd byte is the high half of a last parcel; a short count cuts
+        assert_eq!(tape.read(1), [0x0506]);
+        assert_eq!(tape.read(10), []);
+        assert_eq!(tape.state(), TapeState::FileMark);
+        assert_eq!(tape.read(10), [0x0809]);
+        assert_eq!(tape.read(10), []);
+        assert_eq!(tape.state(), TapeState::End);
+        assert!(tape.space_backward());
+        assert!(!tape.space_backward());
+        assert_eq!(tape.state(), TapeState::FileMark);
+        tape.rewind();
+        assert!(tape.space_forward());
+        assert_eq!(tape.read(10), [0x0506, 0x0700]);
+        // a patch to file 1 and one to file 0, across its records
+        assert!(tape.poke(1, 1, 0xAA));
+        assert!(tape.poke(0, 5, 0xBB));
+        assert!(!tape.poke(0, 7, 0));
+        assert!(!tape.poke(2, 0, 0));
+        tape.rewind();
+        tape.space_forward();
+        assert_eq!(tape.read(10), [0x05BB, 0x0700]);
+        tape.read(10);
+        assert_eq!(tape.read(10), [0x08AA]);
+        assert!(Tape::from_tap(&bytes[..9]).is_err());
+    }
+
+    #[test]
+    fn tape_writes_cut_the_rest() {
+        let mut tape = Tape::from_tap(&tap(&[Some(&[1, 2]), Some(&[3, 4])])).unwrap();
+        tape.read(1);
+        tape.write(&[0xABCD]);
+        tape.write_mark();
+        assert_eq!(tape.read(1), []);
+        assert_eq!(tape.state(), TapeState::End);
+        tape.rewind();
+        tape.read(1);
+        assert_eq!(tape.read(1), [0xABCD]);
+        assert!(!tape.space_forward());
+    }
+
+    #[test]
+    fn image_blocks() {
+        let mut image = Image::empty(8);
+        assert_eq!(image.read(3), [0; 4]);
+        image.write(3, &[0x1234, 0x5678]);
+        assert_eq!(image.read(3), [0x1234, 0x5678, 0, 0]);
+        assert_eq!(image.read(2), [0; 4]);
+        assert_eq!(image.written_blocks(), 1);
+    }
+}

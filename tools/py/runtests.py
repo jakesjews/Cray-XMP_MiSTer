@@ -7,7 +7,10 @@
                                   then the X-MP mode: its tests and 100 random programs
     runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
                                   floating-point operation, 10,000 random programs and
-                                  2,000 for the X-MP mode
+                                  2,000 for the X-MP mode; then, if the COS 1.17
+                                  software is there (CRAY1_SYSTEM, or the directory
+                                  research/Cray 1 Disk Image from Youtube), the system
+                                  model dead starts it and runs a job
 
 Needs the host tools (make tools) and the simulations (make sim).  Programs are
 compared with the reference model by difftest.py; see docs/DEVELOPMENT.md.
@@ -22,6 +25,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 PY = sys.executable
 DIFF = os.path.join(ROOT, 'tools/py/difftest.py')
 FPBENCH = os.path.join(ROOT, 'sim/build/fp/Vfp_tb')
+SYS = os.path.join(ROOT, 'tools/target/release/cray1-sys')
+SYSTEM = os.environ.get('CRAY1_SYSTEM', os.path.join(ROOT, 'research/Cray 1 Disk Image from Youtube'))
 
 
 def smoke_variants(out):
@@ -107,6 +112,9 @@ def main():
         ok &= step('10,000 random programs', [PY, DIFF, 'rand', '1', '10000', '-n', '250', '-j', jobs])
         ok &= step('X-MP mode: 2,000 random programs',
                    [PY, DIFF, 'rand', '1001', '3000', '-n', '250', '--xmp', '-j', jobs])
+        if os.path.exists(os.path.join(SYSTEM, 'boot_tape.tap')):
+            ok &= step('system model: COS 1.17 dead starts and runs a job',
+                       [SYS, SYSTEM, '--script', 'tests/sys/cos.script', '--quiet'])
     print('ALL PASSED' if ok else 'FAILED')
     sys.exit(0 if ok else 1)
 

@@ -232,6 +232,9 @@ impl Memory {
         let a = addr as usize;
         self.written[a / 64] >> (a % 64) & 1 != 0
     }
+    fn define_all(&mut self) {
+        self.defined.fill(!0);
+    }
 }
 
 /// The CRAY-1 at instruction level.  See the crate documentation.
@@ -316,6 +319,8 @@ pub struct Machine {
     steps: u64,
     instructions: u64,
     observer: Option<Box<dyn Observer>>,
+    /// The top 16 words are plain memory: no console, no test exit.
+    plain_memory: bool,
 }
 
 impl Default for Machine {
@@ -392,7 +397,27 @@ impl Machine {
             steps: 0,
             instructions: 0,
             observer: None,
+            plain_memory: false,
         }
+    }
+
+    /// Make the machine one that is part of a system: every register and
+    /// every memory word holds a defined zero, as hardware holds something,
+    /// and the top 16 words are memory like the rest, not the I/O page.
+    /// The checks for undefined values then never fire.
+    pub fn set_system(&mut self) {
+        self.plain_memory = true;
+        self.a = [Some(0); 8];
+        self.s = [Some(0); 8];
+        self.b = [Some(0); 64];
+        self.t = [Some(0); 64];
+        *self.v = [[Some(0); 64]; 8];
+        self.vl = Some(0);
+        self.vm = Some(0);
+        self.sb = [[Some(0); 8]; 3];
+        self.st = [[Some(0); 8]; 3];
+        self.sm = [[Some(false); 32]; 3];
+        self.mem.define_all();
     }
 
     /// A machine with `image` loaded.
@@ -493,7 +518,11 @@ impl Machine {
     /// `CON_DATA`, `TEST_EXIT` and `CYCLES` are words 0 to 3 of it (the
     /// constants are their addresses on the CRAY-1).
     pub fn io_page(&self) -> u32 {
-        self.memory_words() - 16
+        if self.plain_memory {
+            self.memory_words()
+        } else {
+            self.memory_words() - 16
+        }
     }
     /// Mask of the P register: 22 bits, 24 on the X-MP.
     pub fn p_mask(&self) -> u32 {

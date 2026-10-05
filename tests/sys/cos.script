@@ -1,0 +1,55 @@
+# Dead start COS 1.17 through the I/O Subsystem and run a batch job.
+#
+#   tools/target/release/cray1-sys "research/Cray 1 Disk Image from Youtube" --script tests/sys/cos.script
+#
+# The kernel console is the operator's console of the MIOP; the station is
+# the first of its other consoles.  About 70 seconds of machine time.
+
+# the I/O Subsystem has no clock: the operator gives the date and the time
+wait kernel ENTER DATE [MM/DD/YY]
+run 100
+type kernel 06/06/89
+wait kernel ENTER TIME [HH:MM:SS]
+run 100
+type kernel 12:35:38
+run 500
+
+# load COS from the disk on the Peripheral Expander and dead start the mainframe
+type kernel START COS_117 DEADSTART
+wait kernel MFINIT: COMPLETE
+wait kernel CPU <-> MIOP LINKAGE COMPLETE
+wait kernel START COMPLETE
+run 1000
+
+# the operator station
+type kernel STATION
+wait station CRAY STATION.  VERSION 4.2.2, IOS.
+type station LOGON
+wait station COS 1.17  02/28/89
+type station STMSG
+wait station ENTER CONFIGURATION CHANGES OR 'GO' TO CONTINUE
+type station REPLY,0,GO
+run 10000
+type station STMSG
+wait station NO LABEL WAS FOUND ON DEVICE BMR-0-20
+type station REPLY,10,CONTINUE
+run 12000
+type station STMSG,I
+wait station STARTUP IS PERFORMING A DEADSTART
+wait station THE $DSC-EXTENSION WAS CREATED AND SAVED SUCCESSFULLY.
+screen station
+
+# let jobs in and run one
+type station CLASS,ALL,ON
+run 1000
+type station LIMIT,5
+run 1000
+type station STATUS
+wait station CRAY SYSTEM STATUS
+type station SUBMIT,JTEST30
+run 5000
+type kernel IAIOP LOG
+wait printer JOB,JN=JTEST30,T=8.
+wait printer PD009 - DATASET NOT FOUND
+wait printer END OF JOB
+screen station

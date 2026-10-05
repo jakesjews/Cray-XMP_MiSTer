@@ -22,6 +22,14 @@ name = "cray1-fp"
 version = "0.1.0"
 
 [[package]]
+name = "cray1-ios"
+version = "0.1.0"
+dependencies = [
+ "cray1-isa",
+ "cray1-model",
+]
+
+[[package]]
 name = "cray1-isa"
 version = "0.1.0"
 

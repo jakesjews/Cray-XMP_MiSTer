@@ -114,6 +114,19 @@ impl Machine {
         }
     }
 
+    /// I/O Master Clear from the I/O Subsystem: every channel stops with
+    /// its addresses and flags cleared (CSM-0111000 page 3-21).  The Master
+    /// Clear lines to the devices are 0012's and stay.
+    pub fn io_master_clear(&mut self) {
+        for c in self.channels.iter_mut() {
+            *c = Channel {
+                master_clear: c.master_clear,
+                ..Channel::default()
+            };
+        }
+        self.loop_waiting = [false; 4];
+    }
+
     fn channel_store(&mut self, address: u32, word: u64) {
         if address < self.io_page() {
             self.store(address, Some(word));

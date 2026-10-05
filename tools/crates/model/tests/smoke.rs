@@ -599,7 +599,11 @@ fn xmp_tests() {
         .filter(|n| n.ends_with(".cal"))
         .collect();
     names.sort();
-    assert_eq!(names, ["shared.cal", "xpkg.cal"], "tests/xmp changed");
+    assert_eq!(
+        names,
+        ["chan.cal", "shared.cal", "xpkg.cal"],
+        "tests/xmp changed"
+    );
     for name in names {
         let source = std::fs::read_to_string(dir.join(&name)).unwrap();
         let mut include = |file: &str, _from: &str| -> Result<(String, String), String> {
@@ -614,6 +618,8 @@ fn xmp_tests() {
         assert_eq!(assembly.machine, cray1_isa::Cpu::Xmp, "{}", name);
         let mut machine = Machine::for_cpu(assembly.machine);
         machine.load_image(&assembly.image()).unwrap();
+        // chan.cal has each output channel cabled to its input channel
+        machine.set_channel_loopback(true);
         let result = machine.run(MAX_STEPS);
         assert_eq!(result, RunResult::Exit(0), "{}", name);
         assert_eq!(machine.mem(STATUS_WORD), Some(1), "{}", name);
