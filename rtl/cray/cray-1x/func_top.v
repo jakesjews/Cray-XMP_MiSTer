@@ -58,6 +58,7 @@ module func_top (
 	parameter XMP = 0;
 
 	`include "cray_types.vh"
+	`include "cray_pd.vh"
 	//system signals
 	input wire clk;
 	input wire rst;
@@ -147,6 +148,7 @@ module func_top (
 	wire [63:0] t_wr_data;
 	wire        t_result_en;
 	wire        mem_t_wr_en;
+	reg         tw_en;  // a 075 issued in the clock before
 
 
 	//address register file signals
@@ -343,29 +345,29 @@ module func_top (
 	reg  single_step;
 	wire ok_to_run;
 	wire cip_go;  // CIP holds an instruction that may start (not displaced by an interrupt)
-	wire [7:0] rd_a, rd_s;  // registers the current instruction reads
-	wire opnd_busy;  // one of them still has a result on its way
-	wire cip_issue;  // the current instruction issues this clock
+	//What the issue logic needs to know about the instruction in CIP.  It is decoded
+	//while the instruction is in NIP (cray_predecode) and kept in a register that is
+	//loaded together with CIP, so that the decision to issue starts from flip-flops.
+	wire [PD_W-1:0] pd_nip, pd_none;
+	reg  [PD_W-1:0] pd;
+	wire [     7:0] rd_a = pd[PD_RD_A+:8];  // registers the current instruction reads
+	wire [     7:0] rd_s = pd[PD_RD_S+:8];
+	wire            opnd_busy;  // one of them still has a result on its way
+	wire            cip_issue;  // the current instruction issues this clock
 
-	//The instruction as the schedulers see it.  On a CRAY-1 the fields the manual marks x
-	//are ignored (023ijx, 026ijx, 027ijx, 072ixx, 073ixx).  The X-MP gives some of those
-	//encodings a meaning, and the lookup tables tell them by the fields left in place
-	//here: 026ij7 and 027ij7 (SBj), 072i02 and 073i02 (the semaphores), 072ij3 and
-	//073ij3 (STj) and 073i01 (the status register).  026ij1 is told apart at the
-	//population count unit.
-	reg [15:0] cip_dec;
-	always @* begin
-		cip_dec = cip;
-		case (cip[15:9])
-			7'o023: cip_dec = {cip[15:3], 3'b000};
-			7'o026, 7'o027: if (!XMP || (cip[2:0] != 3'd7)) cip_dec = {cip[15:3], 3'b000};
-			7'o072: if (!XMP || !((cip[5:0] == 6'o02) || (cip[2:0] == 3'd3))) cip_dec = {cip[15:6], 6'b000000};
-			7'o073:
-			if (!XMP || !((cip[5:0] == 6'o01) || (cip[5:0] == 6'o02) || (cip[2:0] == 3'd3)))
-				cip_dec = {cip[15:6], 6'b000000};
-			default: ;
-		endcase
-	end
+	cray_predecode #(
+		.XMP(XMP)
+	) predecode (
+		.i_parcel(nip),
+		.o_pd    (pd_nip)
+	);
+	//what the same decode makes of no instruction at all, for when CIP is cleared
+	cray_predecode #(
+		.XMP(XMP)
+	) predecode_none (
+		.i_parcel(16'b0),
+		.o_pd    (pd_none)
+	);
 
 	always @(posedge clk) single_step <= i_single_step;
 
@@ -376,22 +378,10 @@ module func_top (
 	assign cip_go                 = cip_vld && !x_take_int && ok_to_run && !opnd_busy && !fetch_fault;
 	assign cip_issue              = cip_vld && issue_vld;
 
-	cray_opnd #(
-		.XMP(XMP)
-	) opnd (
-		.i_cip (cip),
-		.o_rd_a(rd_a),
-		.o_rd_s(rd_s)
-	);
 	//076 reads a V register that must not be in use; 003, 073 and the merges 146 and 147
 	//wait for a 175 to finish building the mask, and 003 for a merge to finish using it
-	wire vec_hold = ((cip_instr==7'o076) && vreg_busy[cip_j]) ||
-				(vm_pending && ((cip_instr==7'o003) || (cip_instr==7'o073) || (cip_instr==7'o146) || (cip_instr==7'o147) || (cip_instr==7'o175))) ||
-				((cip_instr==7'o003) && tk_busy[0]) ||
-	//a scalar floating point instruction waits for a vector operation to leave its unit
-	(((cip_instr==7'o062) || (cip_instr==7'o063)) && tk_busy[4]) ||
-				((cip_instr[6:2]==5'b01101) && tk_busy[3]) ||
-				((cip_instr==7'o070) && tk_busy[5]);
+	wire vec_hold = (|(pd[PD_H076+:8] & vreg_busy)) || (pd[PD_HVM] && vm_pending) || (pd[PD_H003] && tk_busy[0]) ||
+		(pd[PD_HFADD] && tk_busy[4]) || (pd[PD_HFMUL] && tk_busy[3]) || (pd[PD_HFRCP] && tk_busy[5]);
 	//The mode instructions 0021 to 0027 and the status register read 073i01 wait for
 	//every result on its way and for memory: a floating point error belongs to the
 	//modes that held when its instruction issued, and to the status read behind it.
@@ -403,9 +393,8 @@ module func_top (
 		settle_issued <= cip_issue;
 	end
 	wire unsettled = settle_busy || settle_issued;
-	wire mode_hold = unsettled && (((cip[15:9] == 7'o002) && (cip[8:6] != 3'd0)) ||
-				((XMP != 0) && (cip[15:9] == 7'o073) && (cip[5:0] == 6'o01)));
-	assign opnd_busy = (|(rd_a & a_res_mask)) || (|(rd_s & s_res_mask)) || vec_hold || mode_hold || ts_hold;
+	wire mode_hold = unsettled && pd[PD_HMODE];
+	assign opnd_busy = (|(rd_a & a_res_mask)) || (|(rd_s & s_res_mask)) || vec_hold || mode_hold || ts_hold || (pd[PD_H074] && tw_en);
 
 	/////////////////////////////////////
 	//    Logic Analyzer        //
@@ -420,7 +409,7 @@ module func_top (
 	// away, everything already issued runs to completion, and then exchange_ctl
 	// swaps the registers with the package at XA.
 
-	assign exchange_type = ((cip[15:9] == 7'o000) || (cip[15:9] == 7'o004)) && cip_vld && !cip_fault;
+	assign exchange_type = pd[PD_EXCH] && cip_vld && !cip_fault;
 
 	// An exit is taken as soon as it is the current instruction.  An interrupt is
 	// taken between instructions, and never while a memory instruction is under way.
@@ -731,6 +720,7 @@ module func_top (
 			nip_vld   <= 1'b0;
 			cip_vld   <= 1'b0;
 			lip_vld   <= 1'b0;
+			pd        <= pd_none;
 		end else if (nip_in_vld && issue_vld) begin
 			nip_fault <= p_oof;
 			cip_fault <= nip_fault && nip_vld && !take_branch;
@@ -738,6 +728,7 @@ module func_top (
 			nip <= i_nip_nxt;
 			lip <= i_nip_nxt;
 			cip <= nip;
+			pd <= pd_nip;
 			lip_vld <= take_branch ? 1'b0 : two_parcel_nip; //1'b1; //nip_vld;   //Only set it if you have a two_parcel_nip, and you haven't just branched
 			nip_vld <= (two_parcel_nip || take_branch) ? 1'b0 : 1'b1;            //Set it if you didn't branch and the current cycle holds a one parcel nip
 			cip_vld <= take_branch ? 1'b0 : nip_vld;
@@ -747,6 +738,7 @@ module func_top (
 			nip     <= nip;
 			lip     <= lip;
 			cip     <= 16'b0;
+			pd      <= pd_none;
 			lip_vld <= 1'b0;  //lip_vld;
 			nip_vld <= take_branch ? 1'b0 : nip_vld;  //nip_vld;
 			cip_vld <= 1'b0;
@@ -760,20 +752,24 @@ module func_top (
 		(nip[15:14] == 2'b10));  //100-137
 
 
-	assign two_parcel_cip = cip_vld && !cip_fault && ((cip[15:10] == 6'b000011) ||  //006-007
-		(cip[15:12] == 4'b0001) ||  //010-017
-		(cip[15:10] == 6'b001000) ||  //020-021
-		(cip[15:10] == 6'b010000) ||  //040-041
-		(cip[15:14] == 2'b10));  //100-137
+	assign two_parcel_cip = cip_vld && !cip_fault && pd[PD_TWO];
 	always @(posedge clk) last_instr <= cip[5:0];
 
 	//Track S-type related reservations, destination data and if we can issue or not
 	s_scheduler ssched (
 		.clk            (clk),
 		.rst            (rst),
-		.i_cip          (cip_dec),
 		.i_cip_vld      (cip_vld),
 		.i_issue_vld    (issue_vld),
+		.i_type         (pd[PD_S_TYPE]),
+		.i_stage        (pd[PD_S_STAGE+:14]),
+		.i_src          (pd[PD_S_SRC+:5]),
+		.i_dest         (pd[PD_S_DEST+:8]),
+		.i_dnum         (pd[PD_S_DNUM+:3]),
+		.i_cmask        (pd[PD_S_CMASK+:8]),
+		.i_wpc          (pd[PD_S_WPC+:14]),
+		.i_077          (pd[PD_S_077]),
+		.i_vw           (pd[PD_S_VW+:8]),
 		.o_s_issue      (s_issue),
 		.o_s_result_en  (s_result_en),
 		.o_s_result_src (s_result_src),
@@ -825,10 +821,17 @@ module func_top (
 	a_scheduler asched (
 		.clk               (clk),
 		.rst               (rst),
-		.i_cip             (cip_dec),
 		.i_cip_vld         (cip_vld),
-		.i_lip_vld         (lip_vld),
 		.i_issue_vld       (issue_vld),
+		.i_type            (pd[PD_A_TYPE]),
+		.i_stage           (pd[PD_A_STAGE+:11]),
+		.i_src             (pd[PD_A_SRC+:4]),
+		.i_dest            (pd[PD_A_DEST+:8]),
+		.i_dnum            (pd[PD_A_DNUM+:3]),
+		.i_cmask           (pd[PD_A_CMASK+:8]),
+		.i_wpc             (pd[PD_A_WPC+:11]),
+		.i_025             (pd[PD_A_025]),
+		.i_sconf           (pd[PD_A_SCONF+:8]),
 		.i_total_s_res_mask(s_res_mask),
 		.o_a_issue         (a_issue),
 		.o_a_result_en     (a_result_en),
@@ -864,11 +867,12 @@ module func_top (
 
 	//Track V-type instructions
 	v_scheduler vsched (
-		.i_cip         (cip),
 		.i_cip_vld     (cip_go),
-		.i_a_res_mask  (a_res_mask),
-		.o_fu_delay    (v_fu_delay),
-		.o_fu          (),
+		.i_v_type      (v_type),
+		.i_vi          (pd[PD_V_I+:8]),
+		.i_vj          (pd[PD_V_J+:8]),
+		.i_vk          (pd[PD_V_K+:8]),
+		.i_fu          (pd[PD_V_FU+:8]),
 		.o_vwrite_start(vwrite_start),
 		.o_vread_start (vread_start),
 		.o_vfu_start   (vfu_start),
@@ -901,7 +905,9 @@ localparam VLOG      = 3'b000,   //vector logical
 	assign vfu_busy[6] = fp_ra_busy | vpop_busy;
 	assign vfu_busy[7] = mem_busy;
 	assign mem_idle    = !mem_busy;
-	assign v_type      = (cip[15:14] == 2'b11);
+	assign v_type      = pd[PD_VTYPE];
+	assign mem_type    = pd[PD_MTYPE];
+	assign v_fu_delay  = pd[PD_V_DELAY+:4];
 
 	//check if it's free to issue
 
@@ -1105,6 +1111,8 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_wr_addr (s_wr_addr),
 		.i_wr_data (s_wr_data),
 		.i_wr_en   (s_wr_en),
+		.i_byp_addr(s_result_dest),
+		.i_byp_en  (s_result_en),
 		.o_s0_pos  (s0_pos),
 		.o_s0_neg  (s0_neg),
 		.o_s0_zero (s0_zero),
@@ -1126,13 +1134,22 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_wr_en  (t_result_en)
 	);
 
-	assign t_rd_addr = mem_type ? mem_t_rd_addr : {cip_j, cip_k};
-	assign t_wr_addr = mem_type ? mem_t_wr_addr : {cip_j, cip_k};
+	//075 writes (Si) to Tjk in the clock after it issues, which keeps the issue logic
+	//and the way an operand takes out of the write port of a block memory.  A 074
+	//right behind it waits that one clock, so that it reads what was written; a block
+	//transfer needs longer than that to get to the registers.  036 writes from memory.
+	reg [ 5:0] tw_addr;
+	reg [63:0] tw_data;
+	always @(posedge clk) begin
+		tw_en   <= !rst && cip_issue && (cip_instr == 7'o075);
+		tw_addr <= {cip_j, cip_k};
+		tw_data <= s_i_data;
+	end
 
-	//We can accept data from the S reg-file or from memory
-	assign t_wr_data   = (cip_instr == 7'o075) ? s_i_data : data_from_mem_to_regs;
-	//075 writes (Si) to Tjk when it issues; 036 writes from memory
-	assign t_result_en = mem_t_wr_en || (cip_issue && (cip_instr == 7'o075));
+	assign t_rd_addr   = mem_type ? mem_t_rd_addr : {cip_j, cip_k};
+	assign t_wr_addr   = tw_en ? tw_addr : mem_t_wr_addr;
+	assign t_wr_data   = tw_en ? tw_data : data_from_mem_to_regs;
+	assign t_result_en = mem_t_wr_en || tw_en;
 
 	a_regfile #(
 		.WIDTH   (24),
@@ -1155,12 +1172,29 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_wr_addr (a_wr_addr),
 		.i_wr_data (a_wr_data),
 		.i_wr_en   (a_wr_en),
+		.i_byp_addr(a_result_dest),
+		.i_byp_en  (a_result_en),
 		.o_a0_pos  (a0_pos),
 		.o_a0_neg  (a0_neg),
 		.o_a0_zero (a0_zero),
 		.o_a0_nzero(a0_nzero)
 	);
 
+
+	//025 writes (Ai) to Bjk, and a return jump writes P to B00, in the clock after the
+	//instruction issues, for the same reason.  Nothing can tell: whatever issues next
+	//reads a B register a clock after it issues itself.  034 writes from memory.
+	reg bw_en, rj_en;
+	reg [ 5:0] bw_addr;
+	reg [23:0] bw_data;
+	reg [23:0] rj_p;
+	always @(posedge clk) begin
+		bw_en   <= !rst && (cip_instr == 7'o025) && a_issue && cip_issue;
+		bw_addr <= {cip_j, cip_k};
+		bw_data <= a_i_data;
+		rj_en   <= !rst && rtn_jump;
+		rj_p    <= p_addr;
+	end
 
 	b_regfile #(
 		.WIDTH   (24),
@@ -1173,14 +1207,14 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_wr_addr (b_wr_addr),
 		.i_wr_data (b_wr_data),
 		.i_wr_en   (b_write_en),
-		.i_cur_p   (p_addr),
-		.i_rtn_jump(rtn_jump)
+		.i_cur_p   (rj_p),
+		.i_rtn_jump(rj_en)
 	);
 
 	//Figure out when and what we should write into the B register file
-	assign b_wr_addr  = (cip_instr == 7'o025) ? {cip_j, cip_k} : mem_b_wr_addr;
-	assign b_wr_data  = (cip_instr == 7'o025) ? a_i_data : data_from_mem_to_regs[23:0];
-	assign b_write_en = ((cip_instr == 7'o025) && a_issue && cip_issue) || ((cip_instr == 7'o034) && mem_b_wr_en);
+	assign b_wr_addr  = bw_en ? bw_addr : mem_b_wr_addr;
+	assign b_wr_data  = bw_en ? bw_data : data_from_mem_to_regs[23:0];
+	assign b_write_en = bw_en || ((cip_instr == 7'o034) && mem_b_wr_en);
 
 	//and figure out what address to read from
 	assign b_rd_addr = (cip_instr == 7'o035) ? mem_b_rd_addr : {cip_j, cip_k};
@@ -1458,7 +1492,6 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_mem_wr_data    (data_to_mem),
 		.o_mem_wr_en      (mem_wr_en),
 		.i_mem_ack        (mem_ack),
-		.o_mem_type       (mem_type),
 		.o_mem_issue      (mem_issue),
 		.i_issue          (cip_issue),
 		.o_v_num          (vmem_num),
@@ -1486,14 +1519,15 @@ localparam VLOG      = 3'b000,   //vector logical
 		if (XMP) begin : g_shared
 			(* ramstyle = "MLAB, no_rw_check" *)reg [23:0] sb  [0:31];
 			(* ramstyle = "MLAB, no_rw_check" *)reg [63:0] st  [0:31];
-			reg [31:0] sm  [ 0:3];  //bit 31 is semaphore 0; cluster 0 is never used
+			//four words of flip-flops: as a block memory they sat far from the S registers
+			(* ramstyle = "logic" *)reg [31:0] sm  [ 0:3];  //bit 31 is semaphore 0; cluster 0 is never used
 			reg [23:0] a_r;
 			reg [63:0] s_r1, s_r2, sr_r;
 
 			wire        clustered = (cln != 2'd0);
 			wire [ 4:0] reg_n = {cln, cip[5:3]};
 			wire [31:0] sem_bit = 32'h80000000 >> cip[4:0];  //the semaphore jk names
-			wire        is_ts = (cip[15:6] == 10'o0034);
+			wire        is_ts = pd[PD_TS];
 			wire [31:0] sem_now = sm[cln];
 
 			assign ts_hold = cip_vld && is_ts && clustered && (|(sem_now & sem_bit));
@@ -1675,6 +1709,11 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_issue_vld   (issue_vld),
 		.i_cip         (cip),
 		.i_cip_vld     (cip_vld),
+		.i_type        (pd[PD_BTYPE]),
+		.i_005         (pd[PD_BR_005]),
+		.i_on_a0       (pd[PD_BR_A0]),
+		.i_on_s0       (pd[PD_BR_S0]),
+		.i_jump        (pd[PD_BR_JMP]),
 		.i_lip         (lip),
 		.i_lip_vld     (lip_vld),
 		.i_a0_neg      (a0_neg),

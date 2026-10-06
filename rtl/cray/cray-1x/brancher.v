@@ -10,6 +10,11 @@ module brancher (
 	i_issue_vld,
 	i_cip,
 	i_cip_vld,
+	i_type,
+	i_005,
+	i_on_a0,
+	i_on_s0,
+	i_jump,
 	i_lip,
 	i_lip_vld,
 	i_a0_neg,
@@ -34,6 +39,12 @@ module brancher (
 	input wire i_issue_vld;  //the current instruction issues this clock
 	input wire [15:0] i_cip;
 	input wire i_cip_vld;
+	//the instruction in CIP, decoded while it was in NIP (cray_predecode, the fields PD_B*)
+	input wire i_type;  //a branch
+	input wire i_005;  //to (Bjk)
+	input wire i_on_a0;  //010 to 013
+	input wire i_on_s0;  //014 to 017
+	input wire i_jump;  //006, 007
 	input wire [15:0] i_lip;
 	input wire i_lip_vld;
 	input wire i_a0_neg;
@@ -61,9 +72,9 @@ module brancher (
 	wire        delay;
 
 	//detect if it's a branch instruction
-	assign o_branch_type = (i_cip[15:12]==4'b0001) | (i_cip[15:9]==7'o005) | (i_cip[15:9]==7'o006) | (i_cip[15:9]==7'o007);
+	assign o_branch_type = i_type;
 
-	assign o_branch_issue = o_branch_type && delay && i_cip_vld && ((i_cip[15:9]==7'o005) || (i_lip_vld && (((i_cip[15:11]==5'b00010) && !i_a0_busy) || ((i_cip[15:11]==5'b00011) && !i_s0_busy) || ((i_cip[15:9]==7'o006) || (i_cip[15:9]==7'o007)))));
+	assign o_branch_issue = o_branch_type && delay && i_cip_vld && (i_005 || (i_lip_vld && ((i_on_a0 && !i_a0_busy) || (i_on_s0 && !i_s0_busy) || i_jump)));
 
 	assign o_take_branch = o_branch_issue && branch_condition;
 

@@ -31,6 +31,7 @@ set_global_assignment -name VERILOG_FILE rtl/cray/vector_logical.v
 set_global_assignment -name VERILOG_FILE rtl/cray/vector_pop.v
 set_global_assignment -name VERILOG_FILE rtl/cray/vector_shift.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray_opnd.v
+set_global_assignment -name VERILOG_FILE rtl/cray/cray_predecode.v
 set_global_assignment -name VERILOG_FILE rtl/cray/exchange_ctl.v
 set_global_assignment -name VERILOG_FILE rtl/cray/fp_add.v
 set_global_assignment -name VERILOG_FILE rtl/cray/fp_mul.v

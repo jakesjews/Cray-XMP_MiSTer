@@ -45,6 +45,7 @@ rtl/cray/vector_logical.v
 rtl/cray/vector_pop.v
 rtl/cray/vector_shift.v
 rtl/cray/cray_opnd.v
+rtl/cray/cray_predecode.v
 rtl/cray/exchange_ctl.v
 rtl/cray/fp_add.v
 rtl/cray/fp_mul.v

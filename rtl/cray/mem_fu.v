@@ -91,7 +91,6 @@ module mem_fu (
 	o_mem_seq,
 	i_mem_take,
 	i_mem_ack,
-	o_mem_type,
 	o_mem_issue,
 	i_issue,
 	o_v_num,
@@ -158,7 +157,6 @@ module mem_fu (
 	input wire i_mem_take;  //the word presented is being taken this clock
 	input wire i_mem_ack;
 	//instruction issue
-	output wire o_mem_type;
 	output wire o_mem_issue;
 	input wire i_issue;  //the current instruction issues this clock
 	output wire [2:0] o_v_num;  //the V register of the vector transfer under way
@@ -232,9 +230,6 @@ module mem_fu (
 			start_count  = vl_count;
 			reg_conflict = i_a_res_mask[0] || i_a_res_mask[ins[2:0]];
 		end
-
-	//what the current instruction is, whatever this unit is doing
-	assign o_mem_type = (i_cip[15:11] == 5'b00111) || (i_cip[15:14] == 2'b10) || (i_cip[15:10] == 6'b111111);
 
 	wire start = (state==IDLE) &&
 			 ((b_t_type && i_cip_vld && !reg_conflict) ||
