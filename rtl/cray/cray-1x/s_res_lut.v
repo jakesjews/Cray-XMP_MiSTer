@@ -56,7 +56,7 @@ module s_res_lut (
 			7'o067:  o_delay = 4'd7;
 			7'o070:  o_delay = 4'd14;
 			7'o071:  o_delay = 4'd2;
-			7'o072:  o_delay = 4'd2;  //InterCPU communications (2-cycle delay, I believe)
+			7'o072:  o_delay = 4'd1;  //the clock or a shared register: 1 CP (HR-0032, instructions 072 - 075)
 			7'o073:  o_delay = 4'd1;
 			7'o074:  o_delay = 4'd1;
 			7'o076:  o_delay = 4'd4;

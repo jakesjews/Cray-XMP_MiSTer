@@ -79,7 +79,7 @@ module a_regfile (
 	assign o_a0_neg   = a0[23];
 	assign o_a0_zero  = (a0 == 24'b0);
 	assign o_a0_nzero = (a0 != 24'b0);
-	assign o_a0_data  = a0;
+	assign o_a0_data  = ((i_byp_addr == 3'b0) && i_byp_en) ? i_bus : a0;
 
 	//write a register
 	always @(posedge clk)

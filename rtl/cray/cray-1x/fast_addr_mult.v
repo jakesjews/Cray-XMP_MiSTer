@@ -13,11 +13,14 @@ module fast_addr_mult (
 );
 
 
+	// XMP = 1: the X-MP's unit, 4 clock periods; the CRAY-1's takes 6
+	parameter XMP = 0;
+
 	input wire clk;
 	input wire [23:0] i_aj;
 	input wire [23:0] i_ak;
 
-	output wire [23:0] o_result;  //the product, five clocks after the operands
+	output wire [23:0] o_result;  //the product, a clock before it is due
 
 	reg [23:0] aj_0;
 	reg [23:0] ak_0;
@@ -39,8 +42,8 @@ module fast_addr_mult (
 		temp4     <= temp3;
 	end
 
-	//The unit's sixth clock is the one its result spends on the A result bus
-	assign o_result = temp4;
+	//The unit's last clock is the one its result spends on the A result bus
+	assign o_result = XMP ? temp2 : temp4;
 
 
 

@@ -36,7 +36,8 @@ module s_scheduler (
 	i_vreg_busy,
 	o_vreg_write,
 	o_s0_busy,
-	o_s_res_mask
+	o_s_res_mask,
+	o_s_wait_mask
 );
 
 	input wire clk;
@@ -65,7 +66,8 @@ module s_scheduler (
 	input wire [7:0] i_vreg_busy;
 	output wire [7:0] o_vreg_write;
 	output wire o_s0_busy;
-	output wire [7:0] o_s_res_mask;
+	output wire [7:0] o_s_res_mask;  // registers with a result on its way or on the bus
+	output wire [7:0] o_s_wait_mask;  // registers with a result that is not on the bus yet
 
 	reg [13:0] s_result_pipe_en;  //the registers to pipeline the s_result_en signal
 	reg [4:0] s_result_pipe_src[0:13];  //the src of our value to write
@@ -183,7 +185,23 @@ module s_scheduler (
 		else res_mask <= mask_held | ({8{|load}} & i_dest);
 
 	assign o_s_res_mask = res_mask;
-	assign o_s0_busy    = res_mask[0];
+
+	//The same without the head of the pipeline.  A register whose result is on the bus
+	//in this clock is free for the instruction that issues in this clock, as an
+	//operand (it takes the result off the bus) and as the place of its own result:
+	//the register is reserved for the unit's time and no longer.
+	reg [7:0] wait_mask;
+	reg [7:0] wait_held;
+	always @* begin
+		wait_held = 8'b0;
+		for (m = 2; m < 14; m = m + 1) wait_held = wait_held | s_result_pipe_dest[m];
+	end
+	always @(posedge clk)
+		if (rst) wait_mask <= 8'b0;
+		else wait_mask <= wait_held | ({8{|load[13:1]}} & i_dest);
+
+	assign o_s_wait_mask = wait_mask;
+	assign o_s0_busy     = res_mask[0];
 
 	//check if it's free to issue
 	//We currently catch register conflicts, but we need a way to check if an instruction
@@ -191,6 +209,6 @@ module s_scheduler (
 	//retire one instruction per cycle
 	assign write_path_conflict = |(i_wpc & s_result_pipe_en);
 
-	assign o_s_issue = o_s_type && !write_path_conflict && (v_ok || !i_077) && ~(|(i_cmask & res_mask));
+	assign o_s_issue = o_s_type && !write_path_conflict && (v_ok || !i_077) && ~(|(i_cmask & wait_mask));
 
 endmodule

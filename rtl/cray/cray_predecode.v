@@ -137,7 +137,9 @@ module cray_predecode (
 	wire [3:0] a_delay;
 	wire [3:0] a_src;
 	wire       a_en;
-	a_res_lut abus_res_lut (
+	a_res_lut #(
+		.XMP(XMP)
+	) abus_res_lut (
 		.i_cip      (dec),
 		.o_delay    (a_delay),
 		.o_src      (a_src),

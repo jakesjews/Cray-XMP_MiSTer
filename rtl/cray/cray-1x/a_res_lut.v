@@ -13,6 +13,10 @@ module a_res_lut (
 	o_src,
 	o_a_dest_en
 );
+	// XMP = 1: the X-MP's address multiply unit, 4 clock periods (HR-0032); the
+	// CRAY-1's takes 6
+	parameter XMP = 0;
+
 	input wire [15:0] i_cip;
 	output reg [3:0] o_delay;
 	output reg [3:0] o_src;
@@ -39,7 +43,7 @@ module a_res_lut (
 			7'o027:  o_delay = 4'd3;
 			7'o030:  o_delay = 4'd2;
 			7'o031:  o_delay = 4'd2;
-			7'o032:  o_delay = 4'd6;
+			7'o032:  o_delay = XMP ? 4'd4 : 4'd6;
 			7'o033:  o_delay = 4'd4;
 			7'o100:  o_delay = 4'd2;
 			7'o101:  o_delay = 4'd2;

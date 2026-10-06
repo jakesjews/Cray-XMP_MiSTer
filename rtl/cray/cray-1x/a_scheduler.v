@@ -25,7 +25,7 @@ module a_scheduler (
 	i_wpc,
 	i_025,
 	i_sconf,
-	i_total_s_res_mask,
+	i_s_wait_mask,
 	o_a_issue,
 	o_a_result_en,
 	o_a_result_dest,
@@ -34,7 +34,8 @@ module a_scheduler (
 	o_a_next_src,
 	o_a_type,
 	o_a0_busy,
-	o_a_res_mask
+	o_a_res_mask,
+	o_a_wait_mask
 );
 
 	input wire clk;
@@ -51,7 +52,7 @@ module a_scheduler (
 	input wire [10:0] i_wpc;  // the stage that must be empty for the result to enter
 	input wire i_025;  // Bjk <= Ai
 	input wire [7:0] i_sconf;  // 023: the S register that must have no result on its way
-	input wire [7:0] i_total_s_res_mask;
+	input wire [7:0] i_s_wait_mask;  // S registers with a result that is not on the bus yet
 	output wire o_a_issue;
 	output wire o_a_result_en;
 	output wire [2:0] o_a_result_dest;
@@ -60,18 +61,20 @@ module a_scheduler (
 	output wire [3:0] o_a_next_src;
 	output wire o_a_type;
 	output wire o_a0_busy;
-	output wire [7:0] o_a_res_mask;
+	output wire [7:0] o_a_res_mask;  // registers with a result on its way or on the bus
+	output wire [7:0] o_a_wait_mask;  // registers with a result that is not on the bus yet
 
 	reg [10:0] a_result_pipe_en;  //the registers to pipeline the a_result_en signal
 	reg [3:0] a_result_pipe_src[0:10];  //the unit the value comes from
 	reg [7:0] a_result_pipe_dest[0:10];  //the a-register we're targeting
 	reg [7:0] res_mask;
+	reg [7:0] wait_mask;  // the same without the head of the pipeline
 	wire a_to_b_vld;  //for executing 7'o025
 	wire s_conflict;
 	wire write_path_conflict;
 
 	//Let's figure out if it's okay to issue the special case of the 7'o025 instruction (Bjk <= Ai)
-	assign a_to_b_vld = i_025 && !(|(i_dest & res_mask));
+	assign a_to_b_vld = i_025 && !(|(i_dest & wait_mask));
 
 	assign o_a_result_en = a_result_pipe_en[0];
 
@@ -171,13 +174,25 @@ module a_scheduler (
 		else res_mask <= mask_held | ({8{|load}} & i_dest);
 
 	assign o_a_res_mask = res_mask;  //the memory unit needs to know if there is a conflict
-	assign o_a0_busy    = res_mask[0];
+
+	//The same without the head of the pipeline, as in the S scheduler
+	reg [7:0] wait_held;
+	always @* begin
+		wait_held = 8'b0;
+		for (m = 2; m < 11; m = m + 1) wait_held = wait_held | a_result_pipe_dest[m];
+	end
+	always @(posedge clk)
+		if (rst) wait_mask <= 8'b0;
+		else wait_mask <= wait_held | ({8{|load[10:1]}} & i_dest);
+
+	assign o_a_wait_mask = wait_mask;
+	assign o_a0_busy     = res_mask[0];
 
 	//check if it's free to issue
 	assign write_path_conflict = |(i_wpc & a_result_pipe_en);
 
-	assign s_conflict = |(i_sconf & i_total_s_res_mask);
+	assign s_conflict = |(i_sconf & i_s_wait_mask);
 
-	assign o_a_issue = !write_path_conflict && o_a_type && !s_conflict && (~(|(i_cmask & res_mask)) || a_to_b_vld);
+	assign o_a_issue = !write_path_conflict && o_a_type && !s_conflict && (~(|(i_cmask & wait_mask)) || a_to_b_vld);
 
 endmodule
