@@ -113,13 +113,14 @@ At the CRAY-1 setting:
 
 ## Differences from a real CRAY-1
 
-- **Timing.** One clock period is one cycle of the machine's own FPGA clock,
-  81.67 MHz against the CRAY-1's 80 MHz and the X-MP's 105. Functional unit times in clock
-  periods follow the upstream tables, but memory references take longer than
-  on the real machine and vary, and an instruction that needs the result of
-  another issues one clock period after that result arrives, not in the
-  clock period it arrives in. Programs get the same results as on a CRAY-1
-  but not in the same number of clock periods.
+- **Timing.** One clock period is one cycle of the CPU's own clock: 105 MHz,
+  9.52 ns against the X-MP's 9.5 and the CRAY-1's 12.5. Functional unit times
+  in clock periods follow the upstream tables (076 takes the X-MP's four),
+  but memory references take longer than on the real machine and vary, and
+  an instruction that needs the result of another issues one clock period
+  after that result arrives, not in the clock period it arrives in. Programs
+  get the same results as on a CRAY-1 but not in the same number of clock
+  periods.
 - **Chaining is looser than on the real machine.** An operation may start on
   a register that a functional unit is still filling as soon as the first
   element is in, and at any time after that, not only in the one chain slot
@@ -257,8 +258,9 @@ has three of them, which is what the stock software of COS 1.17 expects:
 What they are made of (`rtl/ios/`):
 
 - The processor (`iop_cpu.v`): accumulator, carry, B register, 512 operand
-  registers, a 16-entry exit stack, 65,536 parcels of Local Memory. An
-  instruction takes 3 to 5 clocks.
+  registers, a 16-entry exit stack, 65,536 parcels of Local Memory. Its clock
+  is the real one's 80 MHz, but an instruction takes 3 to 5 clocks where the
+  real processor issues up to one parcel a clock.
 - On every processor: a real-time clock that asks for an interrupt every
   millisecond, a channel to Buffer Memory, and a channel pair to each other
   processor, over which one can master clear and dead start another.
@@ -310,48 +312,74 @@ dots is as wide as a line of text and the file stays text.
 
 ## Clocks
 
-The machine and the HPS interface, which brings the disks' blocks, run on one
-PLL output. The screens, the keyboard and the serial port run on the 29.4 MHz
-video clock. The two meet only in `rtl/mister/cdc.v`: a two-flip-flop
-synchroniser for levels and a handshake that carries one console character at
-a time in each direction. `CrayXMP.sdc` tells the timing analyser the two
-clocks are unrelated, and the core-level simulation runs both.
+Three clocks, and none is in step with another:
 
-The machine clock is set in `rtl/pll/pll_0002.v` (`output_clock_frequency1`)
-and named in `CrayXMP.sv` (`CPU_HZ`), from which the I/O Processors' clocks
-count their milliseconds. With the PLL's 735 MHz oscillator the exact choices
-are 735 divided by a whole number. The clock is 81.67 MHz; 105 MHz, the
-X-MP's own, is two steps further.
+- **The CPU's, 105 MHz**: the X-MP's 9.5 ns clock period (9.52 ns here). The
+  port to DDR3 runs on it.
+- **The I/O Subsystem's, 80 MHz**: the 12.5 ns of the I/O Processors' own
+  oscillator (HR-0030). The HPS interface, which brings the disks' blocks,
+  and the printer's file run on it too. It comes from a second PLL
+  (`rtl/pll_ios.v`), because 80 and 105 MHz do not both divide out of one.
+- **The video clock, 29.4 MHz**, for the screens, the keyboard and the serial
+  port.
 
-The first build with the I/O Subsystem missed 81.67 MHz by 0.99 ns and the
-first release ran at 73.5 MHz. What brought it back, with 0.37 ns to spare:
+The CPU and the I/O Subsystem are two cabinets with an oscillator each on the
+real machine, and they meet here as they do there, through signals that do
+not assume how the clocks stand to each other (`rtl/xmp_bridge.v`, used in
+`rtl/xmp_machine.v`): the Ready, Resume and Disconnect pulses of the channel
+pair, each carried as a level that turns over; the parcels, which stand on
+their lines from Ready to Resume; the two Master Clear lines; and the I/O
+Subsystem's three memory ports, each a request that is handed over, carried
+out in the CPU's clock and handed back. Either of them meets the video clock
+only in `rtl/mister/cdc.v`: a two-flip-flop synchroniser for levels and a
+handshake that carries one console character at a time in each direction.
 
-- An I/O Processor stores a result in Local Memory in the clock after it
-  forms it, and what goes into an operand register comes from an adder of
-  its own. The way from Local Memory through the adder no longer leads back
-  into a memory.
-- The CPU decides whether the current instruction issues from flip-flops.
-  The instruction is decoded while it is still the next instruction parcel
+`CrayXMP.sdc` tells the timing analyser that the three are unrelated; the
+framework's own constraints know the core's first PLL only. The core-level
+simulation runs all three. The benches of the machine without the MiSTer give
+the CPU and the I/O Subsystem one clock, which the bridges take as well.
+
+The CPU's clock is set in `rtl/pll/pll_0002.v` (`output_clock_frequency1`).
+The I/O Subsystem's is set in `rtl/pll_ios.v` and named in `CrayXMP.sv`
+(`IOS_HZ`), from which the I/O Processors' clocks count their milliseconds.
+
+The first build with the I/O Subsystem missed 81.67 MHz by 0.99 ns. What
+took the CPU from there to 105 MHz:
+
+- The decision to issue an instruction starts from flip-flops. The
+  instruction is decoded while it is still the next instruction parcel
   (`cray_predecode`, kept in a register beside CIP), and the A and S
   schedulers keep the registers that have a result on its way, and the
   register at the head of their pipelines, in registers of their own.
-- 075, 025 and the return jump write their T or B register in the clock
-  after they issue, so the issue decision does not have to reach the write
-  port of a block memory. A 074 right behind a 075 waits that one clock.
-
-What limits the clock now is the way of an operand into the first stage of
-the floating-point multiplier: off the result bus or out of the T registers,
-through the register file's bypass and into the first row of adders.
+- Results are gathered a clock early. Each of the A and S register files has
+  one register that takes whatever result is due in the next clock, and the
+  units whose results are due soonest keep result registers of their own. A
+  result then goes from a flip-flop through one choice into the register
+  file and its bypass. The floating-point units take their operands into
+  registers before anything else, within their 6, 7 and 14 clock periods.
+- Nothing wide waits for the decision to issue. 075, 025 and the return jump
+  write their T or B register in the clock after they issue, 003 and 0014j0
+  load the vector mask and the real-time clock then, and the units that are
+  started by an instruction take in its operands every clock while idle. A
+  074 right behind a 075 waits one clock, and so does what reads the vector
+  mask right behind a 003; the X-MP manual (HR-0032) lists both waits for
+  the real machine.
+- A test and set looks at its semaphore a clock before it decides, the limit
+  check of the fetch pointer is kept in a register beside P, and the memory
+  unit forms its first address in a clock of its own.
+- The I/O Subsystem is off the CPU's clock. An I/O Processor also stores a
+  result in Local Memory a clock after forming it, so that the way from
+  Local Memory through its adder does not lead back into a memory.
 
 Memory is slower than the real machine's: a scalar load takes about 25 clock
 periods against 11 on a CRAY-1, and vector transfers move about one word
 every two clock periods, not one per clock period.
 
-COS keeps its own time of day by counting the CPU's clock periods, and the
-core's are longer than an X-MP's: 12.2 ns against 9.5. The times in a job's
-log therefore fall behind the station's clock, which the I/O Subsystem keeps
-in real milliseconds. Two runs of the 73.5 MHz build on a DE10-Nano were
-about a quarter slow.
+COS keeps its own time of day by counting the CPU's clock periods as an
+X-MP's, and the station's clock is the I/O Subsystem's, in real milliseconds.
+With the CPU at 105 MHz the two agree: in runs on a DE10-Nano the times in a
+job's log were within the few seconds that could be told of the station's.
+(At 73.5 MHz COS's clock had been about a quarter slow.)
 
 ## Memory
 
@@ -433,10 +461,14 @@ The I/O Subsystem and the core:
   as fast as the serial port carries them all arrive. The first session on
   the hardware found two things no simulation had: a key lost when keys
   queued up, and the printer's graphics mode.
+- The build with the CPU at 105 MHz and the I/O Subsystem at 80 MHz was run
+  on a DE10-Nano from fresh disks and an empty Buffer Memory: kernel, COS
+  loaded and started, start-up to its end, and the batch job, whose printout
+  is the one the earlier builds gave but for its times.
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: 26,944 ALMs (64%), 509 of 553 memory blocks,
-38 DSP blocks. The Local Memories of the three I/O Processors take 384 of the
-memory blocks. Timing is met with the machine at 81.67 MHz and the video side
-at 29.4 MHz.
+Quartus 17.0 for the DE10-Nano: 26,838 ALMs (64%), 504 of 553 memory blocks,
+38 DSP blocks, 4 of 6 PLLs. The Local Memories of the three I/O Processors
+take 384 of the memory blocks. Timing is met with the CPU at 105 MHz, with
+0.15 ns to spare, the I/O Subsystem at 80 MHz and the video side at 29.4 MHz.
