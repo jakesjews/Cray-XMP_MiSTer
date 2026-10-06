@@ -17,7 +17,7 @@ module fast_addr_mult (
 	input wire [23:0] i_aj;
 	input wire [23:0] i_ak;
 
-	output reg [23:0] o_result;
+	output wire [23:0] o_result;  //the product, five clocks after the operands
 
 	reg [23:0] aj_0;
 	reg [23:0] ak_0;
@@ -37,8 +37,10 @@ module fast_addr_mult (
 		temp2     <= result_jk;
 		temp3     <= temp2;
 		temp4     <= temp3;
-		o_result  <= temp4;
 	end
+
+	//The unit's sixth clock is the one its result spends on the A result bus
+	assign o_result = temp4;
 
 
 

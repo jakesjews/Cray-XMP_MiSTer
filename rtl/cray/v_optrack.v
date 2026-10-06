@@ -26,7 +26,7 @@ module v_optrack #(
 	input wire [15:0] i_cip,
 	input wire [63:0] i_sj,
 	input wire [23:0] i_ak,
-	input wire        i_wr_v,   // results go to V register i (not for the mask test, 175)
+	input wire        i_wr_v,   // the instruction in CIP sends results to a V register (175 does not)
 
 	output wire o_busy,
 
@@ -64,15 +64,17 @@ module v_optrack #(
 		if (rst) state <= IDLE;
 		else
 			case (state)
-				IDLE:
-				if (i_start) begin
+				// While idle the unit takes in what the current instruction supplies,
+				// every clock; the instruction that starts it leaves what it supplied.
+				// So nothing wide waits for the decision to issue.
+				IDLE: begin
 					len     <= i_len;
 					dest    <= i_cip[8:6];
 					wr_v    <= i_wr_v;
 					o_instr <= i_cip;
 					o_sj    <= i_sj;
 					o_ak    <= i_ak;
-					state   <= LEAD;
+					if (i_start) state <= LEAD;
 				end
 				LEAD: begin
 					idx   <= 6'd0;

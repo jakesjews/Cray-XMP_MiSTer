@@ -61,6 +61,8 @@ module cray_predecode (
 	assign o_pd[PD_HMODE] = ((op == 7'o002) && (i != 3'd0)) || ((XMP != 0) && (op == 7'o073) && (i_parcel[5:0] == 6'o01));
 	assign o_pd[PD_TS] = (i_parcel[15:6] == 10'o0034);
 	assign o_pd[PD_H074] = (op == 7'o074);
+	assign o_pd[PD_H024] = (op == 7'o024);
+	assign o_pd[PD_H072] = (op == 7'o072);
 
 	//------------------------------------------------------------------
 	// The instruction as the A and S schedulers see it
@@ -109,9 +111,9 @@ module cray_predecode (
 	wire [7:0] s_dest = s_to_s0 ? 8'b00000001 : di;
 
 	//A result due in d clocks enters stage d - 1 of the pipeline.  The pipeline takes
-	//results due in 1, 2, 3, 5, 6, 7, 11 and 14 clocks, and the stage it enters must
+	//results due in 1 to 7, 11 and 14 clocks, and the stage it enters must
 	//be about to become empty: that is stage d now.
-	localparam [13:0] S_TAKES = 14'b10010001110111;
+	localparam [13:0] S_TAKES = 14'b10010001111111;
 	genvar g;
 	generate
 		for (g = 0; g < 14; g = g + 1) begin : g_s

@@ -35,8 +35,10 @@ module b_regfile (
 	input wire [WIDTH-1:0] i_cur_p;
 	input wire i_rtn_jump;
 
-	reg  [   WIDTH-1:0] data               [DEPTH-1:0];  //the actual registers
-	reg  [LOGDEPTH-1:0] jk_addr;
+	//Memory made of logic cells, which is read in the clock it is addressed: a 024
+	//has one clock to get its register to the A result bus.  Nothing reads a register
+	//in the clock it is written (func_top holds a 024 behind a 025 for that).
+	(* ramstyle = "MLAB, no_rw_check" *)reg  [   WIDTH-1:0] data               [DEPTH-1:0];  //the actual registers
 	wire [LOGDEPTH-1:0] wr_addr;
 	wire                write_enable;
 	wire [        23:0] data_to_be_written;
@@ -49,8 +51,7 @@ module b_regfile (
 	//write a register
 	always @(posedge clk) if (write_enable) data[wr_addr] <= data_to_be_written;
 
-	always @(posedge clk) jk_addr <= i_jk_addr;
 	//read registers
-	assign o_jk_data = data[jk_addr];
+	assign o_jk_data = data[i_jk_addr];
 
 endmodule

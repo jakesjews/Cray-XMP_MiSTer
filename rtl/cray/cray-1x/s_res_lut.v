@@ -59,7 +59,7 @@ module s_res_lut (
 			7'o072:  o_delay = 4'd2;  //InterCPU communications (2-cycle delay, I believe)
 			7'o073:  o_delay = 4'd1;
 			7'o074:  o_delay = 4'd1;
-			7'o076:  o_delay = 4'd2;
+			7'o076:  o_delay = 4'd4;
 			7'o120:  o_delay = 4'd2;
 			7'o121:  o_delay = 4'd2;
 			7'o122:  o_delay = 4'd2;
@@ -90,8 +90,8 @@ module s_res_lut (
 			7'o053:  o_src = SBUS_S_SHIFT;
 			7'o054:  o_src = SBUS_S_SHIFT;
 			7'o055:  o_src = SBUS_S_SHIFT;
-			7'o056:  o_src = SBUS_S_SHIFT;
-			7'o057:  o_src = SBUS_S_SHIFT;
+			7'o056:  o_src = SBUS_S_SHIFT2;
+			7'o057:  o_src = SBUS_S_SHIFT2;
 			7'o060:  o_src = SBUS_S_ADD;
 			7'o061:  o_src = SBUS_S_ADD;
 			7'o062:  o_src = SBUS_FP_ADD;
@@ -112,18 +112,7 @@ module s_res_lut (
 				endcase
 			end
 			7'o074:  o_src = SBUS_T_BUS;
-			7'o076: begin
-				case (i_cip[5:3])
-					3'o0: o_src = SBUS_V0;
-					3'o1: o_src = SBUS_V1;
-					3'o2: o_src = SBUS_V2;
-					3'o3: o_src = SBUS_V3;
-					3'o4: o_src = SBUS_V4;
-					3'o5: o_src = SBUS_V5;
-					3'o6: o_src = SBUS_V6;
-					3'o7: o_src = SBUS_V7;
-				endcase
-			end
+			7'o076:  o_src = SBUS_V;
 			7'o120:  o_src = SBUS_MEM;
 			7'o121:  o_src = SBUS_MEM;
 			7'o122:  o_src = SBUS_MEM;

@@ -51,7 +51,6 @@ module scalar_shift (
 	i_instr,
 	i_j,
 	i_k,
-	i_issue,
 	o_result
 );
 
@@ -62,7 +61,6 @@ module scalar_shift (
 	input wire [2:0] i_j;
 	input wire [2:0] i_k;
 	input wire clk;
-	input wire i_issue;  //the instruction on i_instr issues this clock
 	output wire [63:0] o_result;
 
 	reg  [  6:0] temp_instr0;
@@ -71,7 +69,6 @@ module scalar_shift (
 	reg  [ 23:0] temp_ak;
 	reg  [  5:0] temp_jk;
 	reg  [ 63:0] result0;
-	reg  [ 63:0] result1;
 	wire [127:0] result_d1_l;
 	wire [127:0] result_d1_r;
 	wire         shift_clear;
@@ -80,14 +77,10 @@ module scalar_shift (
 	//Detect if the shift count is greater than 127 (any bits [23:7] are high), and just clear the reg
 	assign shift_clear = |temp_ak[23:7];
 
-	//we should never be able to issue conflicting instructions back to back, so this should be fine
-	//A double shift (056, 057) takes three clocks and a single shift two.  The scheduler
-	//never lets two results land in the same clock, so the double-shift result is the
-	//one wanted exactly three clocks after a double shift issued.
-	reg [2:0] dbl_pipe;
-	always @(posedge clk) dbl_pipe <= {dbl_pipe[1:0], i_issue && (i_instr[6:1] == 6'b010111)};
-
-	assign o_result = dbl_pipe[2] ? result1[63:0] : result0[63:0];
+	//The operands are taken in during the clock the instruction issues and shifted in
+	//the next.  A single shift is due the clock after that, straight from here; a
+	//double shift a clock later, and that clock it spends on the S result bus.
+	assign o_result = result0;
 
 	always @(posedge clk) begin
 		temp_instr0[6:0] <= i_instr[6:0];
@@ -95,7 +88,6 @@ module scalar_shift (
 		temp_sj[63:0]    <= i_sj[63:0];
 		temp_ak[23:0]    <= i_ak[23:0];
 		temp_jk[5:0]     <= {i_j[2:0], i_k[2:0]};
-		result1          <= result0;
 		case (temp_instr0[6:0])
 			7'b0101010: result0[63:0] <= temp_si[63:0] << temp_jk;  //052
 			7'b0101011: result0[63:0] <= temp_si[63:0] >> (7'd64 - temp_jk);  //053

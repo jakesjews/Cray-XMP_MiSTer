@@ -29,6 +29,9 @@ module s_scheduler (
 	o_s_result_en,
 	o_s_result_src,
 	o_s_result_dest,
+	o_s_result_slot,
+	o_s_next_en,
+	o_s_next_src,
 	o_s_type,
 	i_vreg_busy,
 	o_vreg_write,
@@ -55,6 +58,9 @@ module s_scheduler (
 	output wire o_s_result_en;
 	output wire [4:0] o_s_result_src;
 	output wire [2:0] o_s_result_dest;
+	output wire [1:0] o_s_result_slot;  // which result register the head entry's value is in
+	output wire o_s_next_en;  // the entry behind the head: its result is due in the next clock
+	output wire [4:0] o_s_next_src;
 	output wire o_s_type;
 	input wire [7:0] i_vreg_busy;
 	output wire [7:0] o_vreg_write;
@@ -139,6 +145,25 @@ module s_scheduler (
 		else head_dest <= load[0] ? i_dnum : number_of(s_result_pipe_dest[1]);
 
 	assign o_s_result_dest = head_dest;
+
+	//Which result register holds the value of the head entry (the S result bus in
+	//func_top), kept the same way.  The entry behind the head tells func_top which
+	//unit to gather a result from during this clock.
+	`include "cray_types.vh"
+
+	function [1:0] slot_of;
+		input [4:0] src;
+		begin
+			slot_of = (src == SBUS_S_LOG) ? SSLOT_LOG : (src == SBUS_S_SHIFT) ? SSLOT_SHIFT : (src == SBUS_FP_ADD) ? SSLOT_FADD : SSLOT_BUS;
+		end
+	endfunction
+
+	reg [1:0] head_slot;
+	always @(posedge clk) head_slot <= load[0] ? slot_of(i_src) : slot_of(s_result_pipe_src[1]);
+
+	assign o_s_result_slot = head_slot;
+	assign o_s_next_en     = s_result_pipe_en[1];
+	assign o_s_next_src    = s_result_pipe_src[1];
 
 	//All the registers that results are on their way to, in a register of its own.
 	//It is loaded with what the pipeline holds after this clock: what moves up from

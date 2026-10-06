@@ -24,6 +24,7 @@ module a_regfile (
 	i_wr_addr,
 	i_wr_data,
 	i_wr_en,
+	i_bus,
 	i_byp_addr,
 	i_byp_en,
 	o_a0_pos,
@@ -57,6 +58,8 @@ module a_regfile (
 	//the same clock.  Which register that is comes apart from i_wr_addr and
 	//i_wr_en, which carry the exchange sequence as well: nothing reads a register
 	//during an exchange, and the way from here into the units is the longest there is.
+	//the A result bus, for whoever reads a register in the clock its result comes
+	input wire [WIDTH-1:0] i_bus;
 	input wire [LOGDEPTH-1:0] i_byp_addr;
 	input wire i_byp_en;
 	output wire o_a0_pos;
@@ -87,9 +90,9 @@ module a_regfile (
 
 	//read registers
 
-	assign o_j_data  = (i_j_addr == 3'b0) ? 24'b0 : (((i_j_addr == i_byp_addr) && i_byp_en) ? i_wr_data : data[i_j_addr]);
-	assign o_k_data  = (i_k_addr == 3'b0) ? 24'b1 : (((i_k_addr == i_byp_addr) && i_byp_en) ? i_wr_data : data[i_k_addr]);
-	assign o_i_data = ((i_i_addr == i_byp_addr) && i_byp_en) ? i_wr_data : data[i_i_addr];
-	assign o_h_data  = (i_h_addr == 3'b0) ? 24'b0 : (((i_h_addr == i_byp_addr) && i_byp_en) ? i_wr_data : data[i_h_addr]);
+	assign o_j_data  = (i_j_addr == 3'b0) ? 24'b0 : (((i_j_addr == i_byp_addr) && i_byp_en) ? i_bus : data[i_j_addr]);
+	assign o_k_data  = (i_k_addr == 3'b0) ? 24'b1 : (((i_k_addr == i_byp_addr) && i_byp_en) ? i_bus : data[i_k_addr]);
+	assign o_i_data  = ((i_i_addr == i_byp_addr) && i_byp_en) ? i_bus : data[i_i_addr];
+	assign o_h_data  = (i_h_addr == 3'b0) ? 24'b0 : (((i_h_addr == i_byp_addr) && i_byp_en) ? i_bus : data[i_h_addr]);
 	assign o_ex_data = data[i_ex_addr];
 endmodule

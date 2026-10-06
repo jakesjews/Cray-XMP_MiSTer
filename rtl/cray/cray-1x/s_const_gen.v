@@ -16,7 +16,7 @@ module s_const_gen (
 	input wire clk;
 	input wire [2:0] i_j;
 	input wire [23:0] i_ak;
-	output reg [63:0] o_result;
+	output reg [63:0] o_result;  //in the clock after the operands
 
 	reg  [ 2:0] cur_j;
 	reg  [23:0] cur_ak;
@@ -31,16 +31,17 @@ module s_const_gen (
 		cur_ak <= i_ak;
 	end
 
-	always @(posedge clk)
+	//The unit's second clock is the one its result spends on the S result bus
+	always @*
 		case (cur_j)
-			3'b000: o_result <= {40'b0, cur_ak};
-			3'b001: o_result <= {{40{cur_ak[23]}}, cur_ak};
-			3'b010: o_result <= {cur_ak[23], 15'o40060, 24'b0, float_ak};
-			3'b011: o_result <= 64'o0400606000000000000000;  //0.75 * 2^48
-			3'b100: o_result <= 64'o0400004000000000000000;  //0.5
-			3'b101: o_result <= 64'o0400014000000000000000;  //1.0
-			3'b110: o_result <= 64'o0400024000000000000000;  //2.0
-			3'b111: o_result <= 64'o0400034000000000000000;  //4.0
+			3'b000: o_result = {40'b0, cur_ak};
+			3'b001: o_result = {{40{cur_ak[23]}}, cur_ak};
+			3'b010: o_result = {cur_ak[23], 15'o40060, 24'b0, float_ak};
+			3'b011: o_result = 64'o0400606000000000000000;  //0.75 * 2^48
+			3'b100: o_result = 64'o0400004000000000000000;  //0.5
+			3'b101: o_result = 64'o0400014000000000000000;  //1.0
+			3'b110: o_result = 64'o0400024000000000000000;  //2.0
+			3'b111: o_result = 64'o0400034000000000000000;  //4.0
 		endcase
 
 

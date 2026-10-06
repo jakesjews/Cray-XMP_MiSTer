@@ -4,7 +4,8 @@
 //
 // Floating sum or difference of two Cray floating point words (instructions
 // 062, 063 and 170 to 173).  A pure pipeline: operands in during one clock, the
-// result out six clocks later, a new operation every clock.
+// result out six clocks later, a new operation every clock.  The first of the
+// six clocks only takes the operands into registers of the unit's own.
 //
 // Format: bit 63 sign, bits 62:48 exponent biased by 040000 octal, bits 47:0
 // coefficient magnitude with the binary point to the left of bit 47.
@@ -32,69 +33,80 @@ module fp_add (
 	localparam [14:0] EXP_MIN      = 15'o20000;
 	localparam [14:0] EXP_OVERFLOW = 15'o60000;
 
-	// ---- stage 1: order the operands by exponent ----
-	wire        a_sign = i_a[63];
-	wire [14:0] a_exp = i_a[62:48];
-	wire [47:0] a_coef = i_a[47:0];
-	wire        b_sign = i_b[63] ^ i_sub;
-	wire [14:0] b_exp = i_b[62:48];
-	wire [47:0] b_coef = i_b[47:0];
+	// ---- stage 1: the operands ----
+	reg [63:0] a, b;
+	reg sub;
+	always @(posedge clk) begin
+		a   <= i_a;
+		b   <= i_b;
+		sub <= i_sub;
+	end
+
+	// ---- stage 2: order the operands by exponent ----
+	wire        a_sign = a[63];
+	wire [14:0] a_exp = a[62:48];
+	wire [47:0] a_coef = a[47:0];
+	wire        b_sign = b[63] ^ sub;
+	wire [14:0] b_exp = b[62:48];
+	wire [47:0] b_coef = b[47:0];
 
 	wire        a_big = (a_exp >= b_exp);
-	wire [14:0] diff = a_big ? (a_exp - b_exp) : (b_exp - a_exp);
+	wire [14:0] diff_ab = a_exp - b_exp;
+	wire [14:0] diff_ba = b_exp - a_exp;
+	wire [14:0] diff = a_big ? diff_ab : diff_ba;
 
-	reg s1_big_sign, s1_small_sign;
-	reg [14:0] s1_exp;
-	reg [47:0] s1_big, s1_small;
-	reg [5:0] s1_shift;
-	reg       s1_gone;  // the smaller operand shifts out completely
-
-	always @(posedge clk) begin
-		s1_big_sign   <= a_big ? a_sign : b_sign;
-		s1_small_sign <= a_big ? b_sign : a_sign;
-		s1_exp        <= a_big ? a_exp : b_exp;
-		s1_big        <= a_big ? a_coef : b_coef;
-		s1_small      <= a_big ? b_coef : a_coef;
-		s1_shift      <= diff[5:0];
-		s1_gone       <= (diff >= 15'd48);
-	end
-
-	// ---- stage 2: align ----
 	reg s2_big_sign, s2_small_sign;
 	reg [14:0] s2_exp;
-	reg [47:0] s2_big, s2_aligned;
-
+	reg [47:0] s2_big, s2_small;
+	reg [5:0] s2_shift;
+	reg       s2_gone;  // the smaller operand shifts out completely
 	always @(posedge clk) begin
-		s2_big_sign   <= s1_big_sign;
-		s2_small_sign <= s1_small_sign;
-		s2_exp        <= s1_exp;
-		s2_big        <= s1_big;
-		s2_aligned    <= s1_gone ? 48'd0 : (s1_small >> s1_shift);
+		s2_big_sign   <= a_big ? a_sign : b_sign;
+		s2_small_sign <= a_big ? b_sign : a_sign;
+		s2_exp        <= a_big ? a_exp : b_exp;
+		s2_big        <= a_big ? a_coef : b_coef;
+		s2_small      <= a_big ? b_coef : a_coef;
+		s2_shift      <= diff[5:0];
+		s2_gone       <= (diff >= 15'd48);
 	end
 
-	// ---- stage 3: add or subtract the magnitudes ----
-	reg        s3_neg;
+	// ---- stage 3: align ----
+	reg s3_big_sign, s3_small_sign;
 	reg [14:0] s3_exp;
-	reg [48:0] s3_mag;
-
-	wire same = (s2_big_sign == s2_small_sign);
-	wire big_ge = (s2_big >= s2_aligned);
-
+	reg [47:0] s3_big, s3_aligned;
 	always @(posedge clk) begin
-		s3_exp <= s2_exp;
+		s3_big_sign   <= s2_big_sign;
+		s3_small_sign <= s2_small_sign;
+		s3_exp        <= s2_exp;
+		s3_big        <= s2_big;
+		s3_aligned    <= s2_gone ? 48'd0 : (s2_small >> s2_shift);
+	end
+
+	// ---- stage 4: add or subtract the magnitudes ----
+	reg         s4_neg;
+	reg  [14:0] s4_exp;
+	reg  [48:0] s4_mag;
+	wire        same = (s3_big_sign == s3_small_sign);
+	wire [48:0] big_less = {1'b0, s3_big} - {1'b0, s3_aligned};  // bit 48 set: the aligned one is the greater
+	wire [47:0] aligned_less = s3_aligned - s3_big;
+	always @(posedge clk) begin
+		s4_exp <= s3_exp;
 		if (same) begin
-			s3_neg <= s2_big_sign;
-			s3_mag <= {1'b0, s2_big} + {1'b0, s2_aligned};
-		end else if (big_ge) begin
-			s3_neg <= s2_big_sign;
-			s3_mag <= {1'b0, s2_big - s2_aligned};
+			s4_neg <= s3_big_sign;
+			s4_mag <= {1'b0, s3_big} + {1'b0, s3_aligned};
+		end else if (!big_less[48]) begin
+			s4_neg <= s3_big_sign;
+			s4_mag <= {1'b0, big_less[47:0]};
 		end else begin
-			s3_neg <= s2_small_sign;
-			s3_mag <= {1'b0, s2_aligned - s2_big};
+			s4_neg <= s3_small_sign;
+			s4_mag <= {1'b0, aligned_less};
 		end
 	end
 
-	// ---- stage 4: count leading zeros ----
+	// ---- stage 5: count leading zeros ----
+	// The exponent the result gets is the one in hand less the count, or plus one
+	// after a carry.  What the range tests of the last stage need is made ready
+	// here: how far the exponent in hand is above the two limits.
 	function [5:0] lzc48;
 		input [47:0] v;
 		integer n;
@@ -104,55 +116,46 @@ module fp_add (
 		end
 	endfunction
 
-	reg        s4_neg;
-	reg [14:0] s4_exp;
-	reg [48:0] s4_mag;
-	reg [ 5:0] s4_lz;
-
+	reg               s5_neg;
+	reg        [14:0] s5_exp;
+	reg        [48:0] s5_mag;
+	reg        [ 5:0] s5_lz;
+	reg signed [16:0] s5_over_min;  // exponent in hand - 020000
+	reg signed [16:0] s5_over_ovf;  // exponent in hand - 060000
 	always @(posedge clk) begin
-		s4_neg <= s3_neg;
-		s4_exp <= s3_exp;
-		s4_mag <= s3_mag;
-		s4_lz  <= lzc48(s3_mag[47:0]);
+		s5_neg      <= s4_neg;
+		s5_exp      <= s4_exp;
+		s5_mag      <= s4_mag;
+		s5_lz       <= lzc48(s4_mag[47:0]);
+		s5_over_min <= $signed({2'b00, s4_exp}) - $signed({2'b00, EXP_MIN});
+		s5_over_ovf <= $signed({2'b00, s4_exp}) - $signed({2'b00, EXP_OVERFLOW});
 	end
 
-	// ---- stage 5: normalise ----
-	reg s5_neg, s5_zero, s5_operand_ovf;
-	reg signed [16:0] s5_exp;
-	reg        [47:0] s5_coef;
-
+	// ---- stage 6: normalise, range checks and packing ----
+	wire               carry = s5_mag[48];
+	wire               zero = (s5_mag == 49'd0);
+	wire               operand_ovf = (s5_exp >= EXP_OVERFLOW);
+	// the result exponent is the one in hand + 1 after a carry, less the count otherwise
+	wire signed [16:0] step = carry ? -17'sd1 : $signed({11'd0, s5_lz});
+	wire               result_ovf = operand_ovf || (s5_over_ovf >= step);
+	wire               result_unf = (s5_over_min < step);
+	wire        [14:0] exp_out = carry ? (s5_exp + 15'd1) : (s5_exp - {9'd0, s5_lz});
+	wire        [47:0] coef_out = carry ? s5_mag[48:1] : (s5_mag[47:0] << s5_lz);
 	always @(posedge clk) begin
-		s5_neg         <= s4_neg;
-		s5_zero        <= (s4_mag == 49'd0);
-		s5_operand_ovf <= (s4_exp >= EXP_OVERFLOW);
-		if (s4_mag[48]) begin
-			s5_coef <= s4_mag[48:1];
-			s5_exp  <= $signed({2'b00, s4_exp}) + 17'sd1;
-		end else begin
-			s5_coef <= s4_mag[47:0] << s4_lz;
-			s5_exp  <= $signed({2'b00, s4_exp}) - $signed({11'd0, s4_lz});
-		end
-	end
-
-	// ---- stage 6: range checks and packing ----
-	wire result_ovf = s5_operand_ovf || (s5_exp >= $signed({2'b00, EXP_OVERFLOW}));
-	wire result_unf = (s5_exp < $signed({2'b00, EXP_MIN}));
-
-	always @(posedge clk) begin
-		if (s5_zero) begin
+		if (zero) begin
 			// no unit produces a negative zero
-			o_result    <= s5_operand_ovf ? {1'b0, EXP_OVERFLOW, 48'd0} : 64'd0;
-			o_range_err <= s5_operand_ovf;
+			o_result    <= operand_ovf ? {1'b0, EXP_OVERFLOW, 48'd0} : 64'd0;
+			o_range_err <= operand_ovf;
 		end else if (result_ovf) begin
 			// The error is the incoming exponent's (manual 3-21).  A carry that takes
 			// in-range operands to 060000 is delivered without it.
-			o_result    <= {s5_neg, EXP_OVERFLOW, s5_coef};
-			o_range_err <= s5_operand_ovf;
+			o_result    <= {s5_neg, EXP_OVERFLOW, coef_out};
+			o_range_err <= operand_ovf;
 		end else if (result_unf) begin
 			o_result    <= 64'd0;
 			o_range_err <= 1'b0;
 		end else begin
-			o_result    <= {s5_neg, s5_exp[14:0], s5_coef};
+			o_result    <= {s5_neg, exp_out, coef_out};
 			o_range_err <= 1'b0;
 		end
 	end

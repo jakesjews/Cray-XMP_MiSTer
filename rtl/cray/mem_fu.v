@@ -94,7 +94,7 @@ module mem_fu (
 	o_mem_issue,
 	i_issue,
 	o_v_num,
-	o_v_store,
+	o_v_reads,
 	o_mem_busy,
 	o_range_err
 );
@@ -160,11 +160,12 @@ module mem_fu (
 	output wire o_mem_issue;
 	input wire i_issue;  //the current instruction issues this clock
 	output wire [2:0] o_v_num;  //the V register of the vector transfer under way
-	output wire o_v_store;  //and it is being stored
+	output wire [7:0] o_v_reads;  //the V register a vector store reads, one bit a register
 	output wire o_mem_busy;
 	output reg o_range_err;  //a reference outside the field was dropped
 
-	localparam IDLE = 3'd0, RD = 3'd1,  // read request outstanding
+	localparam IDLE = 3'd0, PREP = 3'd3,  // the first address is formed
+	RD = 3'd1,  // read request outstanding
 	RD_PUT = 3'd2,  // hand the word to its register
 	WR = 3'd4,  // a store: words are read from the register and written
 	DONE = 3'd5, RD_SEL = 3'd6,  // a vector load chooses between one word and a line
@@ -205,7 +206,8 @@ module mem_fu (
 	//The operation count of a vector instruction: VL of 0 means 64 (manual 4-10)
 	wire [6:0] vl_count = (i_vector_length[5:0] == 6'd0) ? 7'd64 : {1'b0, i_vector_length[5:0]};
 
-	reg [23:0] start_addr;
+	reg [23:0] start_addr;  // the register the first address comes from ...
+	reg [23:0] start_offset;  // ... and what is added to it, in the clock after the start
 	reg [23:0] start_stride;
 	reg [ 6:0] start_count;
 	reg        reg_conflict;
@@ -213,11 +215,13 @@ module mem_fu (
 	always @*
 		if (b_t_type) begin  //(Ai) words from address (A0)
 			start_addr   = i_a0_data;
+			start_offset = 24'd0;
 			start_stride = 24'd1;
 			start_count  = i_ai_data[6:0];
 			reg_conflict = i_a_res_mask[0] || i_a_res_mask[ins[8:6]];
 		end else if (a_s_type) begin  //one word at (Ah) + jkm
-			start_addr = i_ah_data + jkm;
+			start_addr = i_ah_data;
+			start_offset = jkm;
 			start_stride = 24'd0;
 			start_count = 7'd1;
 			//a load must not pass a result still on its way to the same register file
@@ -226,6 +230,7 @@ module mem_fu (
 												: (i_a_res_mask[ins[11:9]] || i_a_res_mask[ins[8:6]]));
 		end else begin  //VL words from (A0), stepping by (Ak)
 			start_addr   = i_a0_data;
+			start_offset = 24'd0;
 			start_stride = i_ak_data;
 			start_count  = vl_count;
 			reg_conflict = i_a_res_mask[0] || i_a_res_mask[ins[2:0]];
@@ -249,11 +254,14 @@ module mem_fu (
 
 		if (rst) begin
 			state    <= IDLE;
-			r_vstore <= 1'b0;
+			r_vreads <= 8'b0;
 		end else
 			case (state)
-				IDLE:
-				if (start) begin
+				//While idle the unit takes in what the current instruction asks for, every
+				//clock, and the instruction that starts it leaves what it asked for.  Only
+				//the state, and the mark on the V register a store reads, wait for the
+				//decision to start; nothing wide does.
+				IDLE: begin
 					r_v        <= v_type;
 					r_to_b     <= to_b;
 					r_to_t     <= to_t;
@@ -262,16 +270,27 @@ module mem_fu (
 					r_scalar   <= a_s_type;
 					r_from_s   <= ins[13];
 					r_vnum     <= is_read ? ins[8:6] : ins[5:3];
-					r_vstore   <= v_type && !is_read;
 					r_wait     <= src_wait;
 					address    <= start_addr;
+					offset     <= start_offset;
 					stride     <= start_stride;
 					remaining  <= start_count;
 					reg_idx    <= v_type ? 6'd0 : ins[5:0];
 					wait_cnt   <= src_wait;
 					fetch_left <= start_count;
 					wr_valid   <= 1'b0;
-					state      <= (start_count == 7'd0) ? DONE : (is_read ? (v_type ? RD_SEL : RD) : WR);
+					after      <= (start_count == 7'd0) ? DONE : (is_read ? (v_type ? RD_SEL : RD) : WR);
+					if (start) begin
+						r_vreads <= (v_type && !is_read) ? (8'd1 << ins[5:3]) : 8'b0;
+						state    <= PREP;
+					end
+				end
+
+				//The address register took the A register as it came; the displacement
+				//is added here, off the way from the A registers.
+				PREP: begin
+					address <= address + offset;
+					state   <= after;
 				end
 
 				RD_SEL: begin
@@ -336,7 +355,7 @@ module mem_fu (
 
 				DONE: begin
 					state    <= IDLE;
-					r_vstore <= 1'b0;
+					r_vreads <= 8'b0;
 				end
 
 				default: state <= IDLE;
@@ -355,9 +374,12 @@ module mem_fu (
 		else if (XMP && (state == RD) && out_of_field) o_mem_data <= 64'b0;
 
 	//What the transfer under way is, latched when it started.
-	reg r_v, r_to_b, r_to_t, r_from_b, r_from_t, r_scalar, r_from_s, r_vstore;
-	reg [2:0] r_vnum;  // the V register of a vector transfer
-	reg [3:0] r_wait;
+	reg r_v, r_to_b, r_to_t, r_from_b, r_from_t, r_scalar, r_from_s;
+	reg [ 2:0] r_vnum;  // the V register of a vector transfer
+	reg [ 7:0] r_vreads;
+	reg [23:0] offset;
+	reg [ 2:0] after;  // the state that follows PREP
+	reg [ 3:0] r_wait;
 
 	//The register word for reg_idx, valid src_wait clocks after reg_idx is set.
 	//The source register is not changing while this unit runs.
@@ -449,6 +471,6 @@ module mem_fu (
 	assign o_mem_issue = ((state == DONE) || fits) && !released;
 	assign o_mem_busy  = (state != IDLE);
 	assign o_v_num     = r_vnum;
-	assign o_v_store   = r_vstore;
+	assign o_v_reads   = r_vreads;
 
 endmodule

@@ -24,7 +24,7 @@ module scalar_add (
 	input wire [63:0] i_sk;
 	input wire [63:0] i_sj;
 
-	output reg [63:0] o_result;
+	output wire [63:0] o_result;  //the sum, two clocks after the operands
 	input wire clk;
 	input wire [6:0] i_instr;
 
@@ -43,7 +43,9 @@ module scalar_add (
 
 	always @(posedge clk) begin
 		temp_result[63:0] <= (instr[6:0]==7'b0110000) ? (sk_0[63:0] + sj_0[63:0]) : (sj_0[63:0] + ~sk_0[63:0] + 64'h000001);
-		o_result <= temp_result;
 	end
+
+	//The unit's third clock is the one its result spends on the S result bus
+	assign o_result = temp_result;
 
 endmodule

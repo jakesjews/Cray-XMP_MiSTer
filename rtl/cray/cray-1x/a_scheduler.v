@@ -28,8 +28,10 @@ module a_scheduler (
 	i_total_s_res_mask,
 	o_a_issue,
 	o_a_result_en,
-	o_a_result_src,
 	o_a_result_dest,
+	o_a_result_slot,
+	o_a_next_en,
+	o_a_next_src,
 	o_a_type,
 	o_a0_busy,
 	o_a_res_mask
@@ -52,8 +54,10 @@ module a_scheduler (
 	input wire [7:0] i_total_s_res_mask;
 	output wire o_a_issue;
 	output wire o_a_result_en;
-	output wire [3:0] o_a_result_src;
 	output wire [2:0] o_a_result_dest;
+	output wire [1:0] o_a_result_slot;  // which result register the head entry's value is in
+	output wire o_a_next_en;  // the entry behind the head: its result is due in the next clock
+	output wire [3:0] o_a_next_src;
 	output wire o_a_type;
 	output wire o_a0_busy;
 	output wire [7:0] o_a_res_mask;
@@ -69,8 +73,7 @@ module a_scheduler (
 	//Let's figure out if it's okay to issue the special case of the 7'o025 instruction (Bjk <= Ai)
 	assign a_to_b_vld = i_025 && !(|(i_dest & res_mask));
 
-	assign o_a_result_en  = a_result_pipe_en[0];
-	assign o_a_result_src = a_result_pipe_src[0];
+	assign o_a_result_en = a_result_pipe_en[0];
 
 	//o_a_type get asserted for 7'b0_01?_??? and 7'b1_000_??? instructions, except for 7'b0_011_1??
 	// which translates to: 020-037, 100-107, except for 034-037; and not for 027??7
@@ -136,6 +139,24 @@ module a_scheduler (
 		else head_dest <= load[0] ? i_dnum : number_of(a_result_pipe_dest[1]);
 
 	assign o_a_result_dest = head_dest;
+
+	//Which result register holds the value of the head entry, and the entry behind the
+	//head, for the A result bus in func_top
+	`include "cray_types.vh"
+
+	function [1:0] slot_of;
+		input [3:0] src;
+		begin
+			slot_of = (src == ABUS_A_ADD) ? ASLOT_ADD : (src == ABUS_S_POP) ? ASLOT_POP : (src == ABUS_S_LZ) ? ASLOT_LZ : ASLOT_BUS;
+		end
+	endfunction
+
+	reg [1:0] head_slot;
+	always @(posedge clk) head_slot <= load[0] ? slot_of(i_src) : slot_of(a_result_pipe_src[1]);
+
+	assign o_a_result_slot = head_slot;
+	assign o_a_next_en     = a_result_pipe_en[1];
+	assign o_a_next_src    = a_result_pipe_src[1];
 
 	//All the registers that results are on their way to, in a register of its own,
 	//loaded with what the pipeline holds after this clock, as in the S scheduler.

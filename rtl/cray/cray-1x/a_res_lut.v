@@ -61,7 +61,7 @@ module a_res_lut (
 			7'o023:  o_src = ABUS_S_BUS;
 			7'o024:  o_src = ABUS_B_BUS;
 			7'o026:  o_src = (i_cip[2:0] == 3'd7) ? ABUS_INTERCPU : ABUS_S_POP;
-			7'o027:  o_src = ABUS_S_POP;
+			7'o027:  o_src = ABUS_S_LZ;
 			7'o030:  o_src = ABUS_A_ADD;
 			7'o031:  o_src = ABUS_A_ADD;
 			7'o032:  o_src = ABUS_A_MULT;

@@ -23,9 +23,11 @@ localparam PD_HFRCP = PD_HFMUL + 1;  // 1  one in the reciprocal unit
 localparam PD_HMODE = PD_HFRCP + 1;  // 1  every result on its way (mode instructions, 073i01)
 localparam PD_TS = PD_HMODE + 1;  // 1  0034, test and set
 localparam PD_H074 = PD_TS + 1;  // 1  074: a 075 that has not written its T register yet
+localparam PD_H024 = PD_H074 + 1;  // 1  024: a 025 that has not written its B register yet
+localparam PD_H072 = PD_H024 + 1;  // 1  072: a 0014 that has not set the clock yet
 
 // for the S scheduler
-localparam PD_S_TYPE = PD_H074 + 1;  // 1
+localparam PD_S_TYPE = PD_H072 + 1;  // 1
 localparam PD_S_STAGE = PD_S_TYPE + 1;  // 14  stage of the result pipeline its result enters
 localparam PD_S_SRC = PD_S_STAGE + 14;  // 5  unit the result comes from
 localparam PD_S_DEST = PD_S_SRC + 5;  // 8  register the result goes to, one bit a register

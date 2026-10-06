@@ -99,10 +99,14 @@ module func_top (
 	input wire i_ibuf_busy;  // an instruction buffer fill is in progress
 	output wire o_ibuf_hold;  // do not start a new fill (exchange in progress)
 	//Functional unit outputs
-	wire [23:0] a_poplz_out;  //24-bit output of scalar population/leading zero count
+	//Functional unit outputs to the A registers; the A result bus says when each is valid
+	wire [23:0] a_pop_out;  //24-bit output of scalar population count
+	wire [23:0] a_lz_out;  //24-bit output of scalar leading zero count
 	wire [23:0] a_mul_out;  //24-bit output of address multiply unit
 	wire [23:0] a_add_out;  //24-bit output of address adder
 	wire [23:0] a_imm_out;  //24-bit output of immediate values
+	//Functional unit outputs to the S registers.  When each is valid, counted from the
+	//clock its instruction issues, is told where the S result bus gathers them.
 	wire [63:0] s_add_out;  //64-bit output of scalar adder output
 	wire [63:0] s_log_out;  //64-bit output of scalar logical unit
 	wire [63:0] s_shft_out;  //64-bit output of scalar shift unit
@@ -111,6 +115,8 @@ module func_top (
 	wire [63:0] f_add_out;  //64-bit output of floating point adder unit
 	wire [63:0] f_mul_out;  //64-bit output of floating point multiplier unit
 	wire [63:0] f_ra_out;  //64-bit output of floating point reciprocal approximation unit
+	wire [63:0] f_mul_early;  //the same, a clock before
+	wire [63:0] f_ra_early;
 
 	wire vlog_busy;
 	wire vshift_busy;
@@ -135,7 +141,7 @@ module func_top (
 	wire [63:0] s_j_data;  //scalar read data
 	wire [63:0] s_k_data;
 	wire [63:0] s_i_data;
-	reg  [63:0] s_wr_data;  //64-bit data input to scalar register file
+	wire [63:0] s_wr_data;  //64-bit data input to scalar register file
 	wire        s0_pos;
 	wire        s0_neg;
 	wire        s0_zero;
@@ -149,6 +155,7 @@ module func_top (
 	wire        t_result_en;
 	wire        mem_t_wr_en;
 	reg         tw_en;  // a 075 issued in the clock before
+	reg         bw_en;  // a 025 did
 
 
 	//address register file signals
@@ -159,7 +166,7 @@ module func_top (
 	wire [23:0] a_i_data;
 	wire [23:0] a_h_data;
 	wire [23:0] a_a0_data;
-	reg  [23:0] a_wr_data;  //24-bit data input to address register file
+	wire [23:0] a_wr_data;  //24-bit data input to address register file
 	wire        a0_pos;
 	wire        a0_neg;
 	wire        a0_zero;
@@ -198,11 +205,12 @@ module func_top (
 	wire        mem_ack;
 
 	//X-MP: cluster number, shared registers, semaphores and status register
-	wire [23:0] shr_a;  // (SBj) for 026ij7, during the clock after it issues
-	wire [63:0] shr_s;  // the result of a 072 form, two clocks after it issues
-	wire [63:0] status_reg;  // 073i01, during the clock after it issues
-	wire        ts_hold;  // the test and set in CIP finds its semaphore set
-	wire [23:0] ch_a;  // the result of 033, four clocks after it issues
+	wire [23:0] shr_a;  // (SBj) for 026ij7, while it is in CIP
+	wire [63:0] shr_s;  // the result of a 072 form, in the clock after it issues
+	wire [63:0] status_reg;  // 073i01, while it is in CIP
+	wire        ts_wait;  // the test and set in CIP has not looked at its semaphore yet, or found it set
+	wire        ts_blocked;  // it found it set
+	wire [23:0] ch_a;  // the result of 033, three clocks after it issues
 
 	//Exchange Package logic
 	// exchange sequencer interface
@@ -291,8 +299,7 @@ module func_top (
 
 	wire [6:0] cip_instr;
 	wire [2:0] cip_i, cip_j, cip_k, cip_h;
-	wire       issue_vld;
-	reg  [5:0] last_instr;
+	wire issue_vld;
 	wire two_parcel_nip, two_parcel_cip;
 
 	//break out the current instruction parcel into fields
@@ -303,10 +310,12 @@ module func_top (
 	assign cip_h     = cip[11:9];
 
 	//A-type scheduler signals
-	wire [3:0] a_result_src;
 	wire       a_result_en;
 	wire       a_wr_en;
 	wire [2:0] a_result_dest;  //the a-register we're targeting
+	wire [1:0] a_result_slot;  //which result register its value is in
+	wire       a_next_en;  //a result is due in the next clock
+	wire [3:0] a_next_src;  //and where it comes from
 	wire [2:0] a_wr_addr;
 	wire       a_issue;
 	wire       a_type;
@@ -317,6 +326,9 @@ module func_top (
 	wire       s_result_en;
 	wire       s_wr_en;
 	wire [2:0] s_result_dest;  //the s-register we're targeting
+	wire [1:0] s_result_slot;  //which result register its value is in
+	wire       s_next_en;  //a result is due in the next clock
+	wire [4:0] s_next_src;  //and where it comes from
 	wire [2:0] s_wr_addr;
 	wire       s_issue;
 	wire       s_type;
@@ -380,7 +392,8 @@ module func_top (
 
 	//076 reads a V register that must not be in use; 003, 073 and the merges 146 and 147
 	//wait for a 175 to finish building the mask, and 003 for a merge to finish using it
-	wire vec_hold = (|(pd[PD_H076+:8] & vreg_busy)) || (pd[PD_HVM] && vm_pending) || (pd[PD_H003] && tk_busy[0]) ||
+	wire vec_hold = (|(pd[PD_H076+:8] & vreg_busy)) || (pd[PD_HVM] && (vm_pending || vm_load)) || (pd[PD_H003] && tk_busy[0]) ||
+		(pd[PD_H072] && rtc_load) ||
 		(pd[PD_HFADD] && tk_busy[4]) || (pd[PD_HFMUL] && tk_busy[3]) || (pd[PD_HFRCP] && tk_busy[5]);
 	//The mode instructions 0021 to 0027 and the status register read 073i01 wait for
 	//every result on its way and for memory: a floating point error belongs to the
@@ -394,7 +407,7 @@ module func_top (
 	end
 	wire unsettled = settle_busy || settle_issued;
 	wire mode_hold = unsettled && pd[PD_HMODE];
-	assign opnd_busy = (|(rd_a & a_res_mask)) || (|(rd_s & s_res_mask)) || vec_hold || mode_hold || ts_hold || (pd[PD_H074] && tw_en);
+	assign opnd_busy = (|(rd_a & a_res_mask)) || (|(rd_s & s_res_mask)) || vec_hold || mode_hold || ts_wait || (pd[PD_H074] && tw_en) || (pd[PD_H024] && bw_en);
 
 	/////////////////////////////////////
 	//    Logic Analyzer        //
@@ -429,8 +442,31 @@ module func_top (
 	// The X-MP has four million words and a 24-bit base.
 	wire [22:0] fetch_limit = XMP ? ((|instr_limit_addr[23:22]) ? 23'h400000 : {1'b0, instr_limit_addr[21:0]}) :
 								((|instr_limit_addr[23:20]) ? 23'h100000 : {3'b0, instr_limit_addr[19:0]});
-	wire [24:0] fetch_word = {3'b0, p_addr[23:2]} + {1'b0, XMP ? instr_base_addr : {2'b0, instr_base_addr[21:0]}};
-	assign p_oof       = !mode_mm && (fetch_word >= {2'b0, fetch_limit});
+	// Whether P is outside is kept in a register, formed beside P itself: for the
+	// parcel behind this one and for the target of a branch, and one of them taken as
+	// P is.  (While an exchange loads P and the limits it follows a clock behind,
+	// long before instructions run again.)
+	function outside;
+		input [21:0] word_addr;  // P without its parcel number
+		reg [24:0] word;
+		begin
+			word    = {3'b0, word_addr} + {1'b0, XMP ? instr_base_addr : {2'b0, instr_base_addr[21:0]}};
+			outside = !mode_mm && (word >= {2'b0, fetch_limit});
+		end
+	endfunction
+
+	wire [23:0] p_behind = (p_addr + 24'b1) & p_mask;
+	wire [23:0] p_target = branch_dest & p_mask;
+	reg         p_outside;
+	always @(posedge clk)
+		p_outside <= (!x_swap && issue_vld && (nip_in_vld || take_branch)) ? (take_branch ? outside(
+			p_target[23:2]
+		) : outside(
+			p_behind[23:2]
+		)) : outside(
+			p_addr[23:2]
+		);
+	assign p_oof       = p_outside;
 	assign nip_in_vld  = i_nip_vld || p_oof;
 	assign fetch_fault = cip_vld && x_run && (cip_fault || (two_parcel_cip && nip_fault));
 
@@ -607,7 +643,7 @@ module func_top (
 		end else begin
 			if (mode_set && ((cip[8:6] == 3'd1) || (cip[8:6] == 3'd2))) mode_fps <= 1'b0;
 			else if (fp_range_err) mode_fps <= 1'b1;
-			if (x_request && ts_hold) mode_ws <= 1'b1;
+			if (x_request && ts_blocked) mode_ws <= 1'b1;
 		end
 
 	always @(posedge clk)
@@ -645,7 +681,7 @@ module func_top (
 		else if (!x_swap) begin
 			//Deadlock - set when all CPUs in a cluster are holding issue on a test & set instr.
 			//With one CPU that is whenever a test and set finds its semaphore set.
-			flag_dl  <= mode_mm ? 1'b0 : (flag_dl || ts_hold);
+			flag_dl  <= mode_mm ? 1'b0 : (flag_dl || ts_blocked);
 			//Programmable clock interrupt - set while the clock's request is set.  The
 			//request is made when the interrupt countdown counter reaches 0 and stays
 			//until 0014j5 clears it, so one made in monitor mode is taken on leaving it.
@@ -753,7 +789,6 @@ module func_top (
 
 
 	assign two_parcel_cip = cip_vld && !cip_fault && pd[PD_TWO];
-	always @(posedge clk) last_instr <= cip[5:0];
 
 	//Track S-type related reservations, destination data and if we can issue or not
 	s_scheduler ssched (
@@ -774,6 +809,9 @@ module func_top (
 		.o_s_result_en  (s_result_en),
 		.o_s_result_src (s_result_src),
 		.o_s_result_dest(s_result_dest),
+		.o_s_result_slot(s_result_slot),
+		.o_s_next_en    (s_next_en),
+		.o_s_next_src   (s_next_src),
 		.o_s_type       (s_type),
 		.i_vreg_busy    (vreg_busy),
 		.o_vreg_write   (vreg_swrite_raw),
@@ -781,38 +819,63 @@ module func_top (
 		.o_s_res_mask   (s_res_mask)
 	);
 
-	//Now let's get the correct data to write
-	always @* begin
-		if (!x_swap)
-			case (s_result_src[4:0])
-				SBUS_IMM:       s_wr_data = s_imm_out;
-				SBUS_COMP_IMM:  s_wr_data = s_imm_out;
-				SBUS_S_LOG:     s_wr_data = s_log_out;
-				SBUS_S_SHIFT:   s_wr_data = s_shft_out;
-				SBUS_S_ADD:     s_wr_data = s_add_out;
-				SBUS_FP_ADD:    s_wr_data = f_add_out;
-				SBUS_FP_MULT:   s_wr_data = f_mul_out;
-				SBUS_FP_RA:     s_wr_data = f_ra_out;
-				SBUS_CONST_GEN: s_wr_data = s_const_out;
-				SBUS_RTC:       s_wr_data = real_time_clock;
-				SBUS_V_MASK:    s_wr_data = vector_mask;
-				SBUS_T_BUS:     s_wr_data = t_jk_data;
-				SBUS_V0:        s_wr_data = v_rd_data[63:0];
-				SBUS_V1:        s_wr_data = v_rd_data[127:64];
-				SBUS_V2:        s_wr_data = v_rd_data[191:128];
-				SBUS_V3:        s_wr_data = v_rd_data[255:192];
-				SBUS_V4:        s_wr_data = v_rd_data[319:256];
-				SBUS_V5:        s_wr_data = v_rd_data[383:320];
-				SBUS_V6:        s_wr_data = v_rd_data[447:384];
-				SBUS_V7:        s_wr_data = v_rd_data[511:448];
-				SBUS_MEM:       s_wr_data = data_from_mem_to_regs;
-				SBUS_INTERCPU:  s_wr_data = XMP ? shr_s : real_time_clock;  //072: the clock, or an X-MP shared register
-				SBUS_HI_SR:     s_wr_data = status_reg;
-				default:        s_wr_data = 64'b0;
-			endcase
-		else s_wr_data = x_data;
+	//////////////////////////////////////////////////
+	//           The S result bus                   //
+	//////////////////////////////////////////////////
+	//The result of an instruction that issued d clocks ago is on s_bus, on its way into
+	//its register and to whoever reads that register in this same clock.  It comes
+	//straight out of a flip-flop: either the result register of a unit that has one to
+	//itself (the logical unit, the single shifts, the floating point adder), or s_bus_q,
+	//which gathered it in the clock before.  That keeps the way from a result into the
+	//next unit short, which the logical unit needs most: its result is due in the
+	//clock after its instruction issues, and can be an operand there.
+	//
+	//What s_bus_q gathers, and in which clock after the issue of the instruction:
+	//  the clock of issue   040, 041 immediate; 073 vector mask and status register;
+	//                       074 T register
+	//  1 clock after        071 constant; 072 clock or shared register; 12h word from memory
+	//  2 clocks after       056, 057 double shift; 060, 061 sum
+	//  3 clocks after       076 element of a V register
+	//  6 clocks after       064 to 067 floating product
+	//  13 clocks after      070 reciprocal
+	//Each is taken when its entry of the scheduler's pipeline is next to the head.  The
+	//ones of the clock of issue have no entry yet: they are taken from the instruction
+	//in CIP when no entry is next to the head, and are of no use if it does not issue.
+	wire [4:0] cip_src = pd[PD_S_SRC+:5];
+	wire       s_now = !s_next_en;
+	wire       due_imm = s_now && ((cip_src == SBUS_IMM) || (cip_src == SBUS_COMP_IMM));
+	wire       due_vm = s_now && (cip_src == SBUS_V_MASK);
+	wire       due_sr = s_now && (cip_src == SBUS_HI_SR);
+	wire       due_t = s_now && (cip_src == SBUS_T_BUS);
+	wire       due_const = s_next_en && (s_next_src == SBUS_CONST_GEN);
+	wire       due_shr = s_next_en && (s_next_src == SBUS_INTERCPU);
+	wire       due_mem = s_next_en && (s_next_src == SBUS_MEM);
+	wire       due_shift2 = s_next_en && (s_next_src == SBUS_S_SHIFT2);
+	wire       due_add = s_next_en && (s_next_src == SBUS_S_ADD);
+	wire       due_v = s_next_en && (s_next_src == SBUS_V);
+	wire       due_fmul = s_next_en && (s_next_src == SBUS_FP_MULT);
+	wire       due_fra = s_next_en && (s_next_src == SBUS_FP_RA);
+
+	//076: the element is out of its V register two clocks after the instruction issues
+	reg [2:0] v_elem_j1, v_elem_j2;
+	reg [63:0] v_elem_q;
+	always @(posedge clk) begin
+		v_elem_j1 <= cip_j;
+		v_elem_j2 <= v_elem_j1;
+		v_elem_q  <= vreg_sel(v_rd_data, v_elem_j2);
 	end
 
+	reg [63:0] s_bus_q;
+	always @(posedge clk)
+		s_bus_q <= ({64{due_imm}} & s_imm_out) | ({64{due_vm}} & vector_mask) | ({64{due_sr}} & status_reg) | ({64{due_t}} & t_jk_data) |
+			({64{due_const}} & s_const_out) | ({64{due_shr}} & shr_s) | ({64{due_mem}} & data_from_mem_to_regs) |
+			({64{due_shift2}} & s_shft_out) | ({64{due_add}} & s_add_out) | ({64{due_v}} & v_elem_q) |
+			({64{due_fmul}} & f_mul_early) | ({64{due_fra}} & f_ra_early);
+
+	wire [63:0] s_bus = (s_result_slot == SSLOT_LOG) ? s_log_out :
+		(s_result_slot == SSLOT_SHIFT) ? s_shft_out : (s_result_slot == SSLOT_FADD) ? f_add_out : s_bus_q;
+
+	assign s_wr_data = !x_swap ? s_bus : x_data;
 	assign s_wr_en   = !x_swap ? s_result_en : (x_load && x_cnt[3]);
 	assign s_wr_addr = !x_swap ? s_result_dest : s_ex_addr;
 
@@ -835,32 +898,44 @@ module func_top (
 		.i_total_s_res_mask(s_res_mask),
 		.o_a_issue         (a_issue),
 		.o_a_result_en     (a_result_en),
-		.o_a_result_src    (a_result_src),
 		.o_a_result_dest   (a_result_dest),
+		.o_a_result_slot   (a_result_slot),
+		.o_a_next_en       (a_next_en),
+		.o_a_next_src      (a_next_src),
 		.o_a_type          (a_type),
 		.o_a0_busy         (a0_busy),
 		.o_a_res_mask      (a_res_mask)
 	);
 
 
-	always @* begin
-		if (!x_swap)
-			case (a_result_src[3:0])
-				ABUS_IMM:      a_wr_data = a_imm_out;
-				ABUS_COMP_IMM: a_wr_data = a_imm_out;
-				ABUS_SIMM:     a_wr_data = {18'b0, last_instr};
-				ABUS_S_BUS:    a_wr_data = a_imm_out;
-				ABUS_B_BUS:    a_wr_data = b_jk_data;
-				ABUS_S_POP:    a_wr_data = a_poplz_out;
-				ABUS_A_ADD:    a_wr_data = a_add_out;
-				ABUS_A_MULT:   a_wr_data = a_mul_out;
-				ABUS_CHANNEL:  a_wr_data = ch_a;  //033
-				ABUS_MEM:      a_wr_data = data_from_mem_to_regs[23:0];
-				ABUS_INTERCPU: a_wr_data = shr_a;
-				default:       a_wr_data = 24'b0;
-			endcase
-		else a_wr_data = x_data[23:0];
-	end
+	//////////////////////////////////////////////////
+	//           The A result bus                   //
+	//////////////////////////////////////////////////
+	//As for the S registers.  The address adder, the population count and the leading
+	//zero count have result registers to themselves; a_bus_q gathers the rest:
+	//  the clock of issue   020 to 022 immediate; 023 (Sj); 024 B register;
+	//                       026ij7 shared register
+	//  1 clock after        10h word from memory
+	//  3 clocks after       033 channel
+	//  5 clocks after       032 product
+	wire [3:0] cip_asrc = pd[PD_A_SRC+:4];
+	wire a_now = !a_next_en;
+	wire        adue_imm = a_now && ((cip_asrc == ABUS_IMM) || (cip_asrc == ABUS_COMP_IMM) || (cip_asrc == ABUS_SIMM) || (cip_asrc == ABUS_S_BUS));
+	wire adue_b = a_now && (cip_asrc == ABUS_B_BUS);
+	wire adue_shr = a_now && (cip_asrc == ABUS_INTERCPU);
+	wire adue_mem = a_next_en && (a_next_src == ABUS_MEM);
+	wire adue_ch = a_next_en && (a_next_src == ABUS_CHANNEL);
+	wire adue_mul = a_next_en && (a_next_src == ABUS_A_MULT);
+
+	reg [23:0] a_bus_q;
+	always @(posedge clk)
+		a_bus_q <= ({24{adue_imm}} & a_imm_out) | ({24{adue_b}} & b_jk_data) | ({24{adue_shr}} & shr_a) |
+			({24{adue_mem}} & data_from_mem_to_regs[23:0]) | ({24{adue_ch}} & ch_a) | ({24{adue_mul}} & a_mul_out);
+
+	wire [23:0] a_bus = (a_result_slot == ASLOT_ADD) ? a_add_out :
+		(a_result_slot == ASLOT_POP) ? a_pop_out : (a_result_slot == ASLOT_LZ) ? a_lz_out : a_bus_q;
+
+	assign a_wr_data = !x_swap ? a_bus : x_data[23:0];
 
 	assign a_wr_en   = !x_swap ? a_result_en : (x_load && !x_cnt[3]);
 	assign a_wr_addr = !x_swap ? a_result_dest : a_ex_addr;
@@ -979,7 +1054,7 @@ localparam VLOG      = 3'b000,   //vector logical
 				.i_cip      (cip),
 				.i_sj       (s_j_data),
 				.i_ak       (a_k_data),
-				.i_wr_v     (|vwrite_start),
+				.i_wr_v     (|pd[PD_V_I+:8]),
 				.o_busy     (tk_busy[gu]),
 				.o_instr    (tk_instr[gu]),
 				.o_sj       (tk_sj[gu]),
@@ -1002,7 +1077,7 @@ localparam VLOG      = 3'b000,   //vector logical
 	wire       vmem_wr;  //o_mem_data holds element vmem_wr_idx of a 176
 	wire [5:0] vmem_wr_idx;
 	wire [5:0] vmem_rd_idx;
-	wire       vmem_store;  //a 177 is storing register vmem_num
+	wire [7:0] vmem_reads;  //a 177 is storing this V register
 	wire [2:0] vmem_num;  //the V register of the vector transfer under way
 
 	//077 writes its element in the clock after it issues.  Nothing can tell: the
@@ -1010,12 +1085,16 @@ localparam VLOG      = 3'b000,   //vector logical
 	//register a clock or more after it issues itself.  It keeps the issue logic
 	//out of the path to the registers' write ports.
 	reg [ 7:0] sw_en;
+	reg        vm_load;  // a 003 issued in the clock before: (Sj), in sw_data, goes to the vector mask
+	reg        rtc_load;  // a 0014j0 did: it goes to the real-time clock
 	reg [ 5:0] sw_idx;
 	reg [63:0] sw_data;
 	always @(posedge clk) begin
-		sw_en   <= rst ? 8'b0 : vreg_swrite;
-		sw_idx  <= a_k_data[5:0];
-		sw_data <= s_j_data;
+		sw_en    <= rst ? 8'b0 : vreg_swrite;
+		vm_load  <= !rst && cip_issue && (cip_instr == 7'o003) && !xmp_sem;
+		rtc_load <= !rst && (cip[15:6] == 10'o0014) && (cip_k == 3'o0) && cip_issue && mode_mm;
+		sw_idx   <= a_k_data[5:0];
+		sw_data  <= s_j_data;
 	end
 
 	genvar gr;
@@ -1053,7 +1132,7 @@ localparam VLOG      = 3'b000,   //vector logical
 				.i_recursive(vwrite_start[gr] && (XMP == 0)),  //no recursion on the X-MP
 				.i_rec_delay(v_rec_delay),
 				.i_elem_idx (a_k_data[5:0]),
-				.i_mem_rd   (vmem_store && (vmem_num == gr)),
+				.i_mem_rd   (vmem_reads[gr]),
 				.i_mem_idx  (vmem_rd_idx),
 				.o_rd_data  (v_rd_data[64*gr+:64]),
 				.i_wr_start (vwrite_start[gr]),
@@ -1111,6 +1190,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_wr_addr (s_wr_addr),
 		.i_wr_data (s_wr_data),
 		.i_wr_en   (s_wr_en),
+		.i_bus     (s_bus),
 		.i_byp_addr(s_result_dest),
 		.i_byp_en  (s_result_en),
 		.o_s0_pos  (s0_pos),
@@ -1172,6 +1252,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_wr_addr (a_wr_addr),
 		.i_wr_data (a_wr_data),
 		.i_wr_en   (a_wr_en),
+		.i_bus     (a_bus),
 		.i_byp_addr(a_result_dest),
 		.i_byp_en  (a_result_en),
 		.o_a0_pos  (a0_pos),
@@ -1182,9 +1263,11 @@ localparam VLOG      = 3'b000,   //vector logical
 
 
 	//025 writes (Ai) to Bjk, and a return jump writes P to B00, in the clock after the
-	//instruction issues, for the same reason.  Nothing can tell: whatever issues next
-	//reads a B register a clock after it issues itself.  034 writes from memory.
-	reg bw_en, rj_en;
+	//instruction issues, for the same reason.  A 024 right behind a 025 waits that one
+	//clock; a branch to (Bjk) and a block transfer need longer than that to get to the
+	//registers, and what follows a return jump comes from its target.  034 writes from
+	//memory.
+	reg        rj_en;
 	reg [ 5:0] bw_addr;
 	reg [23:0] bw_data;
 	reg [23:0] rj_p;
@@ -1315,7 +1398,8 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_b        (fm_vec ? vreg_sel(v_rd_data, tk_instr[3][2:0]) : s_k_data),
 		.i_kind     (fm_vec ? tk_instr[3][11:10] : cip_instr[1:0]),
 		.o_result   (f_mul_out),
-		.o_range_err(fp_mul_err)
+		.o_range_err(fp_mul_err),
+		.o_early    (f_mul_early)
 	);
 
 	//Floating Point Reciprocal Approximation unit (070; 174)
@@ -1324,7 +1408,8 @@ localparam VLOG      = 3'b000,   //vector logical
 		.clk        (clk),
 		.i_a        (fr_vec ? vreg_sel(v_rd_data, tk_instr[5][5:3]) : s_j_data),
 		.o_result   (f_ra_out),
-		.o_range_err(fp_ra_err)
+		.o_range_err(fp_ra_err),
+		.o_early    (f_ra_early)
 	);
 
 	assign fp_mul_busy = tk_busy[3];
@@ -1368,18 +1453,16 @@ localparam VLOG      = 3'b000,   //vector logical
 
 	//Scalar Population Count and Leading-Zero Count unit
 	scalar_pop_lz spoplz (
-		.clk     (clk),                                            //system clock input
-		.i_issue (cip_issue && !((XMP != 0) && (cip_k == 3'd7))),  //not the X-MP's 026ij7, Ai SBj
-		.i_instr (cip_instr),                                      //7-bit instruction input
-		.i_parity(cip_k == 3'd1),                                  //026ij1
-		.i_sj    (s_j_data),                                       //64-bit sj input
-		.o_result(a_poplz_out)
-	);  //24-bit output
+		.clk     (clk),            //system clock input
+		.i_parity(cip_k == 3'd1),  //026ij1
+		.i_sj    (s_j_data),       //64-bit sj input
+		.o_pop   (a_pop_out),      //24-bit outputs
+		.o_lz    (a_lz_out)
+	);
 
 	//Scalar Shift unit
 	scalar_shift sshift (
 		.clk     (clk),
-		.i_issue (cip_issue),
 		.i_instr (cip_instr),
 		.i_j     (cip_j),
 		.i_k     (cip_k),
@@ -1402,7 +1485,6 @@ localparam VLOG      = 3'b000,   //vector logical
 	//This block actually generates immediate values for both
 	//address and scalar instructions
 	imm_gen igen (
-		.clk       (clk),
 		.i_instr   (cip_instr),
 		.i_cip_j   (cip_j),
 		.i_cip_k   (cip_k),
@@ -1495,7 +1577,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_mem_issue      (mem_issue),
 		.i_issue          (cip_issue),
 		.o_v_num          (vmem_num),
-		.o_v_store        (vmem_store)
+		.o_v_reads        (vmem_reads)
 	);
 
 
@@ -1517,12 +1599,11 @@ localparam VLOG      = 3'b000,   //vector logical
 
 	generate
 		if (XMP) begin : g_shared
-			(* ramstyle = "MLAB, no_rw_check" *)reg [23:0] sb  [0:31];
-			(* ramstyle = "MLAB, no_rw_check" *)reg [63:0] st  [0:31];
+			(* ramstyle = "MLAB, no_rw_check" *)reg [23:0] sb   [0:31];
+			(* ramstyle = "MLAB, no_rw_check" *)reg [63:0] st   [0:31];
 			//four words of flip-flops: as a block memory they sat far from the S registers
-			(* ramstyle = "logic" *)reg [31:0] sm  [ 0:3];  //bit 31 is semaphore 0; cluster 0 is never used
-			reg [23:0] a_r;
-			reg [63:0] s_r1, s_r2, sr_r;
+			(* ramstyle = "logic" *)reg [31:0] sm   [ 0:3];  //bit 31 is semaphore 0; cluster 0 is never used
+			reg [63:0] s_r1;
 
 			wire        clustered = (cln != 2'd0);
 			wire [ 4:0] reg_n = {cln, cip[5:3]};
@@ -1530,7 +1611,18 @@ localparam VLOG      = 3'b000,   //vector logical
 			wire        is_ts = pd[PD_TS];
 			wire [31:0] sem_now = sm[cln];
 
-			assign ts_hold = cip_vld && is_ts && clustered && (|(sem_now & sem_bit));
+			//A test and set looks at its semaphore in its first clock as the current
+			//instruction and issues, or waits, from the second.  The look goes through
+			//the cluster number and the semaphore number, too long a way to stand before
+			//the issue of every instruction.  With one CPU nothing changes a semaphore
+			//while the instruction waits.
+			reg ts_seen, ts_set;
+			always @(posedge clk) begin
+				ts_seen <= !rst && cip_vld && is_ts && !cip_issue;
+				ts_set  <= clustered && (|(sem_now & sem_bit));
+			end
+			assign ts_wait    = cip_vld && is_ts && clustered && (!ts_seen || ts_set);
+			assign ts_blocked = cip_vld && is_ts && ts_seen && ts_set;
 
 			always @(posedge clk) begin
 				if (cip_issue && clustered) begin
@@ -1540,34 +1632,36 @@ localparam VLOG      = 3'b000,   //vector logical
 					else if (cip[15:6] == 10'o0036) sm[cln] <= sem_now & ~sem_bit;
 					else if (is_ts || (cip[15:6] == 10'o0037)) sm[cln] <= sem_now | sem_bit;
 				end
-				a_r <= clustered ? sb[reg_n] : 24'b0;
 				//072i00 is still the real-time clock
 				s_r1 <= (cip[5:0] == 6'o00) ? real_time_clock : !clustered ? 64'b0 : (cip[2:0] == 3'd3) ? st[reg_n] : {sem_now, 32'b0};
-				s_r2 <= s_r1;
-				//clustered, program state, floating point error status and the three mode
-				//bits; the cluster number only in monitor mode; ones in the low half
-				sr_r <= {
-					clustered,
-					5'b0,
-					program_state,
-					5'b0,
-					mode_fps,
-					mode_ifp,
-					mode_ior,
-					mode_bdm,
-					14'b0,
-					mode_mm ? cln : 2'b0,
-					32'hFFFFFFFF
-				};
 			end
 
-			assign shr_a      = a_r;
-			assign shr_s      = s_r2;
-			assign status_reg = sr_r;
+			assign shr_a = clustered ? sb[reg_n] : 24'b0;
+			assign shr_s = s_r1;
+			//clustered, program state, floating point error status and the three mode
+			//bits; the cluster number only in monitor mode; ones in the low half
+			assign status_reg = {
+				clustered,
+				5'b0,
+				program_state,
+				5'b0,
+				mode_fps,
+				mode_ifp,
+				mode_ior,
+				mode_bdm,
+				14'b0,
+				mode_mm ? cln : 2'b0,
+				32'hFFFFFFFF
+			};
 		end else begin : g_no_shared
-			assign ts_hold    = 1'b0;
+			//072 is the real-time clock, as it stood when the instruction issued
+			reg [63:0] rtc_r;
+			always @(posedge clk) rtc_r <= real_time_clock;
+
+			assign ts_wait    = 1'b0;
+			assign ts_blocked = 1'b0;
 			assign shr_a      = 24'b0;
-			assign shr_s      = 64'b0;
+			assign shr_s      = rtc_r;
 			assign status_reg = 64'b0;
 		end
 	endgenerate
@@ -1588,7 +1682,7 @@ localparam VLOG      = 3'b000,   //vector logical
 			reg [ 2:0] num;
 			reg [21:0] addr;
 			reg rd_int, rd_none, rd_err;
-			reg [23:0] rd1, rd2, rd3;
+			reg [23:0] rd1, rd2;
 			wire order = cip_issue && mode_mm && (cip[15:9] == 7'o001) && (cip_j != 3'd0) && a_j_data[3];
 
 			always @(posedge clk) begin
@@ -1603,7 +1697,6 @@ localparam VLOG      = 3'b000,   //vector logical
 				rd_err <= cip_k[0];
 				rd1 <= rd_int ? {20'b0, i_ch_int_num} : rd_none ? 24'b0 : rd_err ? {23'b0, i_ch_err} : {2'b0, i_ch_ca};
 				rd2 <= rd1;
-				rd3 <= rd2;
 			end
 
 			assign o_ch_set_ca = set_ca;
@@ -1612,7 +1705,7 @@ localparam VLOG      = 3'b000,   //vector logical
 			assign o_ch_k1     = k1;
 			assign o_ch_num    = num;
 			assign o_ch_addr   = addr;
-			assign ch_a        = rd3;
+			assign ch_a        = rd2;
 		end else begin : g_no_chan
 			assign o_ch_set_ca = 1'b0;
 			assign o_ch_set_cl = 1'b0;
@@ -1633,9 +1726,10 @@ localparam VLOG      = 3'b000,   //vector logical
 	//Unless it's a 0014x0 instruction, then set the RTC to (Sj)
 	//FIXME: This should only work in monitor mode!
 
-	always @(posedge clk)
-		real_time_clock <= rst ? 64'b0 :
-					  ((cip[15:6]==10'o0014) && (cip_k==3'o0) && cip_issue && mode_mm) ? s_j_data : (real_time_clock + 64'b1);
+	//The value arrives a clock after its instruction issues, like the element of a
+	//077: it keeps the issue logic away from a wide register.  A 072 right behind
+	//waits that clock.
+	always @(posedge clk) real_time_clock <= rst ? 64'b0 : rtc_load ? sw_data : (real_time_clock + 64'b1);
 
 
 	//Programmable clock (HR-0004 rev F pages 4-10 and 6-23), monitor mode only:
@@ -1683,7 +1777,7 @@ localparam VLOG      = 3'b000,   //vector logical
 	//Control the vector mask register
 	always @(posedge clk)
 		if (rst) vector_mask <= 64'hFFFFFFFFFFFFFFFF;
-		else if (cip_issue && (cip_instr == 7'o003) && !xmp_sem) vector_mask <= s_j_data;  //(Sj) is 0 when j is 0
+		else if (vm_load) vector_mask <= sw_data;  //(Sj), which is 0 when j is 0, a clock after 003 issues
 		else if (vm_test_out)
 			vector_mask <= (tk_out_idx[0]==6'd0) ? {v_test_out,63'b0} : (vector_mask | ({63'b0,v_test_out} << (6'd63 - tk_out_idx[0])));
 	//Control the vector length register
@@ -1741,7 +1835,7 @@ localparam VLOG      = 3'b000,   //vector logical
 	always @(posedge clk)
 		if (rst) p_addr <= 24'b0;
 		else if (!x_swap)
-			p_addr <= (issue_vld && (nip_in_vld || take_branch)) ? ((take_branch ? branch_dest : (p_addr + 24'b1)) & p_mask) : p_addr;
+			p_addr <= (issue_vld && (nip_in_vld || take_branch)) ? (take_branch ? p_target : p_behind) : p_addr;
 		else if (x_load && (x_cnt == 4'b0000)) p_addr <= XMP ? {x_data[47:24]} : {2'b0, x_data[45:24]};
 
 	reg alert;

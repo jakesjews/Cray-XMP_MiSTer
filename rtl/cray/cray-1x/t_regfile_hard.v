@@ -26,30 +26,21 @@ module t_regfile_hard (
 
 	input wire clk;
 	input wire [LOGDEPTH-1:0] i_jk_addr;
-	output reg [WIDTH-1:0] o_jk_data;
+	output wire [WIDTH-1:0] o_jk_data;
 	input wire [LOGDEPTH-1:0] i_wr_addr;
 	input wire [WIDTH-1:0] i_wr_data;
 	input wire i_wr_en;
 
 
-	reg [WIDTH-1:0] data[DEPTH-1:0];  //the actual registers
-	/*
-hard_v_reg tmem (
-	.clka(clk),
-	.wea(i_wr_en), 
-	.addra(i_wr_addr), 
-	.dina(i_wr_data), 
-	.clkb(clk),
-	.rstb(rst),
-	.addrb(i_jk_addr),
-	.doutb(o_jk_data)); // Bus [63 : 0] 
-*/
-
+	//Memory made of logic cells, which is read in the clock it is addressed: a 074
+	//has one clock to get its register to the S result bus.  Nothing reads a register
+	//in the clock it is written (func_top holds a 074 behind a 075 for that).
+	(* ramstyle = "MLAB, no_rw_check" *) reg [WIDTH-1:0] data[DEPTH-1:0];  //the actual registers
 	//write a register
 	always @(posedge clk) if (i_wr_en) data[i_wr_addr] <= i_wr_data;
 
 	//read registers
-	always @(posedge clk) o_jk_data <= data[i_jk_addr];
+	assign o_jk_data = data[i_jk_addr];
 
 
 endmodule

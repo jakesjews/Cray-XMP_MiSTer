@@ -28,13 +28,15 @@ module fp_tb (
 		.i_b        (i_b),
 		.i_kind     (i_kind),
 		.o_result   (o_mul),
-		.o_range_err(o_mul_err)
+		.o_range_err(o_mul_err),
+		.o_early    ()
 	);
 	fp_recip rcp (
 		.clk        (clk),
 		.i_a        (i_a),
 		.o_result   (o_recip),
-		.o_range_err(o_recip_err)
+		.o_range_err(o_recip_err),
+		.o_early    ()
 	);
 
 endmodule

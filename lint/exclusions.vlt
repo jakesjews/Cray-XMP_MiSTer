@@ -42,11 +42,11 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/vector_shift.v" -match "*Bits of sig
 // Floating point: the arithmetic the manual describes cuts sums and products
 // off at fixed bit positions, so the low-order bits below are formed and then
 // dropped on purpose. The seed table entries are at most 255.
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_mul.v" -match "*Bits of signal are not used: 's4_out'[6:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_mul.v" -match "*Bits of signal are not used: 's5_out'[6:0]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'q'[31:8]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'a1_wide'[27:24,5:0]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 's6_coef'[47,10:0]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 's8_sum'[2:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 's7_coef'[47,10:0]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 's10_sum'[2:0]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'rounded'[1:0]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'a2'[63:47,14:0]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal are not used: 'exp_out'[15]*"
