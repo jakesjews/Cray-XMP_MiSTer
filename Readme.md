@@ -28,11 +28,13 @@ file on the SD card.
 3. Type `START COS_117 DEADSTART` and wait for `START COMPLETE`.
 4. Type `STATION`, then press **F2** to see the station.
 5. Type `LOGON`.
-6. Type `STMSG`. When COS asks for configuration changes, type `REPLY,0,GO`.
+6. Type `STMSG`. COS asks for configuration changes, with a message number in front, as a
+   rule 0. Type `REPLY,0,GO` with that number.
 7. Type `STMSG,I` after a few seconds to see how far start-up is. It ends with `STARTUP COMPLETE`.
    Type `+` for the next page of the list.
 8. If the list stops at `RE-READING $EFT` for device `BMR-0-20`, type `STMSG`. It shows
-   `NO LABEL WAS FOUND ON DEVICE BMR-0-20`; type `REPLY,10,CONTINUE`.
+   `NO LABEL WAS FOUND ON DEVICE BMR-0-20`, as a rule as message 9. Type `REPLY,9,CONTINUE`
+   with its number.
 
 **Commands are in capital letters.** Caps Lock is on when the core starts.
 
@@ -46,6 +48,19 @@ The printout is also in `games/CrayXMP/printer.txt` on the SD card. New
 printing goes behind what is already there.
 
 `FSTAT` on the operator's console lists the files on the system's disk, `JTEST30` among them.
+
+## Working at the station
+
+COS also takes statements one at a time, with the answers on the screen.
+
+1. On the operator's console (**F1**) type `IAIOP LOG`.
+2. On the station (**F2**) type `IAC`, then `/LOGON`.
+3. Type `ACCOUNT,AC=CRAY,APW=XYZZY,UPW=QUASAR.` Statements end with a full stop.
+4. Fetch a program from the system's disk and run it by its name:
+   `FETCH,DN=AUDIT,MF=AP,TEXT=BIN/AUDIT.` then `AUDIT.` lists the permanent datasets.
+5. `FETCH,DN=TEDI,MF=AP,TEXT=BIN/TEDI.` then `TEDI.` is the text editor. `?` shows its
+   commands, `QUI` leaves it.
+6. `/LOGOFF` ends the session, and `/BYE` brings the station's own display back.
 
 ## Screens
 

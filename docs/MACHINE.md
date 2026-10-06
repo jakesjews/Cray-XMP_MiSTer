@@ -291,6 +291,18 @@ Device times are not those of the real devices. The disks answer as fast as
 the SD card does; the software was found to work with all devices from
 instant to several times slower than real ones.
 
+One thing in the software is changed when the disks are made for the core
+([tools/py/mkcos.py](../tools/py/mkcos.py)). The parameter file COS is
+started with makes drives 24 to 26 a striped group but marks the three
+drives themselves as not available. COS then has the group in its tables
+with no members and one drive's 18 sectors to a track, while the I/O
+Subsystem's software spreads a track of the group over the three drives, 54
+sectors to a head. A request that COS lets run past sector 17 comes back
+with other sectors than the ones it addressed at the next head, and a
+dataset that lands on the group ends in `BLOCK NUMBER ERROR`. The first
+dataset of an interactive session does land there. The group is switched
+off, as the later copy of that file in cray-sim has it.
+
 ### Starting
 
 The core does what an operator with a boot tape did, up to the point where
@@ -488,7 +500,8 @@ The I/O Subsystem and the core:
   loaded and started, start-up to its end, and the batch job, whose printout
   is the one the earlier builds gave but for its times. In an interactive
   session at the station it fetched the dataset lister and the text editor
-  from the expander disk and ran them.
+  from the expander disk and ran them; with the striped group switched off
+  the first program fetched runs, which it did not before.
 
 ## Resources
 

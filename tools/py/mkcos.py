@@ -8,7 +8,8 @@ SYSTEM_DIR holds boot_tape.tap, exp_disk.img, the nine drive images
 biop_dk20.img to biop_dk32.img and target/cos_117/iop_kern.bin.  Written are
 
   OUT_DIR/games/CrayXMP/cos117.ios    the boot file: kernel and boot tape
-  OUT_DIR/games/CrayXMP/exp_disk.img  the disk of the Peripheral Expander, as it is
+  OUT_DIR/games/CrayXMP/exp_disk.img  the disk of the Peripheral Expander, with
+                                      the striped group of drives switched off
   OUT_DIR/games/CrayXMP/drives.img    the nine drives, one after another
   OUT_DIR/games/CrayXMP/printer.txt   takes what the printer prints: 8 MB of
                                       empty lines, which the core fills from
@@ -17,6 +18,16 @@ biop_dk20.img to biop_dk32.img and target/cos_117/iop_kern.bin.  Written are
 
 Copy the two folders onto the SD card.  drives.img is 5.5 GB, so the card (or
 the folder the MiSTer looks for games in) must not be FAT32.
+
+The one change to the software is in DEADSTART, the list of parameters COS is
+started with.  In older copies of the set it makes drives 24 to 26 one striped
+group, STRIPE-1.  What COS writes to that group it does not always read back:
+when a read runs past the last sector of a track, the I/O Subsystem's
+software hands back other sectors than the ones COS wrote at the start of the
+next track, and a dataset that happens to land on the group ends in BLOCK
+NUMBER ERROR.  The group is switched off the way cray-sim's own later copy of
+the file has it: STRIPE-1 not available, and 29-1-22A named in its place.  The
+six other drives remain.
 """
 import os
 import shutil
@@ -24,6 +35,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mkboot import boot_file  # noqa: E402
+import expdisk  # noqa: E402
 
 DRIVES = (0o20, 0o21, 0o22, 0o24, 0o25, 0o26, 0o30, 0o31, 0o32)   # the BIOP's disk channels
 DRIVE_BYTES = 823 * 10 * 18 * 4096      # cylinders, head groups, sectors, bytes
@@ -37,6 +49,23 @@ MGL = '''<mistergamedescription>
     <file delay="1" type="f" index="1" path="cos117.ios"/>
 </mistergamedescription>
 '''
+
+
+def stripe_off(disk):
+    """Switch the striped group off in the DEADSTART parameters of an expander disk; True if changed."""
+    if not expdisk.find(disk, 'STATION/DEADSTART'):
+        return False
+    text = expdisk.get(disk, 'STATION/DEADSTART')
+    end = text.find(b'*END\r') + 5
+    if end < 5:
+        return False
+    new = text[:end].replace(b'*CONFIG,DVN=STRIPE-1,AVAIL', b'*CONFIG,DVN=STRIPE-1,NAVAIL')
+    new = new.replace(b'*DEVICE,LDV=STRIPE-1\r', b'*DEVICE,LDV=29-1-22A\r')
+    if new == text[:end]:
+        return False
+    # the file's length is kept in words: the kernel hands COS that many, and COS takes
+    # a last line that is cut short for a directive it does not know
+    return expdisk.rewrite(disk, 'STATION/DEADSTART', new)
 
 
 def main(argv):
@@ -64,8 +93,10 @@ def main(argv):
         sys.exit('mkcos: %s' % e)
     print('cos117.ios')
 
-    shutil.copyfile(os.path.join(system, 'exp_disk.img'), os.path.join(games, 'exp_disk.img'))
-    print('exp_disk.img')
+    disk = bytearray(open(os.path.join(system, 'exp_disk.img'), 'rb').read())
+    changed = stripe_off(disk)
+    open(os.path.join(games, 'exp_disk.img'), 'wb').write(disk)
+    print('exp_disk.img' + (': STRIPE-1 switched off in DEADSTART' if changed else ''))
 
     with open(os.path.join(games, 'drives.img'), 'wb') as joined:
         for n in names[3:]:

@@ -330,6 +330,12 @@ and print a console as its 24 lines with `--screen` (0 the station, 3 the
 operator's). A serial BREAK resets the machine as the menu's reset does;
 `session --break` sends one.
 
+For a start as after a power cycle, stop the machine first (`hil.py session
+--break`), then put fresh drive images in place and clear Buffer Memory
+(`hil.py fill 0o20000000 0o20000000 0`). A COS that is still running writes
+to both again, and the next start ends in `CRAY HALT`. The numbers of COS's
+start-up questions are not fixed; read them off the station's screen.
+
 Screenshots need direct video off: `hil.py direct-video off`, `hil.py shot out.png`,
 `hil.py direct-video on`.
 
