@@ -1,12 +1,12 @@
 // The DE10-Nano's HPS DDR3 shared by several users, through the MiSTer DDRAM
-// port: ddr3_mem.sv with more than one port.
+// port.
 //
 // A user's address counts 64-bit words from physical 0x3000_0000, where Linux
 // sees the same memory through /dev/mem and where the MiSTer menu loads files
 // whose CONF_STR entry gives an address.  Bytes are reversed so a file of
 // big-endian 64-bit words lands with its first byte in rdata[63:56].
 //
-// Port contract, for each user (the same as ddr3_mem.sv):
+// Port contract, for each user (it is that of the CPU's memory port):
 //   - req, we, burst, addr and wdata are held until the last ack of the request.
 //   - ack is a registered one-clock pulse per word, never in the same clock that
 //     req first rises.  rdata, which all users share, is valid only during ack.

@@ -57,7 +57,7 @@ public:
     bool echo_console = true;
     bool exited = false;
     uint64_t exit_code = 0;
-    bool con_int_en = false, con_int_req = false;   // the console (MCU) interrupt, as in cray_system.sv
+    bool con_int_en = false, con_int_req = false;   // the console (MCU) interrupt, of the test bench's I/O page
     void ctrl_c() { if (con_int_en) con_int_req = true; }
     uint64_t cycle = 0, reads = 0, writes = 0;
     bool log = false;

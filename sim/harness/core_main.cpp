@@ -6,7 +6,7 @@
 //
 //   Vemu [BOOTFILE] [--disk N=FILE]... [--drive N=FILE]... [--type TEXT=KEYS]...
 //        [--press TEXT=KEYS]... [--until TEXT] [--ms N] [--reset-at MS] [--reset-on TEXT] [--screen C]...
-//        [--printed BLOCKS] [--printer OUT] [--frame OUT.ppm] [--ddr fast|normal|slow]
+//        [--printed BLOCKS] [--printer OUT] [--until-printed TEXT] [--frame OUT.ppm] [--ddr fast|normal|slow]
 //        [--disk-wait CLOCKS] [--seed N] [--quiet]
 //
 // BOOTFILE (tools/py/mkboot.py) is put where the menu loads it; without one
@@ -17,7 +17,8 @@
 // blocks the run writes are kept in memory.  What has no file reads as zeros.
 // Slot 2, the printer's file, is 64 blocks of line feeds, of which --printed
 // says how many an earlier session has used; --printer writes the file out at
-// the end, without the line feeds behind what was printed.
+// the end, without the line feeds behind what was printed.  --until-printed
+// ends the run when the file holds TEXT, in place of --until.
 //
 // --type sends KEYS on the serial port once a console has shown TEXT (\r is
 // RETURN); --press types them on the keyboard, where {f1}, {f2} and {f3} are
@@ -132,7 +133,7 @@ int main(int argc, char **argv) {
     std::string boot, frame, until, reset_on, ddr = "normal";
     long ms = 20000, reset_at = -1;
     int printed_blocks = 0;
-    std::string printer_out;
+    std::string printer_out, until_printed;
     bool printer_screen = false;
     bool quiet = false;
     uint32_t seed = 1;
@@ -150,6 +151,7 @@ int main(int argc, char **argv) {
         else if (a == "--screen") { int c = atoi(next().c_str()); if (c == 2) printer_screen = true; else screens.push_back(c == 0); }
         else if (a == "--printed") printed_blocks = atoi(next().c_str());
         else if (a == "--printer") printer_out = next();
+        else if (a == "--until-printed") until_printed = next();
         else if (a == "--type" || a == "--press") {
             std::string t = next(), keys; size_t eq = t.find('=');
             if (eq == std::string::npos) { fprintf(stderr, "%s takes TEXT=KEYS\n", a.c_str()); return 2; }
@@ -356,6 +358,9 @@ int main(int argc, char **argv) {
             clocks++;
             if (!until.empty() && (clocks & 0xFFFF) == 0 && said == typing.size() && ending < 0 &&
                 on[until_console].has(until)) shown = true;
+            // the printer's file is looked at now and then: it is written a block at a time
+            if (!until_printed.empty() && (clocks & 0xFFFFF) == 0 && said == typing.size() && ending < 0 &&
+                std::string(disks.printer.begin(), disks.printer.end()).find(until_printed) != std::string::npos) shown = true;
         }
         top->CLK_50M = 0; top->eval();
 
@@ -408,8 +413,9 @@ int main(int argc, char **argv) {
     printf("\n%.3f s of machine time; memory: %llu reads, %llu writes%s; disk requests: %ld read, %ld written; %d frames (%ld lines, hsync every %ld pixels)\n",
            clocks / 73500e3, (unsigned long long)ram.reads, (unsigned long long)ram.writes, ram.bad_access ? ", BAD DDR3 ACCESS" : "",
            disks.reads, disks.writes, vid.frames, vid.last_lines, vid.hs_period);
-    bool ok = (until.empty() || shown) && screens_right && !ram.bad_access && !ran_early;
-    if (!until.empty()) printf("%s\n", shown ? "the text was shown" : "the text was NOT shown");
+    bool waited_for = !until.empty() || !until_printed.empty();
+    bool ok = (!waited_for || shown) && screens_right && !ram.bad_access && !ran_early;
+    if (waited_for) printf("%s\n", shown ? "the text was shown" : "the text was NOT shown");
     if (!screens_right) printf("the screens are NOT what the serial port carried\n");
     if (ran_early) printf("the CPU did NOT wait for START\n");
     top->final();

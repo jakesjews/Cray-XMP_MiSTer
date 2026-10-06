@@ -1,41 +1,39 @@
-# Cray-1 for MiSTer
+# CRAY X-MP for MiSTer
 
-This core is a Cray-1 supercomputer: the CPU with its vector registers, a
-million words of memory, and a text console on your display and keyboard. It
-starts in a small monitor where you can look at memory, run the built-in
-demonstration programs and start programs of your own. There is no Cray
-operating system for it; the machine runs one program at a time under the monitor.
+This core is a CRAY X-MP supercomputer with its I/O Subsystem, and it runs the
+Cray Operating System, COS 1.17. You start the machine the way its operators
+did: answer the I/O Subsystem at the operator's console, dead start COS, and
+log on at the station.
 
 ## What you need
 
-- A [MiSTer](https://mister-devel.github.io/MkDocs_MiSTer/) (DE10-Nano). No SDRAM module is needed.
-- A keyboard.
+- A [MiSTer](https://mister-devel.github.io/MkDocs_MiSTer/) (DE10-Nano) with a keyboard. No SDRAM module is needed.
+- The COS 1.17 system as the [cray-sim](https://github.com/andrastantos/cray-sim) project runs it: a folder with
+  `boot_tape.tap`, `exp_disk.img`, nine `biop_dk*.img` files and `target/cos_117/iop_kern.bin`.
+- Python 3 on your computer.
+- 6 GB free where your MiSTer keeps its games, on a file system other than FAT32.
 
 ## Setup
 
-1. Copy `Cray1_YYYYMMDD.rbf` from [releases](releases) to the `_Computer` folder on the SD card.
-2. Start **Cray1** from the Computer menu.
-3. Type `?` and press Enter.
+1. Build the core and copy `output_files/CrayXMP.rbf` to `_Computer` on the SD card: see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+2. Run `python3 tools/py/mkcos.py "COS folder" out`.
+3. Copy the folders `out/games` and `out/_Computer` onto the SD card.
+4. Start **COS 1.17** from the Computer menu.
 
-## The monitor
+## Starting COS
 
-- `1` to `7` run the demonstrations: prime sieve, Mandelbrot set, SAXPY timed
-  with and without the vector registers, matrix product, division, console
-  echo, memory test.
-- `E addr (count)` shows memory. `D addr value ...` changes it.
-- `G addr` starts a program. `C` continues it. `R` shows its registers.
-- **Numbers are octal**, as on the real machine.
-- CTRL-C stops a running program and returns to the monitor.
+1. Wait for `ENTER DATE [MM/DD/YY]` and type a date, such as `10/05/89`.
+2. Type a time, such as `09:30:00`.
+3. Type `START COS_117 DEADSTART` and wait for `START COMPLETE`.
+4. Type `STATION`, then press **F2** to see the station.
+5. Type `LOGON`.
+6. Type `STMSG`. When COS asks for configuration changes, type `REPLY,0,GO`.
+7. Type `STMSG` again. If it shows `NO LABEL WAS FOUND ON DEVICE BMR-0-20`, type `REPLY,10,CONTINUE`.
+8. Type `STMSG,I` to watch start-up finish.
 
-## Your own programs
+**F1** shows the operator's console again.
 
-1. Build the assembler and write a program: see [docs/PROGRAMMING.md](docs/PROGRAMMING.md).
-2. Assemble it into a memory image with the extension `.cry`.
-3. Copy the image to `games/Cray1` on the SD card.
-4. Choose **Load memory image** in the core's menu.
-
-A loaded image starts at once and replaces the monitor. **Reset** in the menu
-brings the monitor back.
+**Commands are in capital letters.** Caps Lock is on when the core starts.
 
 ## Menu options
 
@@ -45,9 +43,9 @@ brings the monitor back.
 
 ## Troubleshooting
 
-- `WHAT?`: the monitor did not know the command. Commands are one letter or digit.
-- An address shows unexpected contents: check that the number was typed in octal.
-- A program does not stop on CTRL-C: use Reset in the menu.
+- `INVALID COMMAND`: the command was typed in small letters. Press Caps Lock.
+- `Concentrator ordinal 3  VAX interface select error. Command aborted.` a while after `START`:
+  there is no front-end computer. COS runs without one.
 
-How the machine is built, where it differs from a real Cray-1 and how to work
+What the machine is made of, where it differs from a real one and how to work
 on the core are in [docs](docs).

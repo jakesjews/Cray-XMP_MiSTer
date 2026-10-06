@@ -1,29 +1,29 @@
 # Development
 
-How to build, simulate, test, format and lint the core. For what the CPU does
-and where it differs from a real CRAY-1, see [CPU.md](CPU.md). For writing
-programs, see [PROGRAMMING.md](PROGRAMMING.md).
+How to build, simulate, test, format and lint the core. For what the machine
+is made of and where it differs from a real one, see [MACHINE.md](MACHINE.md).
 
 ## Layout
 
-- `Cray1.sv`: the MiSTer `emu` wrapper. `files.qip` lists what Quartus builds.
-- `rtl/cray_system.sv`: the machine as the wrapper sees it. CPU, dead start, I/O page.
+- `CrayXMP.sv`: the MiSTer `emu` wrapper. `files.qip` lists what Quartus builds.
+- `rtl/xmp_machine.v`: the machine. The CPU with the X-MP features and the I/O
+  Subsystem, joined by the channel pair between them.
 - `rtl/cray/`: CPU modules written for this core.
 - `rtl/cray/cray-1x/`: CPU modules that started in the cray-1x project. That
   project is no longer maintained, so they are maintained here like the rest.
-- `rtl/ios/`: the I/O Subsystem. So far the I/O Processors with their Local
-  Memories, clocks, Buffer Memory channels, the channels between them, the
-  consoles, the Peripheral Expander with its tape and disk, the BIOP's disk
-  drives and channel into central memory, and the MIOP's channel pair to the
-  mainframe; no build uses it yet.
-- `rtl/xmp_machine.v`: the CPU with the X-MP features and the I/O Subsystem
-  joined into the machine that runs COS. It exists in simulation only.
-- `rtl/terminal/`, `rtl/console_io.v`, `rtl/mister/`: console, serial port, DDR3 memory port.
-- `rtl/boot/`: the monitor ROM. `monitor.mem` is built from `software/monitor/`.
+- `rtl/ios/`: the I/O Subsystem. Three I/O Processors with their Local
+  Memories, clocks, Buffer Memory channels and the channels between them; the
+  consoles; the Peripheral Expander with its tape, disk and printer; the
+  BIOP's disk drives and its channel into central memory; the MIOP's channel
+  pair to the mainframe.
+- `rtl/mister/`: what joins the machine to the MiSTer. The DDR3 port and its
+  sharing, the check and copy of the boot file, the consoles on the serial
+  port, the printer's file, clock domain crossings.
+- `rtl/terminal/`: the screens, the keyboard and the video.
 - `sys/`: the MiSTer framework, an unmodified copy of
   [Template_MiSTer](https://github.com/MiSTer-devel/Template_MiSTer).
-- `sim/`: Verilator simulations. `tools/`: assembler, reference model, scripts.
-- `tests/`: test programs. `software/`: the monitor, its demonstrations, an example.
+- `sim/`: Verilator simulations. `tools/`: assembler, reference models, scripts.
+- `tests/`: test programs.
 - `lint/`: Verilator file list, waivers and a PLL stub for `make lint`.
 
 `make` lists the commands below.
@@ -35,18 +35,21 @@ bottle named `Quartus` on macOS.
 
 ```sh
 ./build.sh map        # analysis and synthesis only
-./build.sh compile    # full flow, writes output_files/Cray1.rbf
+./build.sh compile    # full flow, writes output_files/CrayXMP.rbf
 ```
 
 `compile` exits with status 2 if timing is not met.
 
-**Do not edit `files.qip`, `Cray1.qsf` or any RTL while a build runs.** Quartus
+**Do not edit `files.qip`, `CrayXMP.qsf` or any RTL while a build runs.** Quartus
 stops with "Settings File changed outside of the Quartus Prime software" and
-rewrites `Cray1.qsf` as one large flattened file. If that happens, restore
-`Cray1.qsf` to its 78-line form before building again.
+rewrites `CrayXMP.qsf` as one large flattened file. If that happens, restore
+`CrayXMP.qsf` to its 78-line form before building again.
 
-The monitor is part of the bitstream. After changing anything under
-`software/monitor/`, run `make rom` and rebuild.
+A memory that both of its ports write must carry `(* ramstyle = "no_rw_check" *)`,
+or Quartus builds it from flip-flops; the first synthesis of this core needed
+75,000 logic modules for that reason. The attribute promises that nothing
+reads a cell in the clock it is written in. `RW_POISON` checks the promise:
+see "Simulations".
 
 ## Host tools
 
@@ -54,14 +57,17 @@ A Rust toolchain builds the assembler and the reference model:
 
 ```sh
 make tools
-tools/target/release/cray1 asm prog.cal -o prog.cry -l prog.lst
-tools/target/release/cray1 dis prog.cry
+tools/target/release/cray1 asm prog.cal -o prog.img -l prog.lst
+tools/target/release/cray1 dis prog.img
 tools/target/release/cray1 isa                 # the instruction table
-tools/target/release/cray1-run prog.cry --input 'text\r' --max 1000000
+tools/target/release/cray1-run prog.img --input 'text\r' --max 1000000
 ```
 
-`cray1-run` is the reference model: an instruction-level CRAY-1 written from
-the hardware reference manual, independent of the RTL. It keeps track of
+`cray1-run` is the reference model of the CPU: an instruction-level CRAY-1,
+and with `--machine XMP` the X-MP features, written from the hardware
+reference manuals, independent of the RTL. The programs it runs are test
+programs: they print and stop through a page of memory that only the model and
+the CPU's test bench have ([ASSEMBLER.md](ASSEMBLER.md)). It keeps track of
 values a program has no right to rely on, such as registers at power-up or a
 load from outside the program's field, and stops if one decides a branch, an
 address or console output.
@@ -70,10 +76,10 @@ address or console output.
 
 `cray1-sys` joins that CPU model, with the X-MP features, to a model of the
 I/O Subsystem: three I/O Processors with their channels, Buffer Memory, the
-Peripheral Expander with its tape and disk, nine DD-29 disk drives, the
-consoles, and the two links to the mainframe. It runs the I/O Subsystem's
-own software, and through it COS 1.17. Nothing of this is in the FPGA yet;
-the model is what the hardware will be written and checked against.
+Peripheral Expander with its tape, disk and printer, nine DD-29 disk drives,
+the consoles, and the two links to the mainframe. It runs the I/O Subsystem's
+own software, and through it COS 1.17. The hardware description was written
+from this model and is checked against it.
 
 The software is not part of this repository. `cray1-sys` takes the directory
 of the ready-to-run COS 1.17 system of the cray-sim project (the IOP kernel,
@@ -102,41 +108,65 @@ With Verilator 5 on `PATH`:
 
 ```sh
 make sim
-sim/build/cpu/Vcray_cpu --image prog.cry --mem ddr3 --input 'text\r'
+sim/build/cpu/Vcray_cpu --image prog.img --mem ddr3 --input 'text\r'
 sim/build/fp/Vfp_tb tests/fp/xmp_ref.vec
-(cd rtl/terminal && ../../sim/build/emu/Vemu --type '?\r' --frame /tmp/screen.ppm)
+sim/build/core/Vemu BOOTFILE --disk 0=exp_disk.img --until 'ENTER DATE'
 ```
 
-- `sim/build/cpu_xmp/Vcray_cpu` is the same simulation with `XMP = 1` and
-  four million words of memory, for the X-MP setting.
-- `Vcray_cpu` is the CPU with a memory model. `--mem` picks the memory timing:
-  `0`, `fixed:N`, `rand:A-B`, `ddr3` or `slow`. `--step` holds each instruction
-  until the one before has finished.
+- `Vcray_cpu` is the CPU in its CRAY-1 setting with a memory model. `--mem`
+  picks the memory timing: `0`, `fixed:N`, `rand:A-B`, `ddr3` or `slow`.
+  `--step` holds each instruction until the one before has finished.
+  `sim/build/cpu_xmp/Vcray_cpu` is the same with `XMP = 1` and four million
+  words of memory.
 - `Vfp_tb` checks the floating-point units against vector files.
-- `Vemu` is the whole core with stand-ins for `hps_io`, the PLL and DDR3. It
-  runs with no image to boot the monitor, types keys, sends serial bytes and
-  saves a frame of video. Run it from `rtl/terminal` so the font files are found.
-  The machine has its own clock; `--cpu-ratio R` sets how many of its cycles
-  run per video clock cycle.
 - `sim/build/iop/Viop_cpu RECORD` is the I/O Processor following a record of
   the reference model's steps; `tools/py/ioptest.py` makes the records.
 - `sim/build/ios/Vios KERNEL TAPE [DISK]` is the I/O Subsystem
   (`rtl/ios/ios.v`) booting its kernel. The test bench is Buffer Memory,
   central memory, the file that is the tape, and the sectors of the expander
   disk and of the nine drives (`--drive N=FILE`), which it serves the way the
-  MiSTer framework does. `--type TEXT=KEYS` presses keys
-  on the operator's console when it has shown TEXT.
+  MiSTer framework does. `--type TEXT=KEYS` presses keys on a console when it
+  has shown TEXT.
 - `sim/build/xmp/Vxmp_machine` takes the same arguments and is the whole
   machine (`rtl/xmp_machine.v`), CPU included, with central memory served by
   the test bench. `--quick` leaves out the tests of memory and most of the
   BIOP's test of its drives.
+- `sim/build/core/Vemu` is the core as the MiSTer runs it (`CrayXMP.sv`), with
+  stand-ins for `hps_io`, the PLL and DDR3. It loads a boot file into memory
+  that is otherwise full of junk, serves the image slots, types on the serial
+  port (`--type`) or on the keyboard (`--press`, with `{f1}` to `{f3}`), reads
+  the serial port and the video, presses the menu's reset, and at the end
+  compares the screens in the core with what the serial port carried. Run it
+  from the top of the source tree; the header of `sim/harness/core_main.cpp`
+  lists the options.
+- `sim/build/ampex/Vterm_ampex_tb` and `sim/build/spool/Vprint_spool` are the
+  benches of the terminal and of the printer's file.
+
+Two of the benches take about a minute of real time for a second of the
+machine's; `--quick` runs, where COS is started 2.4 seconds after the reset,
+are the practical ones.
+
+To check that no block memory is read in the clock it is written in, build a
+bench with `+define+RW_POISON` and run its tests: such a read then returns
+the wrong value.
+
+```sh
+verilator -f sim/ios.vc +define+RW_POISON --Mdir sim/build/ios_poison -o Vios
+CRAY_IOS_SIM=sim/build/ios_poison/Vios python3 tools/py/ioptest.py selftest
+```
 
 ## Tests
 
 ```sh
-make test-quick    # smoke and directed tests, reference vectors, 200 random programs
-make test          # the same, then long floating-point and random program runs
+make test-quick    # about a minute
+make test          # the same, then the long runs
 ```
+
+`tools/py/runtests.py` lists what each runs. The long runs include COS 1.17 on
+the system model and on the hardware description if the software is there
+(see "The system model").
+
+### The CPU
 
 A test passes when the RTL and the reference model end with the same memory
 contents, console output and exit code. Each program runs five ways on the
@@ -169,9 +199,9 @@ time, and a second random seed. All five must agree with the model.
 
 Random programs do not use the exits, the monitor instructions, channel
 status or the clocks, and they index memory through A0 to A5 and A7.
-The smoke tests and the monitor cover exits, exchanges and range errors.
+The smoke tests cover exits, exchanges and range errors.
 
-### The I/O Processor
+### The I/O Subsystem
 
 `rtl/ios/iop_cpu.v` is checked against the model `tools/crates/ios/src/iop.rs`
 step by step. The model runs a program and writes a record: Local Memory,
@@ -215,28 +245,56 @@ python3 tools/py/ioptest.py kernel         # the real kernel's boot on each of t
   model and on the same hardware. It checks what the kernel's start does not
   depend on: the real-time clock, the order in which channels that ask for an
   interrupt are reported, the expander's tape and disk, a drive of the BIOP
-  and its channel into central memory, and that a word from each processor
-  reaches each other one. Each processor writes its verdict on its console.
+  and its channel into central memory, that a word from each processor
+  reaches each other one, and the printer. Each processor writes its verdict
+  on its console, and what was printed must be the same on both.
+
+### The core
+
+`tools/py/coretest.py` runs the core-level simulation and the two benches
+beside it.
+
+- `screens`: the terminal against the model's, on random character streams.
+- `spool`: the printer's file. Random printing into files of random lengths,
+  part of them used by an earlier session, and what the files hold afterwards.
+- `nofile`: the core without a boot file says so on the screen.
+- `printer`: the self-checking program as the boot file. It reports on the
+  operator's console, and what it prints is on the printer's screen and in
+  the printer's file.
+- `boot`: the kernel boots from a boot file; date and time are typed on the
+  keyboard; the menu's reset makes it boot again.
+- `start`: COS is loaded and started, and the station is logged on from the
+  keyboard after F2.
+- `restart`: the menu's reset while the CPU runs. The kernel comes up again
+  and the CPU waits for it.
+
+Every run fails if the CPU runs before `START` has been typed.
 
 ## Testing on a MiSTer
 
 `tools/py/hil.py` drives a MiSTer over SSH (`MISTER`, default `root@mister`;
-`MISTER_PW`, default `1`). It needs `sshpass`.
+`MISTER_PW`, default `1`). It needs `sshpass`. Put `exp_disk.img` and
+`drives.img` into `/media/fat/games/CrayXMP` once ([tools/py/mkcos.py](../tools/py/mkcos.py)
+makes them).
 
 ```sh
 python3 tools/py/hil.py deploy                  # copy the core
-python3 tools/py/hil.py launch -t 3             # start it and print the console
-python3 tools/py/mkbatch.py build/hwbatch -I tests/rt --rand 1 300 build/smoke/*.cal
-python3 tools/py/hil.py batch build/hwbatch     # run every program and compare memory
-python3 tools/py/hil.py run prog.cry -t 5       # load one image and print the console
-python3 tools/py/hil.py keys '3\r'              # type on a virtual keyboard
+python3 tools/py/hil.py start cos117.ios -t 60 \
+    --type 'ENTER DATE [MM/DD/YY]=10/05/89\r' \
+    --type 'ENTER TIME [HH:MM:SS]=01:02:03\r' \
+    --type '10/05/89  01:02:03=START COS_117 DEADSTART\r' \
+    --until 'START COMPLETE'
+python3 tools/py/hil.py session -t 20 --type '+500=STATION\r' --type '@0:CRAY STATION=LOGON\r' --screen 0
+python3 tools/py/hil.py keys '{f2}stmsg\r'      # type on a virtual keyboard
+python3 tools/py/hil.py printed                 # what the printer's file holds
 ```
 
-The console is mirrored on the HPS serial port, `/dev/ttyS1` at 115200 baud.
-A serial BREAK holds the machine in reset for as long as it lasts and then
-dead starts from memory as it is, without copying the monitor. `hil.py run`
-and `batch` use that to load images from Linux through `/dev/mem` at
-`0x30000000`, where the core's memory lives.
+Both consoles are on the HPS serial port, `/dev/ttyS1` at 115200 baud: bit 7
+of a byte is clear for the operator's console and set for the station.
+`start` and `session` wait for texts and type answers the way the benches do,
+and print a console as its 24 lines with `--screen` (0 the station, 3 the
+operator's). A serial BREAK resets the machine as the menu's reset does;
+`session --break` sends one.
 
 Screenshots need direct video off: `hil.py direct-video off`, `hil.py shot out.png`,
 `hil.py direct-video on`.
@@ -249,14 +307,14 @@ repository root:
 ```sh
 make format-check                       # read-only; fails if formatting differs
 make format                             # apply formatting
-make format FILES='rtl/cray_system.sv'
+make format FILES='rtl/xmp_machine.v'
 ```
 
 The same operations are available through
 `python3 tools/py/verible.py format|format-check [files...]`. `format-check`
 returns nonzero when formatting differs; both return nonzero on tool errors.
 
-The project scope is the `Cray1.sv` wrapper and the Verilog and SystemVerilog
+The project scope is the `CrayXMP.sv` wrapper and the Verilog and SystemVerilog
 sources under `rtl/` and `sim/`, including new, untracked files. Ignored files
 are excluded.
 
@@ -283,12 +341,11 @@ With Verilator on `PATH`:
 make lint
 ```
 
-This writes a fixed build ID to `lint/gen/` and runs Verilator three times
-with `--lint-only -Wall -f lint/rtl.f`:
+This writes a fixed build ID to `lint/gen/` and runs Verilator twice with
+`--lint-only -Wall -f lint/rtl.f`:
 
 - the `emu` top, as built for the MiSTer
-- the `emu` top with `SHELL_TEST` defined, the memory self-test build
-- `cray_cpu` with `XMP=1`, the X-MP setting
+- `cray_cpu` with `XMP=0`, the CRAY-1 setting that most of the CPU's tests run on
 
 `lint/rtl.f` lists the sources from `files.qip`; update both when adding a
 synthesis source. `.v` files are parsed as Verilog 2005, as Quartus does.
@@ -301,7 +358,7 @@ Warnings are fatal. The policy and the waivers are in `lint/exclusions.vlt`:
   checked, but their own diagnostics are suppressed.
 - Everything else, the cray-1x sources included, has waivers only for
   reviewed cases, each with its reason: the `hps_io` ports this core does not
-  use, named one by one; signals only the X-MP build uses; bits the
+  use, named one by one; signals only one setting of the CPU uses; bits the
   floating-point arithmetic forms and then drops; ports and instruction
   fields a module takes but does not need.
 

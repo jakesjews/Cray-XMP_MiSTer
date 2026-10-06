@@ -113,12 +113,12 @@ module emu (
 
 	// the disks: 512-byte blocks, one for a sector of the expander disk and
 	// eight for a sector of a DD-29
-	wire [31:0] sd_lba      [3];
-	wire [ 5:0] sd_blk_cnt  [3];
-	wire [ 2:0] sd_rd, sd_wr, sd_ack;
+	wire [31:0] sd_lba    [3];
+	wire [ 5:0] sd_blk_cnt[3];
+	wire [2:0] sd_rd, sd_wr, sd_ack;
 	wire [13:0] sd_buff_addr;
 	wire [ 7:0] sd_buff_dout;
-	wire [ 7:0] sd_buff_din [3];
+	wire [ 7:0] sd_buff_din  [3];
 	wire        sd_buff_wr;
 	wire [ 2:0] img_mounted;
 	wire [63:0] img_size;
@@ -169,9 +169,9 @@ module emu (
 		.q  (uart_break_cpu)
 	);
 
-	wire        host_reset = RESET | status[0] | buttons[1] | ioctl_download;
-	reg         reset_cpu, uart_reset_cpu;
-	reg  [15:0] reset_cnt;
+	wire host_reset = RESET | status[0] | buttons[1] | ioctl_download;
+	reg reset_cpu, uart_reset_cpu;
+	reg [15:0] reset_cnt;
 
 	always @(posedge clk_cpu) begin
 		uart_reset_cpu <= host_reset;
@@ -206,7 +206,7 @@ module emu (
 	// I/O Processors' Buffer Memory channels, the tape drive on the Peripheral
 	// Expander, and the part of the core that prepares a start.
 	localparam [2:0] CENTRAL = 3'b000;
-	localparam [2:0] BUFFER = 3'b001;
+	localparam [2:0] BUFFER  = 3'b001;
 
 	wire mem_req, mem_we, mem_burst, mem_ack;
 	wire [21:0] mem_addr;
@@ -378,7 +378,7 @@ module emu (
 	// What the printer prints goes to a text file and to a screen; a character
 	// is taken when both can take it.
 	wire [31:0] spool_lba;
-	wire [7:0] spool_din;
+	wire [ 7:0] spool_din;
 	wire spool_rd, spool_wr, spool_ready, shown_ready;
 	assign print_ready = spool_ready && shown_ready;
 
@@ -428,7 +428,7 @@ module emu (
 	///////////////////////   CONSOLES   /////////////////////////////
 
 	localparam OPERATOR = 3;
-	localparam STATION = 0;
+	localparam STATION  = 0;
 
 	assign char_ready[1] = 1'b1;
 	assign char_ready[2] = 1'b1;

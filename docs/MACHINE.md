@@ -1,11 +1,20 @@
 # The machine
 
 Technical notes on what this core implements, where it came from and where it
-differs from a real CRAY-1. The machine is the CRAY-1 as sold in 1982, with its
-two instruction set options. The reference is the CRAY-1 Hardware Reference
-Manual: publication 2240004 revision C, whose page numbers are used below,
-and revision F of May 1982 (HR-0004) where the two differ. Pages of revision F
-are marked "rev F".
+differs from the real thing.
+
+The machine is a CRAY X-MP with one processor and its I/O Subsystem, as far as
+the operating system COS 1.17 needs one: that is the only operating system
+that survives for these machines, and it is a build for the X-MP. The CPU is
+the CRAY-1 as sold in 1982, with its two instruction set options, plus the
+X-MP features COS was found to use. The I/O Subsystem is three I/O Processors
+with the devices COS and the subsystem's own software work with.
+
+The references are the CRAY-1 Hardware Reference Manual, publication 2240004
+revision C, whose page numbers are used below, and revision F of May 1982
+(HR-0004) where the two differ (pages marked "rev F"); the CRAY X-MP Series
+Model 14 mainframe reference manual, CSM-0111000; and the I/O Subsystem
+hardware reference manual, HR-0030.
 
 ## Where the CPU came from
 
@@ -58,13 +67,17 @@ Repairs to the upstream files:
   removed and operand widths made explicit. Each module was proven equivalent
   to its form before the clean-up with `tools/py/equiv.py`.
 
-A parameter `XMP` selects the machine. `XMP = 0` is the CRAY-1 and is what the
-MiSTer core is built with. `XMP = 1` adds what a one-processor CRAY X-MP has
-that the operating system COS needs; see "The X-MP setting" below. The
-upstream source's own X-MP code (channels and the registers shared by four
-CPUs) did not work and has been removed.
+A parameter `XMP` selects the CPU. `XMP = 1` is what the core is built with:
+it adds what a one-processor CRAY X-MP has that COS needs; see "The X-MP
+setting" below. `XMP = 0` is the CRAY-1 of 1982. No core is built from it any
+more, but the CPU was developed and verified as a CRAY-1 first, and most of
+its tests still run on that setting. The upstream source's own X-MP code
+(channels and the registers shared by four CPUs) did not work and has been
+removed.
 
-## What is implemented
+## What the CPU implements
+
+At the CRAY-1 setting:
 
 - All CRAY-1 instructions of the manual's Appendix D.
 - The vector population instructions option (rev F pages 4-25 and 4-70):
@@ -94,12 +107,12 @@ CPUs) did not work and has been removed.
   operands to 60000 is delivered without the error.
 - Vector operations with the result register also an operand behave as the
   manual describes on pages 3-14 to 3-16.
-- 1,048,576 words of memory, held in the MiSTer's DDR3.
+- 1,048,576 words of memory.
 
 ## Differences from a real CRAY-1
 
 - **Timing.** One clock period is one cycle of the machine's own FPGA clock,
-  81.67 MHz against the real machine's 80 MHz. Functional unit times in clock
+  73.5 MHz against the CRAY-1's 80 MHz and the X-MP's 105. Functional unit times in clock
   periods follow the upstream tables, but memory references take longer than
   on the real machine and vary. Programs get the same results as on a CRAY-1
   but not in the same number of clock periods.
@@ -144,27 +157,6 @@ CPUs) did not work and has been removed.
   model has no buffers and runs the new parcel at once, so the two can differ
   on a program that modifies code it is about to run.
 
-## Additions that are not CRAY-1
-
-A real CRAY-1 has no console on the CPU; a maintenance control unit loads
-memory and operators work through front-end computers. This core adds:
-
-- **An I/O page** in the top 16 words of memory. Word addresses, octal:
-  - `3777760` console status. Read: bit 0 an input character waits, bit 1
-    output ready, bit 2 console interrupt enabled, bit 3 requested. Write:
-    bit 0 enables the console interrupt and clears a request.
-  - `3777761` console data. Read takes the next input character. Write prints
-    the low 8 bits, waiting while the output queue is full.
-  - `3777762` test exit, used by the test programs.
-  - `3777763` a free-running clock counter.
-- **The console interrupt** is requested when CTRL-C arrives from the keyboard
-  or the serial port while it is enabled. The console stands in for the
-  maintenance control unit, so the request raises the MCU interrupt flag.
-  It stays until the status word is written.
-- **Dead start.** A reset copies the monitor from a ROM into memory from word
-  0 and exchanges to the package at word 0. After a memory image has been
-  loaded from the menu, the image is started instead.
-
 ## Compared with Cray-on-FPGA
 
 Zorislav Shoyat's Cray-on-FPGA is another rework of the same cray-1x sources,
@@ -187,17 +179,13 @@ The only operating system that survives for these machines, COS 1.17, is a
 build for the X-MP. `XMP = 1` gives the CPU what that build was found to need
 beyond a CRAY-1 (the study is in `research/cos-cray1/`, the specification in
 `research/notes/machine-spec.md`). The reference is the CRAY X-MP Series
-Model 14 mainframe reference manual, CSM-0111000. It is simulated and tested
-against the reference model. No MiSTer build uses it yet: COS also needs the
-I/O Subsystem with its I/O processors. That exists as a model, on which
-COS 1.17 dead starts and runs batch jobs with this CPU's reference model as
-the mainframe, and as hardware in `rtl/ios/`, which with this CPU loads and
-starts COS in simulation (`docs/DEVELOPMENT.md`).
+Model 14 mainframe reference manual, CSM-0111000. It is tested against the
+reference model, which with a model of the I/O Subsystem dead starts COS 1.17
+and runs batch jobs.
 
 What changes with `XMP = 1`:
 
-- **Memory** has four million words. The I/O page is its top 16 words, word
-  `17777760` octal on.
+- **Memory** has four million words.
 - **The exchange package** has the X-MP layout: a 24-bit P, an instruction
   base and limit and a data base and limit of 19 bits each in units of 32
   words, the mode bits of words 1 and 2, the deadlock flag, the program state
@@ -236,8 +224,8 @@ What changes with `XMP = 1`:
   channel moves 16-bit parcels, four to a word, to or from absolute
   addresses. An input channel stops at its limit or at the device's
   Disconnect and holds a Ready that finds it stopped. A channel that asks
-  sets the I/O interrupt flag outside monitor mode. No device is connected
-  yet; the simulation cables each output channel to the input of its pair.
+  sets the I/O interrupt flag outside monitor mode. The first pair, 10 and
+  11, leads to the MIOP of the I/O Subsystem; the other three lead nowhere.
 - 0021 to 0027 and 073i01 wait for results still on their way, so that a
   floating-point error is counted under the modes its instruction saw. This
   holds for 0021 and 0022 on the CRAY-1 setting as well.
@@ -247,50 +235,119 @@ i), `Ai VL` (023i01), the second vector logical unit, gather and scatter, the
 interrupt monitor mode, the X-MP's rule for VL, the 100 Mbyte channels and
 channel parity.
 
+## The I/O Subsystem
+
+COS does no input or output itself. It talks to the I/O Subsystem, a cabinet
+of up to four 16-bit I/O Processors with their own software (the kernel and
+its overlays), which also is the operator's way into the machine. This core
+has three of them, which is what the stock software of COS 1.17 expects:
+
+- **MIOP**, the master. It dead starts the others and the mainframe, and has
+  the operator's console and the station.
+- **BIOP**, which has the disk drives and the 100 Mbyte channel that moves
+  their data to and from central memory.
+- **XIOP**, which on a real machine has the block multiplexer channels to tape
+  units. Here it is a processor with a console and nothing else; the software
+  wants it to answer.
+
+What they are made of (`rtl/ios/`):
+
+- The processor (`iop_cpu.v`): accumulator, carry, B register, 512 operand
+  registers, a 16-entry exit stack, 65,536 parcels of Local Memory. An
+  instruction takes 3 to 5 clocks.
+- On every processor: a real-time clock that asks for an interrupt every
+  millisecond, a channel to Buffer Memory, and a channel pair to each other
+  processor, over which one can master clear and dead start another.
+- Buffer Memory, shared by the three, in DDR3.
+- On the MIOP: the Peripheral Expander with a tape drive (the boot tape, which
+  holds the kernel's overlays), a disk (the COS binary, parameter files and
+  jobs) and a printer; the channel pair to the mainframe's channels 10 and
+  11, with the lines that master clear the CPU; four consoles, of which the
+  operator's and the station are shown.
+- On the BIOP: nine DD-29 disk drives and the channel pair into central
+  memory.
+
+The consoles are Ampex Dialogue 80 terminals as far as the software uses
+them (`rtl/terminal/term_ampex.v`).
+
+Not there, because the software runs without them: the concentrator for a
+front-end computer (the kernel says so once, some seconds after COS has been
+started: `Concentrator ordinal 3  VAX interface select error. Command
+aborted.`), the error log channel, the block multiplexer channels, the clock
+on the expander (the operator types date and time), and writing to tape.
+
+Device times are not those of the real devices. The disks answer as fast as
+the SD card does; the software was found to work with all devices from
+instant to several times slower than real ones.
+
+### Starting
+
+The core does what an operator with a boot tape did, up to the point where
+the kernel runs. The boot file ([tools/py/mkboot.py](../tools/py/mkboot.py))
+holds the kernel and the tape. After every reset `rtl/mister/xmp_boot.v`
+checks the file and copies the kernel to the start of Buffer Memory, and the
+MIOP loads its Local Memory from there. The kernel tests memory, loads its
+overlays from the tape, starts the other two processors and asks for the date.
+The CPU is held by Master Clear until `START` is typed; then the kernel loads
+COS from the expander disk through the channel pair and lets the CPU go.
+
+### What is printed
+
+The printer on the Peripheral Expander is where the output of batch jobs goes.
+The core shows what is printed on a screen of its own and writes it to a text
+file on the SD card (`rtl/mister/print_spool.v`). The file has a fixed length
+and is all line feeds when new; printing fills it from the top and goes on,
+in a later session, behind what is there.
+
 ## Clocks
 
-The machine (CPU, dead start, I/O page) and its memory port run on their own
-PLL output. The terminal, the console queues, the serial port and the HPS
-interface stay on the 29.4 MHz video clock. The two meet only in
-`rtl/mister/cdc.v`: a two-flip-flop synchroniser for reset and the dead start
-choice, a handshake that carries one console character at a time in each
-direction, and a toggle for CTRL-C. `Cray1.sdc` tells the timing analyser the
-two clocks are unrelated, and the whole-core simulation runs them at
-unrelated rates (`--cpu-ratio`).
+The machine and the HPS interface, which brings the disks' blocks, run on one
+PLL output. The screens, the keyboard and the serial port run on the 29.4 MHz
+video clock. The two meet only in `rtl/mister/cdc.v`: a two-flip-flop
+synchroniser for levels and a handshake that carries one console character at
+a time in each direction. `CrayXMP.sdc` tells the timing analyser the two
+clocks are unrelated, and the core-level simulation runs both.
 
-The machine clock is set in `rtl/pll/pll_0002.v` (`output_clock_frequency1`).
-With the PLL's 735 MHz oscillator the exact choices are 735 divided by a whole
-number: 49, 52.5, 56.5, 61.25, 66.8, 73.5 MHz.
+The machine clock is set in `rtl/pll/pll_0002.v` (`output_clock_frequency1`)
+and named in `CrayXMP.sv` (`CPU_HZ`), from which the I/O Processors' clocks
+count their milliseconds. With the PLL's 735 MHz oscillator the exact choices
+are 735 divided by a whole number: 73.5 and 81.67 MHz are the two of interest.
 
-What limits the clock is the path every result takes in one clock period: off
+The CPU alone was closed at 81.67 MHz. With the I/O Subsystem beside it the
+first fit missed that by 0.99 ns: in the I/O Processors, from Local Memory
+through the adder into the operand registers, and in the CPU's paths into the
+T register file and the memory unit, which have less room in a fuller FPGA.
+That build ran COS on a DE10-Nano all the same. The clock is 73.5 MHz until
+those paths are worked on.
+
+What limits the CPU is the path every result takes in one clock period: off
 the result bus, through the register file's bypass, through operand selection
 and into the first stage of a functional unit, and the instruction issue loop
-beside it. Told the real target, the fitter closes those paths in about 12.2 ns,
-which is what allows 81.67 MHz. There is next to nothing to spare: from one
-build to the next the worst path has come out between 0.27 ns inside the
-clock period and 0.06 ns over it. The build in `releases` is 0.06 ns over on
-two paths from the S register bypass into the multiply unit; it passes the
-whole hardware regression. Closing that again is left until the feature work
-is done, and 73.5 MHz is the setting to fall back to. Two changes were
-needed to get from 79.6 to 81.67 MHz: a memory transfer under way goes by
-flags latched at its start instead of choosing between the live and the
-latched instruction, and 077 writes its V register element in the clock after
-it issues, which nothing can observe.
+beside it.
 
-Clock periods are as fast as the real machine's, so work between registers
-runs at its speed. Memory does not: a scalar load takes about 25 clock periods
-here against 11 on a CRAY-1, and vector transfers move about one word every
-two clock periods, not one per clock period.
+Memory is slower than the real machine's: a scalar load takes about 25 clock
+periods against 11 on a CRAY-1, and vector transfers move about one word
+every two clock periods, not one per clock period.
 
 ## Memory
 
-`rtl/mister/ddr3_mem.sv` maps Cray word n to the 8 bytes at HPS address
-`0x30000000 + 8n`, most significant byte first, so a memory image file is
-simply the words in order. Instruction buffers fill with 16-word bursts. A
-vector load stepping by 1 to 7 words also reads whole lines in bursts when
-three or more of its elements lie in a line, except in the I/O page, and
-picks its elements out as they arrive. A block or vector store reads the next
-word from its register while the one before is on its way to memory.
+All large memories are in the MiSTer's DDR3, in 64-bit words from HPS address
+`0x30000000`, most significant byte first:
+
+- central memory, four million words, from word 0
+- Buffer Memory, four million words, from word `0o20000000`
+- the boot file, from word `0o40000000`
+
+`rtl/mister/ddr3_ports.sv` shares the DDR3 port between the CPU, the BIOP's
+channel into central memory, the Buffer Memory channels, the tape drive and
+the copy of the kernel; they take turns. The Local Memories of the I/O
+Processors are block memory in the FPGA.
+
+In the CPU, instruction buffers fill with 16-word bursts. A vector load
+stepping by 1 to 7 words also reads whole lines in bursts when three or more
+of its elements lie in a line, and picks its elements out as they arrive. A
+block or vector store reads the next word from its register while the one
+before is on its way to memory.
 
 A vector load or store lets its instruction issue three clocks after it starts
 and goes on in the background while other instructions issue; its V register
@@ -299,37 +356,56 @@ first or last address is outside the field stays the current instruction
 instead, so the range error interrupt is taken right behind it. Scalar
 references and block transfers hold issue until they are done.
 
-With these and chaining, the monitor's SAXPY demonstration runs its vector
-loop about 10 times faster than its scalar loop on a DE10-Nano: 7,417 clock
-periods against 77,404 for 1024 elements at 81.67 MHz, which is 91
-microseconds against 948. The 64 by 64 matrix product takes 10.2 ms.
-
-Measured on a DE10-Nano at 29.4 MHz: a store takes 2 clocks, a single read 8
-clocks typically and 22 at worst, a 16-word burst 23 typically and 32 at worst.
-
 The CPU's memory port is a request held until acknowledged, one acknowledge
 pulse per word. Nothing in the CPU depends on how long memory takes, and the
 tests run every program with several memory timings to hold it to that.
 
 ## How it was verified
 
-- An instruction-level reference model was written from the manual, separately
+The CPU:
+
+- An instruction-level reference model was written from the manuals, separately
   from the RTL (`tools/crates/model`). Tests compare end states.
-- 42 smoke test runs and 5 directed tests agree with the model in five run modes.
+- The smoke and directed tests agree with the model in five run modes, at both
+  settings of the CPU.
 - 10,000 random programs of up to 250 instructions agree with the model in five
-  run modes each, with no failures.
+  run modes each, and 2,000 more at the X-MP setting.
 - The floating-point units match the reference arithmetic on 200,000 random
   cases per operation, streamed and with gaps, and on 79 cases from cray-sim.
-- On a real MiSTer, 547 programs were run and their memory compared with the
-  model, with no failures. The monitor's demonstrations print the same output
-  there as in simulation, and its memory test of every word above the monitor
-  reports no errors.
+- On a real MiSTer, with the CRAY-1 build this core began as, 547 programs
+  were run and their memory compared with the model, with no failures.
 
 The model and the RTL share one reading of the manual for anything no test
 vector from a real machine covers.
 
+The I/O Subsystem and the core:
+
+- A model of the whole system (`tools/crates/ios`) runs the subsystem's own
+  software and COS 1.17: dead start, station, start-up, a batch job whose log
+  equals the one that comes with the software.
+- The I/O Processor follows the model step by step through the kernel's boot,
+  205 million steps on the three processors, and through 4,400 random
+  programs: same interrupts, same channel functions, same registers.
+- The three processors and their devices boot the kernel in simulation, and a
+  self-checking program covers what the kernel's start does not use.
+- The whole machine, and the core around it with stand-ins for the MiSTer
+  framework, load and start COS in simulation; in the longest run COS reads
+  the nine drives and asks the operator its start-up questions.
+- The terminal and the printer's file are checked against what they should
+  hold on random input.
+- Faults were put into the channels, the processors, the devices, the link to
+  the mainframe, the terminal and the printer's file, one at a time, to see
+  that the tests notice. They found what the tests missed, and the tests were
+  extended until every fault was caught, bar three in the link to the
+  mainframe: two concern the I/O Master Clear line, which the software only
+  ever raises together with the CPU's, and one a parcel that arrives before
+  the MIOP listens, which loading and starting COS does not bring about.
+- On a DE10-Nano the first build booted the kernel, loaded and started COS,
+  logged the station on and went through COS's start-up with the nine drives,
+  typed on the keyboard and on the serial port.
+
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: about 19,800 ALMs (47%), 121 memory blocks,
-37 DSP blocks. Timing is met with the machine at 81.67 MHz and the video side
-at 29.4 MHz.
+Quartus 17.0 for the DE10-Nano, first fit: 26,703 ALMs (64%), 504 of 553
+memory blocks, 38 DSP blocks. The Local Memories of the three I/O Processors
+take 384 of the memory blocks.

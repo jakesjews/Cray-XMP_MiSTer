@@ -1,4 +1,4 @@
-# Cray-1 host tools
+# Host tools
 
 One Rust workspace, standard library only.
 

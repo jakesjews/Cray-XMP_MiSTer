@@ -1,8 +1,8 @@
 // The screens of the CRAY X-MP core on one display: the operator's console of
 // the I/O Subsystem, the station, and what the printer prints.  Each is an
 // Ampex Dialogue 80 screen of its own that is kept up to date all the time;
-// `visible` chooses the one that is shown.  Video timing and fonts are those
-// of the CRAY-1 core.
+// `visible` chooses the one that is shown.  Video timing and fonts come from
+// the MiSTer VT52 core.
 
 module xmp_terminal #(
 	parameter SCREENS = 3

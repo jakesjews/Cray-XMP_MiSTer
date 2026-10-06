@@ -15,17 +15,26 @@ lint/exclusions.vlt
 lint/pll.sv
 
 // Verilog/SystemVerilog sources from files.qip; keep this list in sync.
-// Project RTL.
-rtl/cray_system.sv
-rtl/boot/boot_rom.v
-rtl/console_io.v
-rtl/mister/ddr3_mem.sv
-rtl/mister/shell_test.sv
+rtl/xmp_machine.v
+rtl/ios/ios.v
+rtl/ios/ios_core.v
+rtl/ios/iop.v
+rtl/ios/iop_cpu.v
+rtl/ios/ios_console.v
+rtl/ios/ios_expander.v
+rtl/ios/ios_hsp.v
+rtl/ios/ios_disks.v
+rtl/ios/ios_link.v
+rtl/mister/ddr3_ports.sv
+rtl/mister/xmp_boot.v
+rtl/mister/xmp_console.v
+rtl/mister/print_spool.v
+rtl/mister/print_screen.v
+rtl/terminal/xmp_terminal.v
+rtl/terminal/term_ampex.v
 rtl/mister/con_fifo.v
 rtl/mister/cdc.v
 rtl/mister/uart.v
-rtl/terminal/cray_terminal.v
-rtl/terminal/term_ctrl.v
 rtl/terminal/term_keyboard.v
 rtl/terminal/term_video.v
 rtl/cray/cray_cpu.v
@@ -43,8 +52,6 @@ rtl/cray/fp_recip.v
 rtl/cray/v_optrack.v
 rtl/cray/v_regfile.v
 rtl/cray/xmp_channels.v
-
-// The cray-1x CPU sources this core is built on (vendored, with local repairs).
 rtl/cray/cray-1x/a_regfile.v
 rtl/cray/cray-1x/a_res_lut.v
 rtl/cray/cray-1x/a_scheduler.v
@@ -66,6 +73,4 @@ rtl/cray/cray-1x/scalar_pop_lz.v
 rtl/cray/cray-1x/scalar_shift.v
 rtl/cray/cray-1x/t_regfile_hard.v
 rtl/cray/cray-1x/v_scheduler.v
-// Not in files.qip: the X-MP vector population count, which no build
-// instantiates. Listed so that make lint can check it on its own.
-Cray1.sv
+CrayXMP.sv
