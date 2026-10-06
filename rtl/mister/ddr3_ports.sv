@@ -68,20 +68,38 @@ module ddr3_ports #(
 	assign DDRAM_WE       = ram_we;
 	assign DDRAM_DIN      = ram_din;
 
-	// the first user after the owner that asks
-	reg [W-1:0] pick;
-	reg         any;
-	integer i, n;
+	// The user to serve is the first after the owner that asks.  What depends
+	// on the requests is one bit a user, and the address and the data are
+	// gathered with those bits: nothing is indexed with a number that has to
+	// be worked out from the requests first.
+	reg  [N-1:0] first;
+	reg  [W-1:0] pick;
+	reg  [ 24:0] pick_addr;
+	reg  [ 63:0] pick_wdata;
+	reg          sooner;
+	wire         any = |req;
+	wire         pick_we = |(first & we);
+	wire         pick_burst = |(first & burst & ~we);
+	integer k, n;
+	// how many places after the owner a user comes, going round
+	function automatic [W:0] place(input integer user, input [W-1:0] of);
+		integer d;
+		begin
+			d     = user - 1 - {{(32 - W) {1'b0}}, of};
+			place = (d < 0) ? d[W:0] + N[W:0] : d[W:0];
+		end
+	endfunction
 	always @(*) begin
-		pick = owner;
-		any  = 1'b0;
-		for (i = N; i >= 1; i = i - 1) begin
-			n = {{(32 - W) {1'b0}}, owner} + i;
-			if (n >= N) n = n - N;
-			if (req[n]) begin
-				pick = n[W-1:0];
-				any  = 1'b1;
-			end
+		pick       = owner;
+		pick_addr  = 25'd0;
+		pick_wdata = 64'd0;
+		for (n = 0; n < N; n = n + 1) begin
+			sooner = 1'b0;
+			for (k = 0; k < N; k = k + 1) if ((k != n) && (place(k, owner) < place(n, owner))) sooner = sooner | req[k];
+			first[n] = req[n] && !sooner;
+			if (first[n]) pick = n[W-1:0];
+			pick_addr  = pick_addr | ({25{first[n]}} & addr[25*n+:25]);
+			pick_wdata = pick_wdata | ({64{first[n]}} & wdata[64*n+:64]);
 		end
 	end
 
@@ -100,12 +118,12 @@ module ddr3_ports #(
 				if (drain != 0) drain <= drain - 1'd1;
 				else if (any && ack == '0) begin
 					owner     <= pick;
-					ram_addr  <= addr[25*pick+:25];
-					ram_din   <= bswap(wdata[64*pick+:64]);
-					ram_burst <= (burst[pick] && !we[pick]) ? 8'd16 : 8'd1;
-					left      <= (burst[pick] && !we[pick]) ? 5'd16 : 5'd1;
-					ram_we    <= we[pick];
-					ram_rd    <= ~we[pick];
+					ram_addr  <= pick_addr;
+					ram_din   <= bswap(pick_wdata);
+					ram_burst <= pick_burst ? 8'd16 : 8'd1;
+					left      <= pick_burst ? 5'd16 : 5'd1;
+					ram_we    <= pick_we;
+					ram_rd    <= ~pick_we;
 					state     <= S_CMD;
 				end
 
