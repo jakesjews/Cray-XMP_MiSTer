@@ -30,6 +30,7 @@ file on the SD card.
 5. Type `LOGON`.
 6. Type `STMSG`. When COS asks for configuration changes, type `REPLY,0,GO`.
 7. Type `STMSG,I` after a few seconds to see how far start-up is. It ends with `STARTUP COMPLETE`.
+   Type `+` for the next page of the list.
 8. If the list stops at `RE-READING $EFT` for device `BMR-0-20`, type `STMSG`. It shows
    `NO LABEL WAS FOUND ON DEVICE BMR-0-20`; type `REPLY,10,CONTINUE`.
 

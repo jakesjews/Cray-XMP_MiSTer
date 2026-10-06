@@ -1,6 +1,6 @@
 // Verilator arguments for the core-level simulation of the CRAY X-MP core
 // (module emu of CrayXMP.sv).  The HDL file list comes from files.qip (see
-// tools/py/qip2vc.py).  A millisecond is 73,500 clocks of the machine, as in
+// tools/py/qip2vc.py).  A millisecond is 81,667 clocks of the machine, as in
 // the core.
 --cc --exe --build -j 0
 --top-module emu

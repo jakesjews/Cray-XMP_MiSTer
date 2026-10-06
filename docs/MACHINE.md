@@ -37,6 +37,8 @@ What was written for this core, in `rtl/cray/`:
 - `cray_cpu`, the top, and `cray_mem_mux`, the memory request multiplexer
 - `exchange_ctl`, the exchange sequence
 - `cray_opnd`, which registers an instruction reads, for holding issue
+- `cray_predecode`, everything the issue logic has to know about an
+  instruction, decoded a clock before the instruction is the current one
 - `mem_fu`, the memory sequencer for scalar, block and vector transfers
 - `v_regfile` and `v_optrack`, the vector registers and per-unit operation tracking
 - `vector_logical`, `vector_add`, `vector_shift`
@@ -112,9 +114,11 @@ At the CRAY-1 setting:
 ## Differences from a real CRAY-1
 
 - **Timing.** One clock period is one cycle of the machine's own FPGA clock,
-  73.5 MHz against the CRAY-1's 80 MHz and the X-MP's 105. Functional unit times in clock
+  81.67 MHz against the CRAY-1's 80 MHz and the X-MP's 105. Functional unit times in clock
   periods follow the upstream tables, but memory references take longer than
-  on the real machine and vary. Programs get the same results as on a CRAY-1
+  on the real machine and vary, and an instruction that needs the result of
+  another issues one clock period after that result arrives, not in the
+  clock period it arrives in. Programs get the same results as on a CRAY-1
   but not in the same number of clock periods.
 - **Chaining is looser than on the real machine.** An operation may start on
   a register that a functional unit is still filling as soon as the first
@@ -316,28 +320,38 @@ clocks are unrelated, and the core-level simulation runs both.
 The machine clock is set in `rtl/pll/pll_0002.v` (`output_clock_frequency1`)
 and named in `CrayXMP.sv` (`CPU_HZ`), from which the I/O Processors' clocks
 count their milliseconds. With the PLL's 735 MHz oscillator the exact choices
-are 735 divided by a whole number: 73.5 and 81.67 MHz are the two of interest.
+are 735 divided by a whole number. The clock is 81.67 MHz; 105 MHz, the
+X-MP's own, is two steps further.
 
-The CPU alone was closed at 81.67 MHz. With the I/O Subsystem beside it the
-first fit missed that by 0.99 ns: in the I/O Processors, from Local Memory
-through the adder into the operand registers, and in the CPU's paths into the
-T register file and the memory unit, which have less room in a fuller FPGA.
-That build ran COS on a DE10-Nano all the same. The clock is 73.5 MHz until
-those paths are worked on; at that the fit has 0.7 ns to spare.
+The first build with the I/O Subsystem missed 81.67 MHz by 0.99 ns and the
+first release ran at 73.5 MHz. What brought it back, with 0.37 ns to spare:
 
-What limits the CPU is the path every result takes in one clock period: off
-the result bus, through the register file's bypass, through operand selection
-and into the first stage of a functional unit, and the instruction issue loop
-beside it.
+- An I/O Processor stores a result in Local Memory in the clock after it
+  forms it, and what goes into an operand register comes from an adder of
+  its own. The way from Local Memory through the adder no longer leads back
+  into a memory.
+- The CPU decides whether the current instruction issues from flip-flops.
+  The instruction is decoded while it is still the next instruction parcel
+  (`cray_predecode`, kept in a register beside CIP), and the A and S
+  schedulers keep the registers that have a result on its way, and the
+  register at the head of their pipelines, in registers of their own.
+- 075, 025 and the return jump write their T or B register in the clock
+  after they issue, so the issue decision does not have to reach the write
+  port of a block memory. A 074 right behind a 075 waits that one clock.
+
+What limits the clock now is the way of an operand into the first stage of
+the floating-point multiplier: off the result bus or out of the T registers,
+through the register file's bypass and into the first row of adders.
 
 Memory is slower than the real machine's: a scalar load takes about 25 clock
 periods against 11 on a CRAY-1, and vector transfers move about one word
 every two clock periods, not one per clock period.
 
 COS keeps its own time of day by counting the CPU's clock periods, and the
-core's are longer than an X-MP's. The times in a job's log therefore fall
-behind: in two runs on a DE10-Nano they were about a quarter slow against the
-station's clock, which the I/O Subsystem keeps in real milliseconds.
+core's are longer than an X-MP's: 12.2 ns against 9.5. The times in a job's
+log therefore fall behind the station's clock, which the I/O Subsystem keeps
+in real milliseconds. Two runs of the 73.5 MHz build on a DE10-Nano were
+about a quarter slow.
 
 ## Memory
 
@@ -422,7 +436,7 @@ The I/O Subsystem and the core:
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: 27,020 ALMs (64%), 509 of 553 memory blocks,
+Quartus 17.0 for the DE10-Nano: 26,944 ALMs (64%), 509 of 553 memory blocks,
 38 DSP blocks. The Local Memories of the three I/O Processors take 384 of the
-memory blocks. Timing is met with the machine at 73.5 MHz and the video side
+memory blocks. Timing is met with the machine at 81.67 MHz and the video side
 at 29.4 MHz.

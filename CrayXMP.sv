@@ -92,7 +92,7 @@ module emu (
 	// the disks' sectors, have their own, faster clock; what passes between the
 	// two goes through rtl/mister/cdc.v.
 	localparam CLK_HZ = 29400000;
-	localparam CPU_HZ = 73500000;
+	localparam CPU_HZ = 81666667;
 
 	wire clk_sys, clk_cpu;
 	pll pll (
@@ -298,7 +298,7 @@ module emu (
 	wire print_valid, print_ready;
 
 	xmp_machine #(
-		.CLOCKS_PER_MS(CPU_HZ / 1000)
+		.CLOCKS_PER_MS((CPU_HZ + 500) / 1000)
 	) machine (
 		.clk(clk_cpu),
 		.rst(reset_cpu | ~boot_done),
