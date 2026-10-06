@@ -278,6 +278,32 @@ beside it.
 
 Every run fails if the CPU runs before `START` has been typed.
 
+## Files on the expander disk
+
+The disk on the Peripheral Expander is where the station gets jobs and
+programs from, and `tools/py/expdisk.py` reads and writes its file system:
+
+```sh
+python3 tools/py/expdisk.py list exp_disk.img
+python3 tools/py/expdisk.py put exp_disk.img BIN/HELLO hello.abs      # a program from COS-Tools' ldr or from ack
+python3 tools/py/expdisk.py puttext exp_disk.img STATION/JHELLO job.txt   # a job: a record a line, /EOF between files
+python3 tools/py/expdisk.py gettext exp_disk.img STATION/JTEST30 jtest30.txt
+```
+
+On the machine, `SUBMIT,JHELLO` at the station queues the job, and a job or
+an interactive session gets a file with `FETCH,DN=HELLO,MF=AP,TEXT=BIN/HELLO.`
+and runs it with `HELLO.` The script's header has the layout of the disk and
+of a dataset. Taking every dataset of the COS 1.17 disk apart and putting it
+together again gives the same bytes. The directory holds 34 files, of which
+that disk uses 26.
+
+On the system model, programs put on the disk this way run under COS: one
+assembled with [COS-Tools](https://github.com/kej715/COS-Tools), a C program
+compiled with [its ACK](https://github.com/kej715/ack) in a batch job, and a
+job that assembles, links and runs its own source with the assembler and
+loader of COS-Tools running under COS. At the interactive console programs
+built with that runtime do not get their output through yet.
+
 ## Testing on a MiSTer
 
 `tools/py/hil.py` drives a MiSTer over SSH (`MISTER`, default `root@mister`;
