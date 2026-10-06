@@ -6,6 +6,7 @@
     ioptest.py boot [SYSTEM] [--full]
     ioptest.py selftest
     ioptest.py machine [SYSTEM] [--start]
+    ioptest.py bridges [CASES]
 
 rand runs random programs, seeds FIRST to LAST, each in two kinds (every parcel
 random; mostly register work with functions on the processor's own channels)
@@ -45,10 +46,16 @@ pair and reads memory back; the run ends when it reports MFINIT: COMPLETE.
 With --start it goes on until COS has been loaded from the expander disk and
 started and the kernel reports START COMPLETE, which takes much longer.
 
+bridges checks what carries pulses, levels and memory requests between the
+CPU's clock and the I/O Subsystem's (rtl/xmp_bridge.v), by themselves, with
+clocks of random periods, requests that are taken back, and resets
+(sim/harness/bridge_main.cpp says what must hold).
+
 The model writes a record of each step (tools/crates/ios/src/replay.rs) and
 the simulation of the hardware description follows it: same interrupts, same
 functions, same registers after every step, same memory at the end.
-Needs make tools and make -C sim iop ios xmp.  Failing records stay in build/iop.
+Needs make tools and make -C sim iop ios xmp bridge.  Failing records stay in
+build/iop.
 """
 import os
 import subprocess
@@ -61,6 +68,7 @@ RANDOM = os.path.join(ROOT, 'tools/target/release/examples/iop_random')
 SYS = os.path.join(ROOT, 'tools/target/release/cray1-sys')
 BOOT = os.environ.get('CRAY_IOS_SIM', os.path.join(ROOT, 'sim/build/ios/Vios'))
 MACHINE = os.environ.get('CRAY_XMP_SIM', os.path.join(ROOT, 'sim/build/xmp/Vxmp_machine'))
+BRIDGE = os.environ.get('CRAY_BRIDGE_SIM', os.path.join(ROOT, 'sim/build/bridge/Vxmp_bridge_tb'))
 # the channels of the BIOP's nine drives, in order
 DRIVES = [0o20, 0o21, 0o22, 0o24, 0o25, 0o26, 0o30, 0o31, 0o32]
 OUT = os.path.join(ROOT, 'build/iop')
@@ -210,6 +218,13 @@ def selftest():
     return failed == 0
 
 
+def bridges(cases):
+    r = subprocess.run([BRIDGE, str(cases)], capture_output=True, text=True)
+    print((r.stdout + r.stderr).strip())
+    print('1 runs, %d failed' % (r.returncode != 0))
+    return r.returncode == 0
+
+
 def main():
     a = sys.argv[1:]
     os.makedirs(OUT, exist_ok=True)
@@ -219,6 +234,8 @@ def main():
         ok = rand(int(a[1]), int(a[2]), steps, jobs)
     elif a and a[0] == 'selftest':
         ok = selftest()
+    elif a and a[0] == 'bridges':
+        ok = bridges(int(a[1]) if len(a) > 1 else 2000)
     elif a and a[0] in ('kernel', 'boot', 'machine'):
         rest = [x for x in a[1:] if not x.startswith('--')]
         system = rest[0] if rest else os.environ.get('CRAY1_SYSTEM', os.path.join(ROOT, 'research/Cray 1 Disk Image from Youtube'))

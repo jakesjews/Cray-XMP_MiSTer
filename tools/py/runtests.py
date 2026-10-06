@@ -113,6 +113,7 @@ def main():
     ok &= step('X-MP mode: 100 random programs', [PY, DIFF, 'rand', '1', '100', '-n', '250', '--xmp', '-j', jobs])
     ok &= step('I/O Processor: 400 random programs', [PY, IOP, 'rand', '1', '200', '-j', jobs])
     ok &= step('I/O Processors together: self-check', [PY, IOP, 'selftest'])
+    ok &= step('the bridges between the two clocks, 2,000 cases', [PY, IOP, 'bridges'])
     ok &= step('X-MP core: the terminal on 400 random screens', [PY, CORE, 'screens'])
     ok &= step('X-MP core: the printer\'s file, 400 of them', [PY, CORE, 'spool'])
     ok &= step('X-MP core: no boot file', [PY, CORE, 'nofile'])

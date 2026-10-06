@@ -2,7 +2,7 @@
 ROOT  := $(abspath ..)
 BUILD := $(ROOT)/sim/build
 
-.PHONY: core ampex spool cpu cpu-xmp fp iop ios xmp clean
+.PHONY: core ampex spool cpu cpu-xmp fp iop ios xmp bridge clean
 
 # Core-level simulation of the CRAY X-MP core
 core: $(BUILD)/core/Vemu
@@ -49,6 +49,11 @@ $(BUILD)/ios/Vios: $(ROOT)/sim/ios.vc $(wildcard $(ROOT)/sim/harness/ios_*) $(wi
 xmp: $(BUILD)/xmp/Vxmp_machine
 $(BUILD)/xmp/Vxmp_machine: $(ROOT)/sim/xmp.vc $(wildcard $(ROOT)/sim/harness/ios_*) $(ROOT)/rtl/xmp_machine.v $(ROOT)/rtl/xmp_bridge.v $(wildcard $(ROOT)/rtl/ios/*.v $(ROOT)/rtl/cray/*.v $(ROOT)/rtl/cray/cray-1x/*.v $(ROOT)/rtl/cray/cray-1x/*.vh)
 	mkdir -p $(BUILD)/xmp && cd $(ROOT) && verilator -f sim/xmp.vc --Mdir $(BUILD)/xmp -o Vxmp_machine
+
+# The bridges between the CPU's clock and the I/O Subsystem's against what they promise
+bridge: $(BUILD)/bridge/Vxmp_bridge_tb
+$(BUILD)/bridge/Vxmp_bridge_tb: $(ROOT)/sim/bridge.vc $(ROOT)/sim/harness/bridge_main.cpp $(ROOT)/sim/tb/xmp_bridge_tb.v $(ROOT)/rtl/xmp_bridge.v
+	mkdir -p $(BUILD)/bridge && cd $(ROOT) && verilator -f sim/bridge.vc --Mdir $(BUILD)/bridge -o Vxmp_bridge_tb
 
 clean:
 	rm -rf $(BUILD)

@@ -251,6 +251,11 @@ python3 tools/py/ioptest.py kernel         # the real kernel's boot on each of t
   run is on the whole machine: the program puts a few instructions into
   central memory, lets the CPU go, exchanges parcels with it over the channel
   pair and tries I/O Master Clear on its own.
+- `python3 tools/py/ioptest.py bridges` checks `rtl/xmp_bridge.v` by itself,
+  which carries pulses, levels and memory requests between the CPU's clock
+  and the I/O Subsystem's: clocks of random periods and the machine's own,
+  requests that are taken back before their acknowledge, and resets in the
+  middle. `sim/harness/bridge_main.cpp` says what must hold.
 
 ### The core
 

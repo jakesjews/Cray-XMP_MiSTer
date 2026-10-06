@@ -1,0 +1,9 @@
+// Verilator arguments for the bench of the bridges between the two clocks.
+--cc --exe --build -j 0
+--top-module xmp_bridge_tb
+-Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-DECLFILENAME
+-O3 --x-assign unique --x-initial unique
+-CFLAGS "-O2 -std=c++17"
+sim/tb/xmp_bridge_tb.v
+rtl/xmp_bridge.v
+sim/harness/bridge_main.cpp
