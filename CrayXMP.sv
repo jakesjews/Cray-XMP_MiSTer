@@ -87,19 +87,29 @@ module emu (
 
 	///////////////////////   CLOCKS   ///////////////////////////////
 
-	// clk_sys is the video clock and runs the two screens, the keyboard and the
-	// serial port.  The machine, its memory and the HPS interface, which brings
-	// the disks' sectors, have their own, faster clock; what passes between the
-	// two goes through rtl/mister/cdc.v.
+	// clk_sys is the video clock and runs the screens, the keyboard and the
+	// serial port.  clk_cpu is the CPU's, with the port to DDR3: 105 MHz, the
+	// X-MP's 9.5 ns.  clk_ios is the I/O Subsystem's, with the HPS interface,
+	// which brings the disks' sectors: 80 MHz, the 12.5 ns of its own oscillator,
+	// from a second PLL.  No two of the three are in step.  What passes between
+	// the CPU and the I/O Subsystem goes through rtl/xmp_bridge.v inside the
+	// machine; what passes between either and the video clock goes through
+	// rtl/mister/cdc.v.
 	localparam CLK_HZ = 29400000;
-	localparam CPU_HZ = 81666667;
+	localparam IOS_HZ = 80000000;
 
-	wire clk_sys, clk_cpu;
+	wire clk_sys, clk_cpu, clk_ios;
 	pll pll (
 		.refclk  (CLK_50M),
 		.rst     (1'b0),
 		.outclk_0(clk_sys),
 		.outclk_1(clk_cpu),
+		.locked  ()
+	);
+	pll_ios pll_ios (
+		.refclk  (CLK_50M),
+		.rst     (1'b0),
+		.outclk_0(clk_ios),
 		.locked  ()
 	);
 
@@ -128,7 +138,7 @@ module emu (
 		.VDNUM   (3),
 		.BLKSZ   (2)
 	) hps_io (
-		.clk_sys  (clk_cpu),
+		.clk_sys  (clk_ios),
 		.HPS_BUS  (HPS_BUS),
 		.EXT_BUS  (),
 		.gamma_bus(),
@@ -169,7 +179,16 @@ module emu (
 		.q  (uart_break_cpu)
 	);
 
-	wire host_reset = RESET | status[0] | buttons[1] | ioctl_download;
+	// what the menu asks is in the HPS interface's clock, the I/O Subsystem's
+	reg  host_reset_ios;
+	wire host_reset;
+	always @(posedge clk_ios) host_reset_ios <= RESET | status[0] | buttons[1] | ioctl_download;
+	cdc_bit sync_host_reset (
+		.clk(clk_cpu),
+		.d  (host_reset_ios),
+		.q  (host_reset)
+	);
+
 	reg reset_cpu, uart_reset_cpu;
 	reg [15:0] reset_cnt;
 
@@ -182,7 +201,14 @@ module emu (
 		else reset_cpu <= 0;
 	end
 
-	// the same in the video clock's domain
+	// the same for the I/O Subsystem's side, and in the video clock's domain
+	wire reset_ios;
+	cdc_bit sync_reset_ios (
+		.clk(clk_ios),
+		.d  (reset_cpu),
+		.q  (reset_ios)
+	);
+
 	wire reset, uart_reset;
 	cdc_bit sync_reset (
 		.clk(clk_sys),
@@ -298,10 +324,11 @@ module emu (
 	wire print_valid, print_ready;
 
 	xmp_machine #(
-		.CLOCKS_PER_MS((CPU_HZ + 500) / 1000)
+		.CLOCKS_PER_MS(IOS_HZ / 1000)
 	) machine (
-		.clk(clk_cpu),
-		.rst(reset_cpu | ~boot_done),
+		.clk    (clk_cpu),
+		.clk_ios(clk_ios),
+		.rst    (reset_cpu | ~boot_done),
 
 		.o_mem_req  (mem_req),
 		.o_mem_we   (mem_we),
@@ -383,7 +410,7 @@ module emu (
 	assign print_ready = spool_ready && shown_ready;
 
 	print_spool spool (
-		.clk(clk_cpu),
+		.clk(clk_ios),
 
 		.i_char (print_char),
 		.i_valid(print_valid && shown_ready),
@@ -418,6 +445,8 @@ module emu (
 	always @(posedge clk_cpu) begin
 		if (mem_req && !cpu_held) act_cnt <= '1;
 		else if (act_cnt != 0) act_cnt <= act_cnt - 1'd1;
+	end
+	always @(posedge clk_ios) begin
 		if (|sd_ack) disk_cnt <= '1;
 		else if (disk_cnt != 0) disk_cnt <= disk_cnt - 1'd1;
 	end
@@ -449,8 +478,8 @@ module emu (
 	cdc_stream #(
 		.W(7)
 	) operator_tx (
-		.src_clk  (clk_cpu),
-		.src_reset(reset_cpu),
+		.src_clk  (clk_ios),
+		.src_reset(reset_ios),
 		.src_data (char[7*OPERATOR+:7]),
 		.src_valid(char_valid[OPERATOR]),
 		.src_ready(char_ready[OPERATOR]),
@@ -464,8 +493,8 @@ module emu (
 	cdc_stream #(
 		.W(7)
 	) station_tx (
-		.src_clk  (clk_cpu),
-		.src_reset(reset_cpu),
+		.src_clk  (clk_ios),
+		.src_reset(reset_ios),
 		.src_data (char[7*STATION+:7]),
 		.src_valid(char_valid[STATION]),
 		.src_ready(char_ready[STATION]),
@@ -484,8 +513,8 @@ module emu (
 		.src_data (con_rx_data[6:0]),
 		.src_valid(con_rx_valid[0]),
 		.src_ready(con_rx_ready[0]),
-		.dst_clk  (clk_cpu),
-		.dst_reset(reset_cpu),
+		.dst_clk  (clk_ios),
+		.dst_reset(reset_ios),
 		.dst_data (key[7*OPERATOR+:7]),
 		.dst_valid(key_valid[OPERATOR]),
 		.dst_ready(key_ready[OPERATOR])
@@ -499,8 +528,8 @@ module emu (
 		.src_data (con_rx_data[13:7]),
 		.src_valid(con_rx_valid[1]),
 		.src_ready(con_rx_ready[1]),
-		.dst_clk  (clk_cpu),
-		.dst_reset(reset_cpu),
+		.dst_clk  (clk_ios),
+		.dst_reset(reset_ios),
 		.dst_data (key[7*STATION+:7]),
 		.dst_valid(key_valid[STATION]),
 		.dst_ready(key_ready[STATION])
@@ -535,8 +564,8 @@ module emu (
 	wire shown_valid, shown_taken, prt_valid, prt_ready;
 
 	print_screen print_screen (
-		.clk  (clk_cpu),
-		.reset(reset_cpu),
+		.clk  (clk_ios),
+		.reset(reset_ios),
 
 		.i_char (print_char),
 		.i_valid(print_valid && spool_ready),
@@ -550,8 +579,8 @@ module emu (
 	cdc_stream #(
 		.W(7)
 	) printer_tx (
-		.src_clk  (clk_cpu),
-		.src_reset(reset_cpu),
+		.src_clk  (clk_ios),
+		.src_reset(reset_ios),
 		.src_data (shown_char),
 		.src_valid(shown_valid),
 		.src_ready(shown_taken),

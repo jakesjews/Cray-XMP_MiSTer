@@ -16,6 +16,7 @@ lint/pll.sv
 
 // Verilog/SystemVerilog sources from files.qip; keep this list in sync.
 rtl/xmp_machine.v
+rtl/xmp_bridge.v
 rtl/ios/ios.v
 rtl/ios/ios_core.v
 rtl/ios/iop.v

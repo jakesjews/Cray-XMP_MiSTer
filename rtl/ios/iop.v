@@ -185,8 +185,9 @@ module iop #(
 	// 80 MHz: in each clock the counter goes on by as many periods as have
 	// passed, which is none, one or two for a clk of 40 MHz or more.
 	reg [16:0] rtc;
-	localparam [18:0] PER_MS  = CLOCKS_PER_MS;
-	localparam [18:0] PER_2MS = 2 * CLOCKS_PER_MS;
+	localparam [31:0] PER_MS_32 = CLOCKS_PER_MS;
+	localparam [18:0] PER_MS    = PER_MS_32     [18:0];
+	localparam [18:0] PER_2MS   = {PER_MS_32           [17:0], 1'b0};
 	reg [17:0] part;
 	wire [18:0] part_up = {1'b0, part} + 19'd80000;
 	wire tick = (part_up >= PER_MS);

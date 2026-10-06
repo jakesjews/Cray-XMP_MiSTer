@@ -36,11 +36,14 @@
 #include "Vxmp_machine___024root.h"
 typedef Vxmp_machine Top;
 #define LOCAL_MEMORY(n) in->xmp_machine__DOT__subsystem__DOT__core__DOT__g_iop__BRA__##n##__KET____DOT__u__DOT__mem
+// the CPU and the I/O Subsystem have the same clock here
+#define CLK(v) do { top->clk = (v); top->clk_ios = (v); } while (0)
 #else
 #include "Vios.h"
 #include "Vios___024root.h"
 typedef Vios Top;
 #define LOCAL_MEMORY(n) in->ios__DOT__core__DOT__g_iop__BRA__##n##__KET____DOT__u__DOT__mem
+#define CLK(v) top->clk = (v)
 #endif
 #include "verilated.h"
 #include "ios_media.h"
@@ -121,7 +124,7 @@ int main(int argc, char **argv) {
     auto *in = top->rootp;
     // Local Memory holds something at power-up; zero is as good as anything
     for (int i = 0; i < 65536; i++) { LOCAL_MEMORY(0)[i] = 0; LOCAL_MEMORY(1)[i] = 0; LOCAL_MEMORY(2)[i] = 0; }
-    top->clk = 0; top->rst = 1;
+    CLK(0); top->rst = 1;
     top->i_bm_ack = 0; top->i_bm_rdata = 0;
     top->i_key_valid = 0; top->i_key = 0; top->i_char_ready = 077;
     top->i_tape_ack = 0; top->i_tape_data = 0; top->i_tape_bytes = tape.size();
@@ -172,7 +175,7 @@ int main(int argc, char **argv) {
         for (int c = 0; c < 6; c++)
             if (top->o_char_valid >> c & 1) { unsigned char ch = top->o_char >> (7 * c) & 0x7F; console[c].push_back(ch); on[c].put(ch); }
         bool key_taken = top->i_key_valid & top->o_key_ready;
-        top->clk = 1; top->eval();
+        CLK(1); top->eval();
         // the operator: a key, some time after the one before, once the text has been shown
         if (key_taken) { top->i_key_valid = 0; key_gap = burst ? 0 : 200000; }
         if (key_gap > 0) key_gap--;
@@ -219,7 +222,7 @@ int main(int argc, char **argv) {
 #endif
         top->eval();
         for (int g = 0; g < 3; g++) steps[g] += top->o_step >> g & 1;
-        top->clk = 0; top->eval();
+        CLK(0); top->eval();
         clocks++;
         std::string &kernel_console = console[3];
         if (!quiet && kernel_console.size() > printed) {

@@ -14,14 +14,22 @@
 //
 // Everything else is the I/O Subsystem's: Buffer Memory, the consoles, the
 // tape and the disk of the Peripheral Expander, and the nine disk drives.
+//
+// The two have clocks of their own, as the two cabinets of the real machine
+// have, and nothing is assumed about how the clocks stand to each other.  What
+// passes between them goes through rtl/xmp_bridge.v: the pulses of the channel
+// pair, the two Master Clear lines, and the I/O Subsystem's three memory ports,
+// which arrive outside in the CPU's clock like the CPU's own.  The consoles,
+// the disks and the printer are in the I/O Subsystem's clock.
 
 module xmp_machine #(
-	parameter CLOCKS_PER_MS  = 81667,  // of clk
+	parameter CLOCKS_PER_MS  = 80000,  // of clk_ios
 	parameter EXPANDER_DELAY = 82,
 	parameter DISK_SETTLE    = 200
 ) (
-	input wire clk,
-	input wire rst,
+	input wire clk,      // the CPU's clock; the four memory ports are in it
+	input wire clk_ios,  // the I/O Subsystem's; all other ports are in it
+	input wire rst,      // of clk
 
 	// central memory for the CPU: a word, or a burst of 16 words read
 	output wire        o_mem_req,
@@ -96,16 +104,153 @@ module xmp_machine #(
 	output wire [47:0] o_p
 );
 
-	wire cpu_clear, io_clear;
-	reg cpu_rst;
-	always @(posedge clk) cpu_rst <= rst || cpu_clear;
+	// the reset as the I/O Subsystem sees it, and its two Master Clear lines as
+	// the CPU sees them
+	wire rst_ios, cpu_clear, io_clear, cpu_clear_f, io_clear_f;
+	xmp_sync sync_rst (
+		.clk(clk_ios),
+		.i_d(rst),
+		.o_q(rst_ios)
+	);
+	xmp_sync sync_cpu_clear (
+		.clk(clk),
+		.i_d(cpu_clear),
+		.o_q(cpu_clear_f)
+	);
+	xmp_sync sync_io_clear (
+		.clk(clk),
+		.i_d(io_clear),
+		.o_q(io_clear_f)
+	);
+
+	// The CPU is held from the reset until the MIOP lets go.  (The line is set
+	// while the I/O Subsystem is in reset; this covers the clocks until that is
+	// seen here.)
+	reg       cpu_rst;
+	reg [3:0] settle;
+	always @(posedge clk) begin
+		if (rst) settle <= 4'd15;
+		else if (settle != 4'd0) settle <= settle - 4'd1;
+		cpu_rst <= rst || (settle != 4'd0) || cpu_clear_f;
+	end
 	assign o_cpu_held = cpu_rst;
 
-	// the channel pair between them
+	// The channel pair between them.  A parcel stands on its lines from its
+	// Ready to its Resume, so it is there when the Ready arrives on the other
+	// side.
 	wire [3:0] out_ready, out_disconnect, in_resume;
 	wire [63:0] out_data;
 	wire to_cpu_ready, to_cpu_disconnect, from_cpu_resume;
 	wire [15:0] to_cpu_parcel;
+	wire ios_ready, ios_disconnect, ios_resume;
+	wire cpu_ready, cpu_disconnect, cpu_resume;
+
+	xmp_pulse ready_out (
+		.clk_from(clk),
+		.i_pulse (out_ready[0]),
+		.clk_to  (clk_ios),
+		.o_pulse (cpu_ready)
+	);
+	xmp_pulse disconnect_out (
+		.clk_from(clk),
+		.i_pulse (out_disconnect[0]),
+		.clk_to  (clk_ios),
+		.o_pulse (cpu_disconnect)
+	);
+	xmp_pulse resume_out (
+		.clk_from(clk),
+		.i_pulse (in_resume[0]),
+		.clk_to  (clk_ios),
+		.o_pulse (cpu_resume)
+	);
+	xmp_pulse ready_in (
+		.clk_from(clk_ios),
+		.i_pulse (ios_ready),
+		.clk_to  (clk),
+		.o_pulse (to_cpu_ready)
+	);
+	xmp_pulse disconnect_in (
+		.clk_from(clk_ios),
+		.i_pulse (ios_disconnect),
+		.clk_to  (clk),
+		.o_pulse (to_cpu_disconnect)
+	);
+	xmp_pulse resume_in (
+		.clk_from(clk_ios),
+		.i_pulse (ios_resume),
+		.clk_to  (clk),
+		.o_pulse (from_cpu_resume)
+	);
+
+	// the I/O Subsystem's memory ports
+	wire cm_req, cm_we, cm_ack, bm_req, bm_we, bm_ack, tape_req, tape_ack;
+	wire [21:0] cm_addr;
+	wire [23:0] bm_addr;
+	wire [20:0] tape_addr;
+	wire [63:0] cm_wdata, cm_rdata, bm_wdata, bm_rdata, tape_rdata;
+	reg [23:0] tape_bytes;
+	always @(posedge clk_ios) tape_bytes <= i_tape_bytes;
+
+	xmp_mem_bridge #(
+		.AW(22)
+	) cm_bridge (
+		.clk    (clk),
+		.clk_ios(clk_ios),
+		.rst    (rst),
+		.rst_ios(rst_ios),
+		.i_req  (cm_req),
+		.i_we   (cm_we),
+		.i_addr (cm_addr),
+		.i_wdata(cm_wdata),
+		.o_ack  (cm_ack),
+		.o_rdata(cm_rdata),
+		.o_req  (o_cm_req),
+		.o_we   (o_cm_we),
+		.o_addr (o_cm_addr),
+		.o_wdata(o_cm_wdata),
+		.i_ack  (i_cm_ack),
+		.i_rdata(i_cm_rdata)
+	);
+	xmp_mem_bridge #(
+		.AW(24)
+	) bm_bridge (
+		.clk    (clk),
+		.clk_ios(clk_ios),
+		.rst    (rst),
+		.rst_ios(rst_ios),
+		.i_req  (bm_req),
+		.i_we   (bm_we),
+		.i_addr (bm_addr),
+		.i_wdata(bm_wdata),
+		.o_ack  (bm_ack),
+		.o_rdata(bm_rdata),
+		.o_req  (o_bm_req),
+		.o_we   (o_bm_we),
+		.o_addr (o_bm_addr),
+		.o_wdata(o_bm_wdata),
+		.i_ack  (i_bm_ack),
+		.i_rdata(i_bm_rdata)
+	);
+	xmp_mem_bridge #(
+		.AW(21)
+	) tape_bridge (
+		.clk    (clk),
+		.clk_ios(clk_ios),
+		.rst    (rst),
+		.rst_ios(rst_ios),
+		.i_req  (tape_req),
+		.i_we   (1'b0),
+		.i_addr (tape_addr),
+		.i_wdata(64'd0),
+		.o_ack  (tape_ack),
+		.o_rdata(tape_rdata),
+		.o_req  (o_tape_req),
+		.o_we   (),
+		.o_addr (o_tape_addr),
+		.o_wdata(),
+		.i_ack  (i_tape_ack),
+		.i_rdata(i_tape_data)
+	);
 
 	cray_cpu #(
 		.XMP(1)
@@ -114,7 +259,7 @@ module xmp_machine #(
 		.rst          (cpu_rst),
 		.i_single_step(1'b0),
 		.i_mcu_int    (1'b0),
-		.i_io_clear   (io_clear),
+		.i_io_clear   (io_clear_f),
 
 		.o_mem_req  (o_mem_req),
 		.o_mem_we   (o_mem_we),
@@ -141,25 +286,25 @@ module xmp_machine #(
 		.EXPANDER_DELAY(EXPANDER_DELAY),
 		.DISK_SETTLE   (DISK_SETTLE)
 	) subsystem (
-		.clk               (clk),
-		.rst               (rst),
-		.o_bm_req          (o_bm_req),
-		.o_bm_we           (o_bm_we),
-		.o_bm_addr         (o_bm_addr),
-		.o_bm_wdata        (o_bm_wdata),
-		.i_bm_ack          (i_bm_ack),
-		.i_bm_rdata        (i_bm_rdata),
+		.clk               (clk_ios),
+		.rst               (rst_ios),
+		.o_bm_req          (bm_req),
+		.o_bm_we           (bm_we),
+		.o_bm_addr         (bm_addr),
+		.o_bm_wdata        (bm_wdata),
+		.i_bm_ack          (bm_ack),
+		.i_bm_rdata        (bm_rdata),
 		.i_key_valid       (i_key_valid),
 		.i_key             (i_key),
 		.o_key_ready       (o_key_ready),
 		.o_char_valid      (o_char_valid),
 		.o_char            (o_char),
 		.i_char_ready      (i_char_ready),
-		.o_tape_req        (o_tape_req),
-		.o_tape_addr       (o_tape_addr),
-		.i_tape_ack        (i_tape_ack),
-		.i_tape_data       (i_tape_data),
-		.i_tape_bytes      (i_tape_bytes),
+		.o_tape_req        (tape_req),
+		.o_tape_addr       (tape_addr),
+		.i_tape_ack        (tape_ack),
+		.i_tape_data       (tape_rdata),
+		.i_tape_bytes      (tape_bytes),
 		.o_sd_lba          (o_sd_lba),
 		.o_sd_rd           (o_sd_rd),
 		.o_sd_wr           (o_sd_wr),
@@ -171,22 +316,22 @@ module xmp_machine #(
 		.o_print_valid     (o_print_valid),
 		.o_print           (o_print),
 		.i_print_ready     (i_print_ready),
-		.i_cpu_ready       (out_ready[0]),
+		.i_cpu_ready       (cpu_ready),
 		.i_cpu_parcel      (out_data[15:0]),
-		.o_cpu_resume      (from_cpu_resume),
-		.i_cpu_disconnect  (out_disconnect[0]),
-		.o_cpu_ready       (to_cpu_ready),
+		.o_cpu_resume      (ios_resume),
+		.i_cpu_disconnect  (cpu_disconnect),
+		.o_cpu_ready       (ios_ready),
 		.o_cpu_parcel      (to_cpu_parcel),
-		.i_cpu_resume      (in_resume[0]),
-		.o_cpu_disconnect  (to_cpu_disconnect),
+		.i_cpu_resume      (cpu_resume),
+		.o_cpu_disconnect  (ios_disconnect),
 		.o_cpu_master_clear(cpu_clear),
 		.o_io_master_clear (io_clear),
-		.o_cm_req          (o_cm_req),
-		.o_cm_we           (o_cm_we),
-		.o_cm_addr         (o_cm_addr),
-		.o_cm_wdata        (o_cm_wdata),
-		.i_cm_ack          (i_cm_ack),
-		.i_cm_rdata        (i_cm_rdata),
+		.o_cm_req          (cm_req),
+		.o_cm_we           (cm_we),
+		.o_cm_addr         (cm_addr),
+		.o_cm_wdata        (cm_wdata),
+		.i_cm_ack          (cm_ack),
+		.i_cm_rdata        (cm_rdata),
 		.o_drive_lba       (o_drive_lba),
 		.o_drive_rd        (o_drive_rd),
 		.o_drive_wr        (o_drive_wr),

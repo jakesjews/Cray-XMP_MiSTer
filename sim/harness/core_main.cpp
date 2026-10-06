@@ -129,6 +129,9 @@ struct HpsDisks {
     }
 };
 
+// clocks of the CPU and of the I/O Subsystem in a millisecond, as the core's PLLs make them
+static const long CPU_KHZ = 105000, IOS_KHZ = 80000;
+
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
     std::string boot, frame, until, reset_on, ddr = "normal";
@@ -165,7 +168,7 @@ int main(int argc, char **argv) {
             }
             std::string wait = t.substr(0, eq);
             int c = on_console(wait);
-            long delay = wait.size() > 1 && wait[0] == '+' ? atol(wait.c_str() + 1) * 81667 : 0;
+            long delay = wait.size() > 1 && wait[0] == '+' ? atol(wait.c_str() + 1) * CPU_KHZ : 0;
             typing.push_back({c, a == "--press", squeeze(wait), keys, delay});
         }
         else if (a == "--ms") ms = atol(next().c_str());
@@ -236,8 +239,8 @@ int main(int argc, char **argv) {
     top->UART_RXD = 1;
     top->DDRAM_BUSY = 0;
     top->DDRAM_DOUT_READY = 0;
-    double cpu_acc = 0;
-    const double cpu_ratio = 81.67 / 29.4;       // machine clock cycles per video clock cycle
+    double cpu_acc = 0, ios_acc = 0;
+    const double cpu_ratio = CPU_KHZ / 29400.0;  // CPU clock cycles per video clock cycle
 
     std::string console[2];              // what the serial port carried: 0 the operator's console, 1 the station
     Shown on[2];                         // and what the bench looks for in it
@@ -249,7 +252,7 @@ int main(int argc, char **argv) {
     bool start_typed = false, ran_early = false;
     size_t start_looked = 0;
     long light_fades = 0;                // clocks the activity light may still be on after a reset
-    const long limit = ms * 81667;
+    const long limit = ms * CPU_KHZ;
     long ending = -1;                    // the run is over: clocks left to let the screens settle
 
     for (long t = 0; !Verilated::gotFinish(); t++) {
@@ -282,7 +285,7 @@ int main(int argc, char **argv) {
             }
         }
         if (light_fades > 0) light_fades -= 3;
-        if (top->LED_USER && !start_typed && !ran_early && light_fades <= 0) { ran_early = true; printf("\nthe CPU runs at %.3f s, before START has been typed\n", clocks / 81667e3); }
+        if (top->LED_USER && !start_typed && !ran_early && light_fades <= 0) { ran_early = true; printf("\nthe CPU runs at %.3f s, before START has been typed\n", clocks / (CPU_KHZ * 1e3)); }
         if (!quiet && console[0].size() > printed) {
             for (; printed < console[0].size(); printed++) { char c = console[0][printed]; if (c == '\n' || (c >= 0x20 && c < 0x7F)) putchar(c); }
             fflush(stdout);
@@ -292,35 +295,45 @@ int main(int argc, char **argv) {
         top->UART_RXD = drv.step();
         top->eval();
 
-        // The machine's clock is a separate, faster one.  Its edges fall between
+        // The CPU's clock is a separate, faster one.  Its edges fall between
         // the video clock's, sometimes before the falling edge and sometimes after.
+        // The I/O Subsystem's clock, which is also the HPS interface's, is a third
+        // one: 80 MHz against the CPU's 105, its edges between the CPU's.
         cpu_acc += cpu_ratio;
         int n_cpu = (int)cpu_acc;
         cpu_acc -= n_cpu;
         int before = (t & 1) ? n_cpu : n_cpu / 2;
         for (int k = 0; k < n_cpu; k++) {
             if (k == before) { top->CLK_50M = 0; top->eval(); }
-            bool rd = top->DDRAM_RD, we = top->DDRAM_WE;      // driven during the machine clock that ends here
+            bool rd = top->DDRAM_RD, we = top->DDRAM_WE;      // driven during the CPU clock that ends here
             uint32_t addr = top->DDRAM_ADDR; uint8_t bc = top->DDRAM_BURSTCNT, be = top->DDRAM_BE;
             uint64_t din = top->DDRAM_DIN;
-            unsigned sd_rd = r->emu__DOT__hps_io__DOT__sim_sd_rd, sd_wr = r->emu__DOT__hps_io__DOT__sim_sd_wr;
-            const auto &sd_lba = r->emu__DOT__hps_io__DOT__sim_sd_lba;
-            unsigned sd_cnt = r->emu__DOT__hps_io__DOT__sim_sd_blk_cnt, sd_din = r->emu__DOT__hps_io__DOT__sim_sd_din;
-            const uint32_t lbas[3] = {sd_lba[0], sd_lba[1], sd_lba[2]};
-            const unsigned counts[3] = {sd_cnt & 0xFF, sd_cnt >> 8 & 0xFF, sd_cnt >> 16}, dins[3] = {sd_din & 0xFF, sd_din >> 8 & 0xFF, sd_din >> 16};
             r->emu__DOT__pll__DOT__sim_clk1 = 1; top->eval();
             ram.step(rd, we, addr, bc, din, be);
             top->DDRAM_BUSY = ram.busy;
             top->DDRAM_DOUT_READY = ram.dout_ready;
             top->DDRAM_DOUT = ram.dout;
-            disks.clock(sd_rd, sd_wr, lbas, counts, dins);
-            r->emu__DOT__hps_io__DOT__sim_sd_ack = disks.ack;
-            r->emu__DOT__hps_io__DOT__sim_sd_buff_addr = disks.buff_addr;
-            r->emu__DOT__hps_io__DOT__sim_sd_buff_dout = disks.buff_dout;
-            r->emu__DOT__hps_io__DOT__sim_sd_buff_wr = disks.buff_wr;
+            ios_acc += IOS_KHZ / (double)CPU_KHZ;
+            if (ios_acc >= 1.0) {
+                ios_acc -= 1.0;
+                top->eval();
+                unsigned sd_rd = r->emu__DOT__hps_io__DOT__sim_sd_rd, sd_wr = r->emu__DOT__hps_io__DOT__sim_sd_wr;
+                const auto &sd_lba = r->emu__DOT__hps_io__DOT__sim_sd_lba;
+                unsigned sd_cnt = r->emu__DOT__hps_io__DOT__sim_sd_blk_cnt, sd_din = r->emu__DOT__hps_io__DOT__sim_sd_din;
+                const uint32_t lbas[3] = {sd_lba[0], sd_lba[1], sd_lba[2]};
+                const unsigned counts[3] = {sd_cnt & 0xFF, sd_cnt >> 8 & 0xFF, sd_cnt >> 16}, dins[3] = {sd_din & 0xFF, sd_din >> 8 & 0xFF, sd_din >> 16};
+                r->emu__DOT__pll_ios__DOT__sim_clk = 1; top->eval();
+                disks.clock(sd_rd, sd_wr, lbas, counts, dins);
+                r->emu__DOT__hps_io__DOT__sim_sd_ack = disks.ack;
+                r->emu__DOT__hps_io__DOT__sim_sd_buff_addr = disks.buff_addr;
+                r->emu__DOT__hps_io__DOT__sim_sd_buff_dout = disks.buff_dout;
+                r->emu__DOT__hps_io__DOT__sim_sd_buff_wr = disks.buff_wr;
+                top->eval();
+                r->emu__DOT__pll_ios__DOT__sim_clk = 0; top->eval();
+            }
 
             // the menu's reset: everything the consoles showed is gone
-            if (reset_at >= 0 && clocks == reset_at * 81667) { r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u; reset_left = 2000; }
+            if (reset_at >= 0 && clocks == reset_at * CPU_KHZ) { r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u; reset_left = 2000; }
             if (reset_left > 0 && --reset_left == 0) {
                 r->emu__DOT__hps_io__DOT__sim_status[0] &= ~1u;
                 for (int c = 0; c < 2; c++) { console[c].clear(); on[c].clear(); }
@@ -413,7 +426,7 @@ int main(int argc, char **argv) {
     }
     if (!frame.empty()) vid.write_ppm(frame.c_str());
     printf("\n%.3f s of machine time; memory: %llu reads, %llu writes%s; disk requests: %ld read, %ld written; %d frames (%ld lines, hsync every %ld pixels)\n",
-           clocks / 81667e3, (unsigned long long)ram.reads, (unsigned long long)ram.writes, ram.bad_access ? ", BAD DDR3 ACCESS" : "",
+           clocks / (CPU_KHZ * 1e3), (unsigned long long)ram.reads, (unsigned long long)ram.writes, ram.bad_access ? ", BAD DDR3 ACCESS" : "",
            disks.reads, disks.writes, vid.frames, vid.last_lines, vid.hs_period);
     bool waited_for = !until.empty() || !until_printed.empty();
     bool ok = (!waited_for || shown) && screens_right && !ram.bad_access && !ran_early;

@@ -7,4 +7,5 @@
 -CFLAGS "-O2 -std=c++17 -DXMP_MACHINE"
 -Irtl/cray/cray-1x -y rtl/cray -y rtl/cray/cray-1x -y rtl/ios
 rtl/xmp_machine.v
+rtl/xmp_bridge.v
 sim/harness/ios_main.cpp
