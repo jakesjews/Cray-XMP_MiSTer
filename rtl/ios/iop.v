@@ -27,7 +27,7 @@
 
 module iop #(
 	parameter [39:0] RAW_REQUEST   = 40'd0,  // bit n: channel n (decimal) makes its own request
-	parameter        CLOCKS_PER_MS = 80000   // of clk; 80,000 or more
+	parameter        CLOCKS_PER_MS = 80000   // of clk; 40,000 or more
 ) (
 	input wire clk,
 	input wire i_master_clear,
@@ -181,12 +181,15 @@ module iop #(
 	end
 
 	// ---- channel 4: the real-time clock.  A counter of clock periods of
-	// 12.5 ns that sets Done and starts again at 80,000; clk may be faster
-	// than 80 MHz.
+	// 12.5 ns that sets Done and starts again at 80,000.  clk need not be
+	// 80 MHz: in each clock the counter goes on by as many periods as have
+	// passed, which is none, one or two for a clk of 40 MHz or more.
 	reg  [16:0] rtc;
 	reg  [17:0] part;
 	wire [17:0] part_up = part + 18'd80000;
 	wire        tick = (part_up >= CLOCKS_PER_MS);
+	wire        tick2 = (part_up >= 2 * CLOCKS_PER_MS);
+	wire [16:0] rtc_up = rtc + (tick2 ? 17'd2 : 17'd1);
 
 	// ---- channel 5: Buffer Memory
 	localparam M_IDLE = 3'd0, M_WORD = 3'd1, M_PARCEL = 3'd2, M_LAST = 3'd3, M_WAIT = 3'd4;
@@ -236,10 +239,10 @@ module iop #(
 		request      <= lowest;
 
 		// the clock
-		part <= tick ? (part_up - CLOCKS_PER_MS) : part_up;
+		part <= tick2 ? (part_up - 2 * CLOCKS_PER_MS) : tick ? (part_up - CLOCKS_PER_MS) : part_up;
 		if (tick) begin
-			rtc <= (rtc == 17'd79999) ? 17'd0 : (rtc + 17'd1);
-			if (rtc == 17'd79999) clock_done <= 1'b1;
+			rtc <= (rtc_up >= 17'd80000) ? (rtc_up - 17'd80000) : rtc_up;
+			if (rtc_up >= 17'd80000) clock_done <= 1'b1;
 		end
 
 		if (i_master_clear) begin

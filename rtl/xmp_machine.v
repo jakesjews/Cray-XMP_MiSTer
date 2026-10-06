@@ -16,7 +16,7 @@
 // tape and the disk of the Peripheral Expander, and the nine disk drives.
 
 module xmp_machine #(
-	parameter CLOCKS_PER_MS  = 81667,  // of clk
+	parameter CLOCKS_PER_MS  = 73500,  // of clk
 	parameter EXPANDER_DELAY = 82,
 	parameter DISK_SETTLE    = 200
 ) (

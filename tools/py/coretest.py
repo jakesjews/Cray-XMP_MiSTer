@@ -5,6 +5,7 @@
     coretest.py nofile
     coretest.py boot [SYSTEM]
     coretest.py start [SYSTEM]
+    coretest.py restart [SYSTEM]
 
 screens checks the core's terminal (rtl/terminal/term_ampex.v) against the
 reference model's: random character streams, CASES of them (default 400), and
@@ -25,8 +26,13 @@ start goes on from the date and the time: START COS_117 DEADSTART on the serial
 port, STATION when COS has been started, then F2 and LOGON on the keyboard.
 The run ends when the station shows the banner of COS.  About four minutes.
 
+restart starts COS the same way and presses the menu's reset when the kernel
+reports START COMPLETE, with the CPU running.  The kernel has to come up again
+and ask for the date, and the CPU has to wait.  About three minutes.
+
 Each run also compares the two screens in the core with what the serial port
-carried.  Needs make tools and make -C sim core ampex.
+carried, and fails if the CPU runs before START has been typed.  Needs make
+tools and make -C sim core ampex.
 """
 import os
 import subprocess
@@ -93,6 +99,13 @@ def start(system):
     return report(run(cmd), ['MFINIT: COMPLETE', 'CPU <-> MIOP LINKAGE COMPLETE', 'START COMPLETE', '>LOGON', 'the text was shown'])
 
 
+def restart(system):
+    cmd = [boot_file(system), '--disk', '0=' + os.path.join(system, 'exp_disk.img')] + DATE
+    cmd += ['--type', '10/05/89  01:02:03=START COS_117 DEADSTART\\r', '--reset-on', 'START COMPLETE',
+            '--until', 'ENTER DATE [MM/DD/YY]', '--ms', '9000']
+    return report(run(cmd), ['START COMPLETE', 'the text was shown'])
+
+
 def main():
     a = sys.argv[1:]
     os.makedirs(OUT, exist_ok=True)
@@ -101,8 +114,8 @@ def main():
         ok = screens(int(a[1]) if len(a) > 1 else 1, int(a[2]) if len(a) > 2 else 400)
     elif a == ['nofile']:
         ok = nofile()
-    elif a and a[0] in ('boot', 'start'):
-        ok = (boot if a[0] == 'boot' else start)(a[1] if len(a) > 1 else system)
+    elif a and a[0] in ('boot', 'start', 'restart'):
+        ok = {'boot': boot, 'start': start, 'restart': restart}[a[0]](a[1] if len(a) > 1 else system)
     else:
         sys.exit(__doc__)
     sys.exit(0 if ok else 1)

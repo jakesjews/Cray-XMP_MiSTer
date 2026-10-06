@@ -18,8 +18,8 @@
                                   Processor follows the kernel's boot step by step,
                                   the I/O Subsystem boots it, the whole machine
                                   loads and starts COS, and the X-MP core boots the
-                                  kernel, is reset, and starts COS with the station
-                                  logged on
+                                  kernel, is reset, starts COS with the station
+                                  logged on, and is reset with the CPU running
 
 Needs the host tools (make tools) and the simulations (make sim).  Programs are
 compared with the reference model by difftest.py; see docs/DEVELOPMENT.md.
@@ -136,6 +136,7 @@ def main():
             ok &= step('CPU and I/O Subsystem: COS is loaded and started', [PY, IOP, 'machine', SYSTEM, '--start'])
             ok &= step('X-MP core: the kernel boots, and again after a reset', [PY, CORE, 'boot', SYSTEM])
             ok &= step('X-MP core: COS is started and the station logs on', [PY, CORE, 'start', SYSTEM])
+            ok &= step('X-MP core: a reset under a running CPU', [PY, CORE, 'restart', SYSTEM])
     print('ALL PASSED' if ok else 'FAILED')
     sys.exit(0 if ok else 1)
 

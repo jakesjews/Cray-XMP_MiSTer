@@ -148,7 +148,7 @@ int main(int argc, char **argv) {
             }
             std::string wait = t.substr(0, eq);
             int c = on_console(wait);
-            long delay = wait.size() > 1 && wait[0] == '+' ? atol(wait.c_str() + 1) * 81667 : 0;
+            long delay = wait.size() > 1 && wait[0] == '+' ? atol(wait.c_str() + 1) * 73500 : 0;
             typing.push_back({c, a == "--press", squeeze(wait), keys, delay});
         }
         else if (a == "--ms") ms = atol(next().c_str());
@@ -215,7 +215,7 @@ int main(int argc, char **argv) {
     top->DDRAM_BUSY = 0;
     top->DDRAM_DOUT_READY = 0;
     double cpu_acc = 0;
-    const double cpu_ratio = 81.67 / 29.4;       // machine clock cycles per video clock cycle
+    const double cpu_ratio = 73.5 / 29.4;       // machine clock cycles per video clock cycle
 
     std::string console[2];              // what the serial port carried: 0 the operator's console, 1 the station
     size_t seen = 0, printed = 0, typed_from[2] = {0, 0};
@@ -226,7 +226,7 @@ int main(int argc, char **argv) {
     bool start_typed = false, ran_early = false;
     size_t start_looked = 0;
     long light_fades = 0;                // clocks the activity light may still be on after a reset
-    const long limit = ms * 81667;
+    const long limit = ms * 73500;
     long ending = -1;                    // the run is over: clocks left to let the screens settle
 
     for (long t = 0; !Verilated::gotFinish(); t++) {
@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
             }
         }
         if (light_fades > 0) light_fades -= 3;
-        if (top->LED_USER && !start_typed && !ran_early && light_fades <= 0) { ran_early = true; printf("\nthe CPU runs at %.3f s, before START has been typed\n", clocks / 81667e3); }
+        if (top->LED_USER && !start_typed && !ran_early && light_fades <= 0) { ran_early = true; printf("\nthe CPU runs at %.3f s, before START has been typed\n", clocks / 73500e3); }
         if (!quiet && console[0].size() > printed) {
             for (; printed < console[0].size(); printed++) { char c = console[0][printed]; if (c == '\n' || (c >= 0x20 && c < 0x7F)) putchar(c); }
             fflush(stdout);
@@ -292,7 +292,7 @@ int main(int argc, char **argv) {
             r->emu__DOT__hps_io__DOT__sim_sd_buff_wr = disks.buff_wr;
 
             // the menu's reset: everything the consoles showed is gone
-            if (reset_at >= 0 && clocks == reset_at * 81667) { r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u; reset_left = 2000; }
+            if (reset_at >= 0 && clocks == reset_at * 73500) { r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u; reset_left = 2000; }
             if (reset_left > 0 && --reset_left == 0) {
                 r->emu__DOT__hps_io__DOT__sim_status[0] &= ~1u;
                 for (int c = 0; c < 2; c++) { console[c].clear(); typed_from[c] = 0; }
@@ -365,7 +365,7 @@ int main(int argc, char **argv) {
     for (int c : screens) printf("\n---- %s\n%s----\n", c ? "station" : "operator's console", screen(console[c]).c_str());
     if (!frame.empty()) vid.write_ppm(frame.c_str());
     printf("\n%.3f s of machine time; memory: %llu reads, %llu writes%s; disk requests: %ld read, %ld written; %d frames (%ld lines, hsync every %ld pixels)\n",
-           clocks / 81667e3, (unsigned long long)ram.reads, (unsigned long long)ram.writes, ram.bad_access ? ", BAD DDR3 ACCESS" : "",
+           clocks / 73500e3, (unsigned long long)ram.reads, (unsigned long long)ram.writes, ram.bad_access ? ", BAD DDR3 ACCESS" : "",
            disks.reads, disks.writes, vid.frames, vid.last_lines, vid.hs_period);
     bool ok = (until.empty() || shown) && screens_right && !ram.bad_access && !ran_early;
     if (!until.empty()) printf("%s\n", shown ? "the text was shown" : "the text was NOT shown");

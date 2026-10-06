@@ -266,6 +266,7 @@ module ios #(
 	ios_link mainframe (
 		.clk               (clk),
 		.rst               (master_clear[0]),
+		.i_power_on        (rst),
 		.i_in              (strobe[0] && (number[5:0] == CIA)),
 		.i_out             (strobe[0] && (number[5:0] == COA)),
 		.i_function        (fn[3:0]),

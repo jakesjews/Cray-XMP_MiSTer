@@ -28,7 +28,8 @@
 
 module ios_link (
 	input wire clk,
-	input wire rst,  // Master Clear of the MIOP
+	input wire rst,        // Master Clear of the MIOP
+	input wire i_power_on, // the machine is switched on or reset as a whole
 
 	input  wire        i_in,        // one clock: a function for CIA
 	input  wire        i_out,       // one clock: a function for COA
@@ -217,9 +218,13 @@ module ios_link (
 					default: ;
 				endcase
 		end
+
+		// CPU Master Clear holds the mainframe from power-on.  A Master Clear of
+		// the MIOP alone leaves the lines as they are, so that the kernel can be
+		// started again under a running mainframe.
+		if (i_power_on) {clear_cpu, clear_io, hold} <= 3'b100;
 	end
 
-	// CPU Master Clear holds the mainframe from power-on
 	initial {clear_cpu, clear_io, hold} = 3'b100;
 
 endmodule
