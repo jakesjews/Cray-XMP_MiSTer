@@ -18,11 +18,14 @@
 //               10 write, 20 format, 120 return to cylinder 0) B is the Local
 //               Memory address.  A sector is 256 parcels.
 //   17  printer A is a command that Pulse runs: 0 new page, 3 new line, 6 take
-//               the interrupt request back.  B is a count of parcels,
-//               negative; writing a Local Memory address to C prints that
-//               many parcels from there, two characters each.  What is
-//               printed leaves here a character at a time, a form feed for a
-//               new page and a line feed for a new line.
+//               the interrupt request back, 1 graphics mode, 4 text mode.
+//               B is a count of parcels, negative; writing a Local Memory
+//               address to C prints that many parcels from there, two
+//               characters each.  In graphics mode a parcel is sixteen dots
+//               of a row of 1,056; a character stands for eight of them, X
+//               if any is set, so that a row is as wide as a line of text.
+//               What is printed leaves here a character at a time, a form
+//               feed for a new page and a line feed for a new line.
 //
 // The tape is a file in .tap form in a memory of 64-bit words, the first byte
 // of the file in bits 63 to 56 of word 0: a record is its length in bytes (4
@@ -100,6 +103,7 @@ module ios_expander #(
 	reg [15:0] p_a, p_b, p_at, p_status;
 	reg p_busy, p_done, p_int;
 	reg p_wait, p_text;  // something to print waits for the tape and the disk: parcels, or one character
+	reg       p_graphics;  // the parcels are dots
 	reg [7:0] p_low;
 
 	wire sel_printer = (address == PRINTER);
@@ -207,6 +211,7 @@ module ios_expander #(
 			{d_busy, d_done, d_int} <= 3'b0;
 			{p_busy, p_done, p_int} <= 3'b0;
 			p_wait                  <= 1'b0;
+			p_graphics              <= 1'b0;
 			o_print_valid           <= 1'b0;
 			t_pos                   <= 24'd0;
 			t_state                 <= 2'd0;
@@ -290,6 +295,7 @@ module ios_expander #(
 									{p_busy, p_done} <= 2'b10;
 								end else begin
 									if (p_a == 16'd6) p_int <= 1'b0;
+									if ((p_a == 16'd1) || (p_a == 16'd4)) p_graphics <= (p_a == 16'd1);
 									p_done   <= 1'b1;
 									p_status <= 16'd0;
 								end
@@ -531,9 +537,9 @@ module ios_expander #(
 					x         <= X_P_GOT;
 				end
 				X_P_GOT: begin
-					o_print       <= i_dma_rdata[15:8];
+					o_print       <= !p_graphics ? i_dma_rdata[15:8] : (i_dma_rdata[15:8] != 8'd0) ? "X" : " ";
 					o_print_valid <= 1'b1;
-					p_low         <= i_dma_rdata[7:0];
+					p_low         <= !p_graphics ? i_dma_rdata[7:0] : (i_dma_rdata[7:0] != 8'd0) ? "X" : " ";
 					p_at          <= p_at + 16'd1;
 					p_b           <= p_b + 16'd1;
 					x             <= X_P_HIGH;

@@ -194,10 +194,11 @@ def selftest():
         lines = [line.strip() for line in hardware.splitlines()]
         shown = [line for line in lines if len(line) <= 5 and ':' in line]
         shown += [line.split(': ', 1)[1] for line in lines if line.startswith('console of the ') and ': ' in line]
-        # what the printer was given: a new page, six characters, a new line
-        said += [line.strip() for line in model.splitlines() if line.startswith('<0c>')]
-        shown += [line[9:].replace('<nl>', '') for line in lines if line.startswith('printed: ')]
-        want = ['0:OK', '1:OK', '3:OK', '<0c>PRINT!']
+        # what the printer printed: a new page, six characters, dots, two characters
+        if '---- printer at' in model:
+            said.append(model.split('---- printer at', 1)[1].split('\n', 1)[1].split('\n----', 1)[0].replace('\n', '<nl>'))
+        shown += [line[len('printed: '):] for line in hardware.splitlines() if line.startswith('printed: ')]
+        want = ['0:OK', '1:OK', '3:OK', '<0c>PRINT!<nl> XX <nl>PR<nl>']
         if cpu:
             said += ['held' if line.rstrip().endswith(', held') else 'running' for line in summary.splitlines() if line.strip().startswith('CPU:')]
             shown += ['held' if 'is held by Master Clear' in line else 'running' for line in lines if line.startswith('the CPU ran for')]

@@ -108,10 +108,10 @@ def printer():
     # the program also wants three keys, which come in one burst on the serial port
     r = run([boot, '--ms', '330', '--screen', '2', '--printed', '5', '--printer', printed, '--type', '+1=AB\\r', '--burst'])
     # a new page is an empty line on the screen, under the line the cursor was on
-    ok = report(r, ['0:OK', "---- printer's screen\n\n\nPRINT!\n"])
+    ok = report(r, ['0:OK', "---- printer's screen\n\n\nPRINT!\n XX\nPR\n"])
     text = open(printed, 'rb').read() if os.path.exists(printed) else b''
-    # the earlier session's blocks as they were, then the page, the text and the line, and blanks up to the block's end
-    want = text[:2560] == bytes(10 if n % 64 == 63 else 46 for n in range(2560)) and text[2560:].rstrip(b' ') == b'\x0cPRINT!\n'
+    # the earlier session's blocks as they were, then what was printed, and blanks up to the block's end
+    want = text[:2560] == bytes(10 if n % 64 == 63 else 46 for n in range(2560)) and text[2560:].rstrip(b' ') == b'\x0cPRINT!\n XX \nPR\n'
     if not want:
         print('FAIL: the printer\'s file holds %r behind the earlier blocks' % text[2560:2600])
     return ok and want

@@ -34,6 +34,7 @@ import time
 BASE = 0x30000000
 SPAN = 80 << 20           # central memory, Buffer Memory and the boot file
 TTY = '/dev/ttyS1'
+KEPT = '/tmp/xmp_console.raw'     # what the serial port has carried since the machine was started
 
 
 def mem():
@@ -292,9 +293,14 @@ def cmd_session(args):
     BREAK, which starts the machine again.  What the operator's console prints
     is copied to the output as it comes; --screen prints a console's 24 lines
     at the end (0 the station, 3 the operator's).  Exit status 1 if the text of
-    --until did not come."""
+    --until did not come.
+
+    The station sends only the characters of a display that differ from what
+    is on the screen, so a session has to know what the screens showed before
+    it: everything the port carries is kept in /tmp/xmp_console.raw from one
+    session to the next.  --fresh (and --break) starts from empty screens."""
     seconds = float(args[0])
-    typing, screens, until, gap, raw_file, do_break = [], [], None, 0.004, None, False
+    typing, screens, until, gap, raw_file, do_break, fresh = [], [], None, 0.004, None, False, False
 
     def on_console(text):
         if text[:1] == '@' and text[2:3] == ':':
@@ -307,6 +313,8 @@ def cmd_session(args):
         i += 1
         if a == '--break':
             do_break = True
+        elif a == '--fresh':
+            fresh = True
         elif a == '--type':
             wait, keys = args[i].split('=', 1)
             c, wait = on_console(wait)
@@ -337,7 +345,14 @@ def cmd_session(args):
         fcntl.ioctl(fd, TIOCCBRK)
     console = [bytearray(), bytearray()]
     screen = [Ampex(), Ampex()]
-    before = [b'', b'']             # the screens at the last keys, without blanks
+    # what the screens showed when the session before this one ended
+    if do_break or fresh:
+        open(KEPT, 'wb').close()
+    elif os.path.exists(KEPT):
+        for b in open(KEPT, 'rb').read():
+            screen[b >> 7].put(b)
+    # the screens at the last keys, without blanks: what is on them now is not news
+    before = [squeeze(screen[n].text().encode()) for n in range(2)]
     raw = bytearray()
     typed_from = [0, 0]
 
@@ -387,6 +402,8 @@ def cmd_session(args):
                 console[b >> 7].append(b & 0x7F)
                 screen[b >> 7].put(b)
     os.close(fd)
+    with open(KEPT, 'ab') as kept:
+        kept.write(raw)
     if raw_file:
         open(raw_file, 'wb').write(raw)
     for c in screens:

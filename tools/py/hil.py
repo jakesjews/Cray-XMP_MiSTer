@@ -134,7 +134,8 @@ def cmd_start(args):
            '<file delay="1" type="f" index="1" path="boot.ios"/></mistergamedescription>')
     ssh("cat > %s <<'EOF'\n%s\nEOF" % (MGL, mgl))
     ssh("test -f %s/printer.txt || %s" % (GAMES, NEW_PRINTER))
-    run_session(seconds, args, 'echo load_core %s > /dev/MiSTer_cmd' % MGL)
+    # the screens are empty when the core starts
+    run_session(seconds, ['--fresh'] + args, 'echo load_core %s > /dev/MiSTer_cmd' % MGL)
 
 
 def cmd_printed(args):

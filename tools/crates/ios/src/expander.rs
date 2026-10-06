@@ -230,15 +230,18 @@ impl Disk {
     }
 }
 
-/// The printer.  A command in A is run by Pulse; B is the count, negative,
-/// and writing the Local Memory address to C prints, two characters to a
-/// parcel.
+/// The printer, which is a plotter too.  A command in A is run by Pulse; B
+/// is the count, negative, and writing the Local Memory address to C prints,
+/// two characters to a parcel.  In graphics mode a parcel is sixteen dots of
+/// a row of 1,056; here a character stands for eight of them, `X` if any is
+/// set, so that a row is as wide as a line of text.
 #[derive(Default)]
 struct Printer {
     unit: Unit,
     a: u16,
     b: u16,
     status: u16,
+    graphics: bool,
     text: Vec<u8>,
 }
 
@@ -247,7 +250,13 @@ const PRINTER_DONE: u16 = 0x4000;
 impl Printer {
     fn doc(&mut self, mem: &[u16], mut address: u16) {
         while self.b != 0 {
-            self.text.extend(mem[address as usize].to_be_bytes());
+            let bytes = mem[address as usize].to_be_bytes();
+            if self.graphics {
+                self.text
+                    .extend(bytes.map(|dots| if dots != 0 { b'X' } else { b' ' }));
+            } else {
+                self.text.extend(bytes);
+            }
             address = address.wrapping_add(1);
             self.b = self.b.wrapping_add(1);
         }
@@ -269,6 +278,11 @@ impl Printer {
             }
             6 => {
                 self.unit.interrupt = false;
+                self.status = 0;
+            }
+            // graphics mode and text mode
+            1 | 4 => {
+                self.graphics = self.a == 1;
                 self.status = 0;
             }
             _ => self.status = 0,
@@ -419,6 +433,7 @@ impl Expander {
         self.tape.unit = Unit::default();
         self.disk.unit = Unit::default();
         self.printer.unit = Unit::default();
+        self.printer.graphics = false;
         if let Some(clock) = &mut self.clock {
             clock.interrupt = [false; 2];
             clock.announce = None;

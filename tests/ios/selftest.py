@@ -17,7 +17,8 @@ not depend on:
   4. it writes two sectors to the expander's disk, reads them back to another
      place under another name for the same sectors, and finds them the same;
      the drive's interrupt request obeys the mask and the interrupt mode;
-     and it prints a new page, six characters and a new line
+     and it prints a new page, six characters and a new line, then two
+     parcels of dots in graphics mode and two characters in text mode again
   5. the MIOP starts the BIOP and the XIOP as the kernel does, telling each
      who it is through a parcel it changes in Buffer Memory
   6. the BIOP tries its first disk drive: the buffer echo, the Status
@@ -137,7 +138,8 @@ MAINFRAME = {0o00: 0x0000000040000000, 0o02: 0x0000FFFFE1000000, 0o05: 0x0000FFF
 MAINFRAME_WORDS = 0o44
 TAKEN = 0x5000                          # where the MIOP puts the mainframe's parcels
 PRINTER, TAPE, DISK = 0o17, 0o22, 0o60          # addresses on the Peripheral Expander
-PRINTED = b'\x0cPRINT!\n'       # what the printer is given
+PRINTED = b'\x0cPRINT!\n XX \nPR\n'   # what the printer prints: a page, a line, four times eight dots, two characters
+DOTS = (0x00FF, 0x1200)                 # the dots: none, some, some, none
 # the tape: a record of 300 bytes, one of 5, a file mark
 RECORD = bytes((7 * n + 3) & 0xFF for n in range(300))
 SHORT = bytes([1, 2, 3, 4, 5])
@@ -398,6 +400,9 @@ def program(cpu):
     p.label('text')
     for at in range(1, 7, 2):
         p.word(PRINTED[at] << 8 | PRINTED[at + 1])
+    p.label('dots')
+    for parcel in DOTS:
+        p.word(parcel)
     p.label('text_end')
     exb(5, PRINTER)
     exb(0o14, 0)
@@ -413,6 +418,18 @@ def program(cpu):
     exb(0o17, 4)
     finished('E')
     exb(0o17, 2)
+    for mode, data, parcels in ((1, 'dots', len(DOTS)), (4, 'text', 1)):
+        exb(0o14, mode)                  # graphics mode, then text mode again
+        exb(0o17, 4)
+        exb(0o15, 0x10000 - parcels)
+        p.ink(0o014, data)
+        exb(0o16)
+        finished('E')
+        exb(0o17, 2)
+        exb(0o14, 3)
+        exb(0o17, 4)
+        finished('E')
+        exb(0o17, 2)
     exb(0)
 
     # ---- 5. start the BIOP (output channel 7) and the XIOP (output channel 13)
