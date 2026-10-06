@@ -26,7 +26,8 @@
 //
 // Built with XMP_MACHINE the hardware is the whole machine (rtl/xmp_machine.v):
 // the CPU as well, with central memory served to it here.
-// The CPU must not run before START has been typed on the operator's console.
+// The CPU must not run before START has been typed on the operator's console,
+// unless --cpu-may-run says that the program in the kernel's place starts it.
 // Exit status: 0 if TEXT was shown (or none was asked for), 1 if not.
 #ifdef XMP_MACHINE
 #include "Vxmp_machine.h"
@@ -54,7 +55,7 @@ int main(int argc, char **argv) {
     std::vector<std::string> files;
     std::string until;
     long ms = 20000;
-    bool quiet = false, quick = false;
+    bool quiet = false, quick = false, cpu_may_run = false;
     std::vector<std::pair<unsigned, unsigned>> pokes;
     struct Typing { int console; std::string wait, keys; long delay; };
     std::vector<Typing> typing;
@@ -82,6 +83,7 @@ int main(int argc, char **argv) {
         else if (a == "--ms") ms = atol(next().c_str());
         else if (a == "--quiet") quiet = true;
         else if (a == "--quick") quick = true;
+        else if (a == "--cpu-may-run") cpu_may_run = true;
         else if (a == "--drive") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) drive_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a == "--poke") { unsigned p = 0, v = 0; sscanf(next().c_str(), "%x=%x", &p, &v); pokes.push_back({p, v}); }
         else files.push_back(a);
@@ -210,7 +212,7 @@ int main(int argc, char **argv) {
         cpu_clocks += !top->o_cpu_held;
         if (console[3].size() != start_looked) { start_looked = console[3].size(); start_typed = squeeze(console[3]).find("STARTCOS") != std::string::npos; }
         // (not looked at in the first clocks, while the reset takes hold)
-        if (!top->o_cpu_held && !start_typed && !ran_early && clocks > 100) { ran_early = true; printf("\nthe CPU runs at %.3f s, before START has been typed\n", clocks / 8e7); }
+        if (!top->o_cpu_held && !start_typed && !ran_early && !cpu_may_run && clocks > 100) { ran_early = true; printf("\nthe CPU runs at %.3f s, before START has been typed\n", clocks / 8e7); }
 #endif
         top->eval();
         for (int g = 0; g < 3; g++) steps[g] += top->o_step >> g & 1;

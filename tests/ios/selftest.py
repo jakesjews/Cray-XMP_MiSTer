@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write a self-checking program for the I/O Processors.
 
-    selftest.py DIRECTORY
+    selftest.py DIRECTORY [--cpu]
 
 The program takes the place of the I/O Subsystem kernel: DIRECTORY gets the
 files cray1-sys and sim/build/ios/Vios_core read (the program as the kernel,
@@ -26,6 +26,13 @@ not depend on:
      reads them back
   7. every processor sends a word of its own to each of the others, and
      each word arrives where it should and is seen to be taken
+  8. with --cpu, for a machine that has the mainframe: the BIOP puts a
+     program into central memory and the MIOP lets the CPU go.  The program
+     offers sixteen parcels on the CPU's output channel 11 and takes parcels
+     on its input channel 10.  The MIOP takes eight, the first of which has
+     waited for it, and sends four without a Disconnect, so that the CPU's
+     channel goes on waiting; then it raises I/O Master Clear alone, after
+     which nothing may pass either way; and it holds the CPU again
 
 Each processor then writes its number and OK on its console (channel 47 on
 the MIOP, 43 on the others), or F and a letter: C clock, P Q R priority,
@@ -34,7 +41,8 @@ B wrong address after the read, X what was read is not what was written,
 E the printer did not finish,
 I J K M N the interrupt request of the disk, p to z the BIOP's drive and
 its channel into central memory, L no word came, D wrong word, T a word was
-not taken.
+not taken, G no parcels from the mainframe, H not the parcels it sent, O it
+took none, U V parcels passed after I/O Master Clear.
 """
 import os
 import sys
@@ -101,6 +109,27 @@ WHO = 4          # the parcel that tells a processor its number; word 1 of Buffe
 R_WHO, R_AT, R_CONSOLE, R_COUNT, R_WORD, R_TABLE, R_EXPECT, R_SLOT, R_FROM, R_TO = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 CLOCK, MOS, EXB = 4, 5, 0o17
 HIA, HOA, DRIVE = 0o14, 0o15, 0o20      # channels of the BIOP
+CIA, COA = 0o20, 0o21                   # the MIOP's channels to the mainframe
+# The mainframe's program, words 0 to 43 octal of central memory: the exchange
+# package of a CPU with the X-MP features (P = parcel 100, monitor mode, the
+# largest fields), at word 20
+#          A1  10       the input channel takes words 50 to 57
+#          A2  50
+#          A3  60
+#          CL,A1 A3
+#          CA,A1 A2
+#          A1  11       the output channel sends words 40 to 43
+#          A2  40
+#          A3  44
+#          CL,A1 A3
+#          CA,A1 A2
+#   HERE   J   HERE
+# and at word 40 what it sends.
+MAINFRAME = {0o00: 0x0000000040000000, 0o02: 0x0000FFFFE1000000, 0o05: 0x0000FFFFE0000000,
+             0o20: 0x244824A824F0024B, 0o21: 0x020A244924A024E4, 0o22: 0x024B020A0C00004A,
+             0o40: 0x14E5DC14E5DC14E5, 0o41: 0x924A4926DB72492D, 0o42: 0x71C71C71C71C71C7, 0o43: 0xFFFF00007FFF8000}
+MAINFRAME_WORDS = 0o44
+TAKEN = 0x5000                          # where the MIOP puts the mainframe's parcels
 PRINTER, TAPE, DISK = 0o17, 0o22, 0o60          # addresses on the Peripheral Expander
 PRINTED = b'\x0cPRINT!\n'       # what the printer is given
 # the tape: a record of 300 bytes, one of 5, a file mark
@@ -109,7 +138,7 @@ SHORT = bytes([1, 2, 3, 4, 5])
 WRITTEN, READ, PARCELS = 0x2000, 0x3000, 512
 
 
-def program():
+def program(cpu):
     p = Program()
     n = [0]
 
@@ -530,6 +559,19 @@ def program():
     central(HOA, 0, WRITTEN + 16, 5, 'w')
     central(HIA, 2, READ + 0x800, 4, 'x')
     compare(WRITTEN, READ + 0x800, 16, 'z')
+    if cpu:
+        # the mainframe's program, to the start of central memory
+        p.fn(HOA, 0)
+        p.a(0)
+        p.fn(HOA, 3)
+        p.a(0)
+        p.fn(HOA, 2)
+        p.ink(0o014, 'mainframe')
+        p.fn(HOA, 1)
+        p.a(MAINFRAME_WORDS)
+        p.fn(HOA, 5)
+        wait_done(HOA, 'w')
+        p.fn(HOA, 0)
     # the output channel does not read, and the input channel does not write
     for channel, function in ((HOA, 4), (HIA, 5)):
         p.a(4)
@@ -575,6 +617,73 @@ def program():
         wait_done(7 + 2 * slot, 'T')     # and the word we sent that way was taken
         p.label(skip)
 
+    # ---- 8. the mainframe, from the MIOP.  The BIOP's word has come, so its
+    # program is in central memory.
+    def pause():
+        loop = fresh('pause')
+        p.a(4000)
+        p.label(loop)
+        p.ins(0o013, 1)
+        p.jump_if('A#0', loop)
+
+    def transfer(channel, address, parcels):
+        p.fn(channel, 0)
+        p.a(parcels)
+        p.fn(channel, 2)
+        if isinstance(address, str):
+            p.ink(0o014, address)
+        else:
+            p.a(address)
+        p.fn(channel, 1)
+
+    def quiet(channel, failure):
+        still = fresh('still')
+        p.ins(0o040, channel)
+        p.jump_if('C=0', still)
+        p.a(ord(failure))
+        p.jump('fail')
+        p.label(still)
+
+    if cpu:
+        p.ins(0o020, R_WHO)
+        p.jump_if('A#0', 'no_mainframe')
+        # both Master Clears, the CPU's alone, none: it starts.  COA is to hold its
+        # Disconnect, or the CPU's input channel would stop after the first parcels.
+        for lines in (0xC000, 0x8000, 0x0200):
+            p.a(lines)
+            p.fn(COA, 4)
+        pause()                              # by now its first parcel waits at CIA
+        transfer(CIA, TAKEN, 8)
+        wait_done(CIA, 'G')
+        sent = [MAINFRAME[0o40 + k // 4] >> (48 - 16 * (k % 4)) & 0xFFFF for k in range(16)]
+        for k in range(8):
+            p.a(TAKEN + k)
+            p.ins(0o024, R_FROM)
+            p.ins(0o030, R_FROM)
+            if sent[k]:
+                p.ink(0o017, sent[k])
+            ok = fresh('sent')
+            p.jump_if('A=0', ok)
+            p.a(ord('H'))
+            p.jump('fail')
+            p.label(ok)
+        transfer(COA, 'mainframe', 4)
+        wait_done(COA, 'O')
+        p.a(0x4200)                          # I/O Master Clear alone
+        p.fn(COA, 4)
+        p.a(0x0200)
+        p.fn(COA, 4)
+        transfer(COA, 'mainframe', 4)
+        transfer(CIA, TAKEN + 16, 8)
+        pause()
+        quiet(COA, 'U')
+        quiet(CIA, 'V')
+        p.fn(COA, 0)
+        p.fn(CIA, 0)
+        p.a(0x8000)                          # the CPU is held again
+        p.fn(COA, 4)
+        p.label('no_mainframe')
+
     def put():
         """Send the character in A to the console and wait until it is out."""
         wait = fresh('out')
@@ -605,16 +714,26 @@ def program():
     for row in ((0xA010, 0, 0xA030), (0xA000, 0, 0xA031), (0, 0, 0), (0xA002, 0xA012, 0)):
         for value in row:
             p.word(value)
+    if cpu:
+        # the 100 Mbyte channel takes whole words from an address that is a multiple of four
+        while p.size() % 4:
+            p.word(0)
+        p.label('mainframe')
+        for word in range(MAINFRAME_WORDS):
+            for k in range(4):
+                p.word(MAINFRAME.get(word, 0) >> (48 - 16 * k) & 0xFFFF)
     return p.assemble()
 
 
 def main():
-    if len(sys.argv) != 2:
+    cpu = '--cpu' in sys.argv
+    names = [a for a in sys.argv[1:] if a != '--cpu']
+    if len(names) != 1:
         sys.exit(__doc__)
-    out = sys.argv[1]
+    out = names[0]
     os.makedirs(os.path.join(out, 'target/cos_117'), exist_ok=True)
     with open(os.path.join(out, 'target/cos_117/iop_kern.bin'), 'wb') as f:
-        for parcel in program():
+        for parcel in program(cpu):
             f.write(bytes([parcel >> 8, parcel & 0xFF]))
     # the tape, and a disk with nothing on it
     with open(os.path.join(out, 'boot_tape.tap'), 'wb') as f:

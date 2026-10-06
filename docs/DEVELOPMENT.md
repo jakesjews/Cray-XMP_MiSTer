@@ -247,7 +247,10 @@ python3 tools/py/ioptest.py kernel         # the real kernel's boot on each of t
   interrupt are reported, the expander's tape and disk, a drive of the BIOP
   and its channel into central memory, that a word from each processor
   reaches each other one, and the printer. Each processor writes its verdict
-  on its console, and what was printed must be the same on both.
+  on its console, and what was printed must be the same on both. A second
+  run is on the whole machine: the program puts a few instructions into
+  central memory, lets the CPU go, exchanges parcels with it over the channel
+  pair and tries I/O Master Clear on its own.
 
 ### The core
 

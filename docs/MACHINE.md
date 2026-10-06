@@ -396,10 +396,11 @@ The I/O Subsystem and the core:
 - Faults were put into the channels, the processors, the devices, the link to
   the mainframe, the terminal and the printer's file, one at a time, to see
   that the tests notice. They found what the tests missed, and the tests were
-  extended until every fault was caught, bar three in the link to the
-  mainframe: two concern the I/O Master Clear line, which the software only
-  ever raises together with the CPU's, and one a parcel that arrives before
-  the MIOP listens, which loading and starting COS does not bring about.
+  extended until every fault was caught. The last were in the link to the
+  mainframe, in what loading and starting COS does not bring about: a parcel
+  that arrives before the MIOP listens, and I/O Master Clear without the
+  CPU's. The self-checking program now starts the CPU on a few instructions
+  of its own for those.
 - On a DE10-Nano the first build booted the kernel, loaded and started COS,
   logged the station on and went through COS's start-up with the nine drives,
   typed on the keyboard and on the serial port.

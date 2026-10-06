@@ -28,7 +28,10 @@ description: the real-time clock, the order in which channels that ask for an
 interrupt are reported, the expander's tape and disk, the start of one
 processor by another, a drive of the BIOP and its channel into central
 memory, a word from each processor to each other one, and the printer.  Both
-must report OK three times and print the same.
+must report OK three times and print the same.  It runs a second time on the
+whole machine, where the program also starts the CPU on a program of a few
+instructions and exchanges parcels with it over the channel pair, to see
+that a parcel that waits is not lost and what I/O Master Clear does.
 
 machine runs the whole machine in hardware description (module xmp_machine: the
 CPU with the X-MP features and the I/O Subsystem) on the same software, without
@@ -170,27 +173,37 @@ def machine(system, start):
 
 
 def selftest():
-    """The self-checking program on the model and on the hardware description."""
-    there = os.path.join(OUT, 'selftest')
-    subprocess.run([sys.executable, os.path.join(ROOT, 'tests/ios/selftest.py'), there], check=True)
-    script = os.path.join(OUT, 'selftest.script')
-    with open(script, 'w') as f:
-        f.write('run 60\nscreen kernel\nscreen 1.1\nscreen 3.1\nprinter\n')
-    model = subprocess.run([SYS, there, '--script', script, '--quiet'], capture_output=True, text=True, errors='replace').stdout
-    said = [line.strip() for line in model.splitlines() if ':' in line and len(line.strip()) <= 5]
-    hardware = subprocess.run([BOOT, os.path.join(there, 'target/cos_117/iop_kern.bin'), os.path.join(there, 'boot_tape.tap'),
-                               '--ms', '60'], capture_output=True, text=True, errors='replace').stdout
-    lines = [line.strip() for line in hardware.splitlines()]
-    shown = [line for line in lines if len(line) <= 5 and ':' in line]
-    shown += [line.split(': ', 1)[1] for line in lines if line.startswith('console of the ') and ': ' in line]
-    # what the printer was given: a new page, six characters, a new line
-    said += [line.strip() for line in model.splitlines() if line.startswith('<0c>')]
-    shown += [line[9:].replace('<nl>', '') for line in lines if line.startswith('printed: ')]
+    """The self-checking program on the model and on the hardware description:
+    the I/O Subsystem alone, and with the mainframe."""
     failed = 0
-    for name, got in (('the model', said), ('the hardware description', shown)):
-        print('%s: %s' % (name, ' '.join(got) or 'nothing'))
-        failed += got != ['0:OK', '1:OK', '3:OK', '<0c>PRINT!']
-    print('2 runs, %d failed' % failed)
+    for cpu in (False, True):
+        there = os.path.join(OUT, 'selftest_cpu' if cpu else 'selftest')
+        subprocess.run([sys.executable, os.path.join(ROOT, 'tests/ios/selftest.py'), there] + (['--cpu'] if cpu else []), check=True)
+        script = os.path.join(OUT, 'selftest.script')
+        with open(script, 'w') as f:
+            f.write('run 80\nscreen kernel\nscreen 1.1\nscreen 3.1\nprinter\n')
+        ran = subprocess.run([SYS, there, '--script', script, '--quiet'], capture_output=True, text=True, errors='replace')
+        model, summary = ran.stdout, ran.stderr
+        said = [line.strip() for line in model.splitlines() if ':' in line and len(line.strip()) <= 5]
+        # with the mainframe the program starts the CPU itself, and holds it again at its end
+        bench = [MACHINE, '--cpu-may-run'] if cpu else [BOOT]
+        hardware = subprocess.run(bench + [os.path.join(there, 'target/cos_117/iop_kern.bin'), os.path.join(there, 'boot_tape.tap'),
+                                           '--ms', '80'], capture_output=True, text=True, errors='replace').stdout
+        lines = [line.strip() for line in hardware.splitlines()]
+        shown = [line for line in lines if len(line) <= 5 and ':' in line]
+        shown += [line.split(': ', 1)[1] for line in lines if line.startswith('console of the ') and ': ' in line]
+        # what the printer was given: a new page, six characters, a new line
+        said += [line.strip() for line in model.splitlines() if line.startswith('<0c>')]
+        shown += [line[9:].replace('<nl>', '') for line in lines if line.startswith('printed: ')]
+        want = ['0:OK', '1:OK', '3:OK', '<0c>PRINT!']
+        if cpu:
+            said += ['held' if line.rstrip().endswith(', held') else 'running' for line in summary.splitlines() if line.strip().startswith('CPU:')]
+            shown += ['held' if 'is held by Master Clear' in line else 'running' for line in lines if line.startswith('the CPU ran for')]
+            want.append('held')
+        for name, got in (('the model', said), ('the hardware description', shown)):
+            print('%s%s: %s' % (name, ', with the mainframe' if cpu else '', ' '.join(got) or 'nothing'))
+            failed += got != want
+    print('4 runs, %d failed' % failed)
     return failed == 0
 
 
