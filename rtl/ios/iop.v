@@ -184,11 +184,15 @@ module iop #(
 	// 12.5 ns that sets Done and starts again at 80,000.  clk need not be
 	// 80 MHz: in each clock the counter goes on by as many periods as have
 	// passed, which is none, one or two for a clk of 40 MHz or more.
-	reg  [16:0] rtc;
-	reg  [17:0] part;
-	wire [17:0] part_up = part + 18'd80000;
-	wire        tick = (part_up >= CLOCKS_PER_MS);
-	wire        tick2 = (part_up >= 2 * CLOCKS_PER_MS);
+	reg [16:0] rtc;
+	localparam [18:0] PER_MS  = CLOCKS_PER_MS;
+	localparam [18:0] PER_2MS = 2 * CLOCKS_PER_MS;
+	reg [17:0] part;
+	wire [18:0] part_up = {1'b0, part} + 19'd80000;
+	wire tick = (part_up >= PER_MS);
+	wire tick2 = (part_up >= PER_2MS);
+	// what is left is less than a millisecond's clocks, so 18 bits hold it
+	wire [17:0] part_left = tick2 ? (part_up[17:0] - PER_2MS[17:0]) : tick ? (part_up[17:0] - PER_MS[17:0]) : part_up[17:0];
 	wire [16:0] rtc_up = rtc + (tick2 ? 17'd2 : 17'd1);
 
 	// ---- channel 5: Buffer Memory
@@ -239,7 +243,7 @@ module iop #(
 		request      <= lowest;
 
 		// the clock
-		part <= tick2 ? (part_up - 2 * CLOCKS_PER_MS) : tick ? (part_up - CLOCKS_PER_MS) : part_up;
+		part <= part_left;
 		if (tick) begin
 			rtc <= (rtc_up >= 17'd80000) ? (rtc_up - 17'd80000) : rtc_up;
 			if (rtc_up >= 17'd80000) clock_done <= 1'b1;

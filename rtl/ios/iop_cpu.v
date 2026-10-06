@@ -5,8 +5,8 @@
 // page numbers; this module does what that one does, instruction for
 // instruction, and sim/harness/iop_main.cpp checks it against a record of the
 // model's steps.  It does not keep the real machine's timing: an instruction
-// takes three clocks, four with an operand in memory, five with a channel
-// outside the processor.
+// takes three clocks, four with an operand in memory, five if it stores
+// there or works a channel outside the processor.
 //
 //   A (16 bits) with the carry C as its bit 2**16; B (9 bits); 512 operand
 //   registers; P; a program exit stack of 16 locations addressed by E; the
@@ -60,6 +60,7 @@ module iop_cpu (
 	S_DECODE = 3'd1,  // the instruction arrives; its operand register is read, and its k
 	S_EXEC = 3'd2,  // most instructions end here
 	S_MEM = 3'd3,  // the operand from memory arrives
+	S_STORE = 3'd7,  // the result goes back to memory, a clock after it was formed
 	S_FLAG = 3'd4,  // the flag of an outside channel
 	S_SEND = 3'd5,  // the function is with an outside channel
 	S_READ = 3'd6;  // what it read
@@ -81,6 +82,7 @@ module iop_cpu (
 
 	reg [15:0] ir;
 	reg [15:0] ea;  // address of the operand in memory
+	reg [15:0] wd;  // what an instruction stores there
 
 	reg [15:0] xs    [ 0:15]  /* verilator public_flat_rw */;
 	(* ramstyle = "no_rw_check" *)
@@ -137,6 +139,12 @@ module iop_cpu (
 			default: ca_op = sum;
 		endcase
 	wire stores = !g_imm && op[2];
+
+	// What goes into an operand register is formed from an operand register,
+	// with an adder of its own: Local Memory is slow to deliver, and the
+	// adder above has it among its operands.
+	wire [15:0] or_sum = add_a[15:0] + or_q;
+	wire [15:0] or_res = (op == 3'd4) ? a : or_sum;
 
 	// carry and accumulator shift as one register of 17 bits; the count is
 	// the low 5 bits of d or B, and a circular shift goes by the count modulo 17
@@ -202,16 +210,18 @@ module iop_cpu (
 
 	// ---- memory
 
-	assign o_mem_wdata = ca_op[15:0];
+	// A result is stored in the clock after the one it is formed in, so that
+	// the way from memory through the adder does not lead back into memory.
+	assign o_mem_wdata = wd;
 	always @(*) begin
 		o_mem_addr = p;
 		o_mem_we   = 1'b0;
 		case (state)
 			S_DECODE: o_mem_addr = p + 16'd1;
 			S_EXEC:   o_mem_addr = or_q;
-			S_MEM: begin
+			S_STORE: begin
 				o_mem_addr = ea;
-				o_mem_we   = stores;
+				o_mem_we   = 1'b1;
 			end
 			default:  ;
 		endcase
@@ -225,9 +235,10 @@ module iop_cpu (
 	reg ends;
 	always @(*)
 		case (state)
-			S_EXEC:                ends = !(g_mem || ((g_flag || g_io) && ch_out));
-			S_MEM, S_FLAG, S_READ: ends = 1'b1;
-			default:               ends = 1'b0;
+			S_EXEC:                  ends = !(g_mem || ((g_flag || g_io) && ch_out));
+			S_MEM:                   ends = !stores;
+			S_STORE, S_FLAG, S_READ: ends = 1'b1;
+			default:                 ends = 1'b0;
 		endcase
 
 	integer n;
@@ -283,7 +294,7 @@ module iop_cpu (
 					end else if (g_shift) {c, a} <= ca_shift;
 					else if (g_imm || g_reg || g_b) begin
 						{c, a} <= ca_op;
-						if (stores && g_reg) or_mem[f[5]?b : d] <= ca_op[15:0];
+						if (stores && g_reg) or_mem[f[5]?b : d] <= or_res;
 						if (stores && g_b) b <= ca_op[8:0];
 					end else if (g_mem) state <= S_MEM;
 					else if (g_branch) begin
@@ -340,8 +351,11 @@ module iop_cpu (
 
 				S_MEM: begin
 					{c, a} <= ca_op;
-					state  <= S_FETCH;
+					wd     <= ca_op[15:0];
+					state  <= stores ? S_STORE : S_FETCH;
 				end
+
+				S_STORE: state <= S_FETCH;
 
 				S_FLAG: begin
 					c     <= f[0] ? i_busy : i_done;
