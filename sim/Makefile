@@ -2,13 +2,24 @@
 ROOT  := $(abspath ..)
 BUILD := $(ROOT)/sim/build
 
-.PHONY: emu cpu cpu-xmp fp iop ios xmp clean
+.PHONY: emu core ampex cpu cpu-xmp fp iop ios xmp clean
 
 # Core-level simulation of the MiSTer wrapper
 emu: $(BUILD)/emu/Vemu
 $(BUILD)/emu/Vemu: $(ROOT)/sim/emu.vc $(wildcard $(ROOT)/sim/harness/*) $(wildcard $(ROOT)/sim/stubs/*) \
                    $(ROOT)/Cray1.sv $(ROOT)/files.qip $(wildcard $(ROOT)/rtl/*.v $(ROOT)/rtl/*.sv $(ROOT)/rtl/*/*.v $(ROOT)/rtl/*/*.sv $(ROOT)/rtl/cray/cray-1x/*.v $(ROOT)/rtl/boot/*.mem)
 	mkdir -p $(BUILD)/emu && cd $(ROOT) && python3 tools/py/qip2vc.py > sim/build/emu.files && verilator -f sim/emu.vc --Mdir $(BUILD)/emu -o Vemu
+
+# Core-level simulation of the CRAY X-MP core
+core: $(BUILD)/core/Vemu
+$(BUILD)/core/Vemu: $(ROOT)/sim/core.vc $(wildcard $(ROOT)/sim/harness/*) $(wildcard $(ROOT)/sim/stubs/*) \
+                    $(ROOT)/CrayXMP.sv $(ROOT)/files_xmp.qip $(wildcard $(ROOT)/rtl/*.v $(ROOT)/rtl/*/*.v $(ROOT)/rtl/*/*.sv $(ROOT)/rtl/cray/cray-1x/*.v)
+	mkdir -p $(BUILD)/core && cd $(ROOT) && python3 tools/py/qip2vc.py files_xmp.qip > sim/build/core.files && verilator -f sim/core.vc --Mdir $(BUILD)/core -o Vemu
+
+# The Ampex terminal against the model's
+ampex: $(BUILD)/ampex/Vterm_ampex_tb
+$(BUILD)/ampex/Vterm_ampex_tb: $(ROOT)/sim/ampex.vc $(ROOT)/sim/harness/ampex_main.cpp $(ROOT)/sim/tb/term_ampex_tb.v $(ROOT)/rtl/terminal/term_ampex.v
+	mkdir -p $(BUILD)/ampex && cd $(ROOT) && verilator -f sim/ampex.vc --Mdir $(BUILD)/ampex -o Vterm_ampex_tb
 
 # CPU-level simulation
 cpu: $(BUILD)/cpu/Vcray_cpu

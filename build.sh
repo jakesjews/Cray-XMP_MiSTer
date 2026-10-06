@@ -1,17 +1,20 @@
 #!/bin/zsh
-# Build the Cray1 MiSTer core with Quartus Prime 17.0 running under CrossOver
-# on macOS.  On Windows or Linux open Cray1.qpf in Quartus instead.
-# Usage: ./build.sh [map|compile|clean]   (default: compile)
+# Build a MiSTer core with Quartus Prime 17.0 running under CrossOver on macOS:
+# Cray1, the CRAY-1, or CrayXMP, the CRAY X-MP with its I/O Subsystem.  On
+# Windows or Linux open Cray1.qpf or CrayXMP.qpf in Quartus instead.
+# Usage: ./build.sh [map|compile|clean] [Cray1|CrayXMP]   (default: compile Cray1)
 #   map     - synthesis only (fast syntax/elaboration check)
-#   compile - full flow (map, fit, asm, sta) -> output_files/Cray1.rbf
+#   compile - full flow (map, fit, asm, sta) -> output_files/<core>.rbf
 set -e
 cd "$(dirname "$0")"
 CX=${CROSSOVER_BIN:-/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin}
 BOTTLE=${QUARTUS_BOTTLE:-Quartus}
 QBIN="C:/intelFPGA_lite/17.0/quartus/bin64"
-PROJ=Cray1
 MODE=${1:-compile}
+PROJ=${2:-Cray1}
+[[ -f $PROJ.qpf ]] || { echo "unknown core $PROJ"; exit 1; }
 LOG=build_${MODE}.log
+[[ $PROJ == Cray1 ]] || LOG=build_${MODE}_${PROJ}.log
 run_q() { "$CX/wine" --bottle "$BOTTLE" --workdir "$PWD" --cx-app "$QBIN/$1" "${@:2}"; }
 
 # quartus_map alone does not run the framework's pre-flow script, so the

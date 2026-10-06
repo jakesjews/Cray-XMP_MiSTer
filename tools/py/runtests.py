@@ -6,7 +6,9 @@
                                   floating-point reference vectors, 200 random programs;
                                   then the X-MP mode: its tests and 100 random programs;
                                   then the I/O Processor: 400 random programs, and
-                                  the self-check of three of them together
+                                  the self-check of three of them together; then
+                                  the X-MP core: its terminal on 400 random screens,
+                                  and its message when no boot file is loaded
     runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
                                   floating-point operation, 10,000 random programs and
                                   2,000 for the X-MP mode; then, if the COS 1.17
@@ -14,8 +16,10 @@
                                   research/Cray 1 Disk Image from Youtube), the system
                                   model dead starts it and runs a job, the I/O
                                   Processor follows the kernel's boot step by step,
-                                  the I/O Subsystem boots it, and the whole machine
-                                  loads and starts COS
+                                  the I/O Subsystem boots it, the whole machine
+                                  loads and starts COS, and the X-MP core boots the
+                                  kernel, is reset, and starts COS with the station
+                                  logged on
 
 Needs the host tools (make tools) and the simulations (make sim).  Programs are
 compared with the reference model by difftest.py; see docs/DEVELOPMENT.md.
@@ -30,6 +34,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 PY = sys.executable
 DIFF = os.path.join(ROOT, 'tools/py/difftest.py')
 IOP = os.path.join(ROOT, 'tools/py/ioptest.py')
+CORE = os.path.join(ROOT, 'tools/py/coretest.py')
 FPBENCH = os.path.join(ROOT, 'sim/build/fp/Vfp_tb')
 SYS = os.path.join(ROOT, 'tools/target/release/cray1-sys')
 SYSTEM = os.environ.get('CRAY1_SYSTEM', os.path.join(ROOT, 'research/Cray 1 Disk Image from Youtube'))
@@ -107,6 +112,8 @@ def main():
     ok &= step('X-MP mode: 100 random programs', [PY, DIFF, 'rand', '1', '100', '-n', '250', '--xmp', '-j', jobs])
     ok &= step('I/O Processor: 400 random programs', [PY, IOP, 'rand', '1', '200', '-j', jobs])
     ok &= step('I/O Processors together: self-check', [PY, IOP, 'selftest'])
+    ok &= step('X-MP core: the terminal on 400 random screens', [PY, CORE, 'screens'])
+    ok &= step('X-MP core: no boot file', [PY, CORE, 'nofile'])
     if a[0] == 'quick':
         ok &= step('200 random programs', [PY, DIFF, 'rand', '1', '200', '-n', '250', '-j', jobs])
     else:
@@ -127,6 +134,8 @@ def main():
             ok &= step('I/O Processor: the kernel boots on each of the three', [PY, IOP, 'kernel', SYSTEM])
             ok &= step('I/O Subsystem: the kernel boots', [PY, IOP, 'boot', SYSTEM])
             ok &= step('CPU and I/O Subsystem: COS is loaded and started', [PY, IOP, 'machine', SYSTEM, '--start'])
+            ok &= step('X-MP core: the kernel boots, and again after a reset', [PY, CORE, 'boot', SYSTEM])
+            ok &= step('X-MP core: COS is started and the station logs on', [PY, CORE, 'start', SYSTEM])
     print('ALL PASSED' if ok else 'FAILED')
     sys.exit(0 if ok else 1)
 

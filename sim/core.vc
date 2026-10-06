@@ -1,0 +1,15 @@
+// Verilator arguments for the core-level simulation of the CRAY X-MP core
+// (module emu of CrayXMP.sv).  The HDL file list comes from files_xmp.qip (see
+// tools/py/qip2vc.py).  A millisecond is 81,667 clocks of the machine, as in
+// the core.
+--cc --exe --build -j 0
+--top-module emu
+-Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-PINMISSING -Wno-DECLFILENAME -Wno-PROCASSINIT -Wno-TIMESCALEMOD
+-Wno-CASEINCOMPLETE -Wno-CASEX -Wno-BLKSEQ -Wno-UNDRIVEN -Wno-EOFNEWLINE -Wno-PINCONNECTEMPTY
+-O3 --x-assign fast --x-initial fast
+-CFLAGS "-O2 -std=c++17"
+-I. -Isim/stubs -Irtl/terminal -Irtl/cray/cray-1x
+sim/stubs/hps_io.sv
+sim/stubs/pll.v
+-f sim/build/core.files
+sim/harness/core_main.cpp

@@ -24,6 +24,7 @@ lint: lint-prepare
 	$(VERILATOR) --lint-only -Wall --top-module cray_cpu -GXMP=1 -f lint/rtl.f
 	$(VERILATOR) --lint-only -Wall --top-module ios lint/exclusions.vlt rtl/ios/iop_cpu.v rtl/ios/iop.v rtl/ios/ios_core.v rtl/ios/ios_console.v rtl/ios/ios_expander.v rtl/ios/ios_link.v rtl/ios/ios_hsp.v rtl/ios/ios_disks.v rtl/ios/ios.v
 	$(VERILATOR) --lint-only -Wall --top-module xmp_machine lint/exclusions.vlt +incdir+rtl/cray/cray-1x -y rtl/cray -y rtl/cray/cray-1x -y rtl/ios rtl/xmp_machine.v
+	$(VERILATOR) --lint-only -Wall --top-module emu -f lint/xmp.f
 
 lint-prepare:
 	@mkdir -p lint/gen
@@ -33,7 +34,7 @@ tools:
 	cargo build --release --examples --bins --manifest-path tools/Cargo.toml
 
 sim:
-	$(MAKE) -C sim cpu cpu-xmp fp emu iop ios xmp
+	$(MAKE) -C sim cpu cpu-xmp fp emu iop ios xmp core ampex
 
 rom: tools
 	@mkdir -p build

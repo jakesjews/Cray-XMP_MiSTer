@@ -65,3 +65,45 @@ struct SectorDisks {
         }
     }
 };
+
+// What a console has been sent, without blanks, control characters and the
+// escape sequences of an Ampex Dialogue 80: for finding a text whatever moved
+// the cursor between its words.
+static std::string squeeze(const std::string &raw) {
+    std::string out;
+    for (size_t n = 0; n < raw.size(); n++) {
+        unsigned char c = raw[n] & 0x7F;
+        if (c == 0x1B) { n += (n + 1 < raw.size() && raw[n + 1] == '=') ? 3 : (n + 1 < raw.size() && raw[n + 1] == 'G') ? 2 : 1; continue; }
+        if (c > 0x20 && c < 0x7F) out.push_back(c);
+    }
+    return out;
+}
+
+// The 24 lines of 80 characters that console shows after what it was sent
+// (tools/crates/ios/src/screen.rs has the sequences).
+static std::string screen(const std::string &raw) {
+    std::vector<std::string> lines(24, std::string(80, ' '));
+    int line = 0, column = 0;
+    auto feed = [&]() { if (line < 23) line++; else { lines.erase(lines.begin()); lines.push_back(std::string(80, ' ')); } };
+    for (size_t n = 0; n < raw.size(); n++) {
+        unsigned char c = raw[n] & 0x7F;
+        if (c == 0x1B && n + 1 < raw.size()) {
+            unsigned char e = raw[++n] & 0x7F;
+            if (e == '=' && n + 2 < raw.size()) {
+                int r = (raw[n + 1] & 0x7F) - 0x20, k = (raw[n + 2] & 0x7F) - 0x20; n += 2;
+                line = r < 0 ? 0 : r > 23 ? 23 : r; column = k < 0 ? 0 : k > 79 ? 79 : k;
+            } else if (e == 'G') n++;
+            else if (e == '*') { for (auto &l : lines) l.assign(80, ' '); line = column = 0; }
+            else if (e == 'T') for (int k = column; k < 80; k++) lines[line][k] = ' ';
+            else if (e == 'R') { lines.erase(lines.begin() + line); lines.push_back(std::string(80, ' ')); }
+        } else if (c == 0x08) { if (column > 0) column--; }
+        else if (c == 0x0A) feed();
+        else if (c == 0x0C) { if (column < 79) column++; }
+        else if (c == 0x0D) column = 0;
+        else if (c >= 0x20 && c < 0x7F) { lines[line][column] = c; if (column < 79) column++; else { column = 0; feed(); } }
+    }
+    std::string out;
+    for (auto &l : lines) { size_t end = l.find_last_not_of(' '); out += (end == std::string::npos ? "" : l.substr(0, end + 1)) + "\n"; }
+    while (out.size() > 1 && out[out.size() - 1] == '\n' && out[out.size() - 2] == '\n') out.pop_back();
+    return out;
+}

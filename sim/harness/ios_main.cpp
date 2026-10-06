@@ -15,13 +15,18 @@
 // ends when the MIOP's operator console (channels 46 and 47) has shown TEXT,
 // or after N milliseconds of machine time (default 20000).  --type presses
 // KEYS on that console once it has shown TEXT (\r is RETURN); several are
-// taken in order.  --poke changes a parcel of the kernel (hexadecimal).
+// taken in order.  TEXT is found whatever blanks and cursor movements lie
+// between its characters.  A TEXT of +N waits N milliseconds instead.  Both
+// TEXTs can begin with @C: for another console: 0 is the station, 3 the
+// operator's, 4 the BIOP's, 5 the XIOP's.  --screen C prints that console as
+// its 24 lines at the end.  --poke changes a parcel of the kernel (hexadecimal).
 // --quick leaves out what only takes time: the kernel's test of Local Memory,
 // most of its test of Buffer Memory, and 499 of the 500 passes of the BIOP's
 // test of each disk drive (the three changes are the cray-sim project's).
 //
 // Built with XMP_MACHINE the hardware is the whole machine (rtl/xmp_machine.v):
 // the CPU as well, with central memory served to it here.
+// The CPU must not run before START has been typed on the operator's console.
 // Exit status: 0 if TEXT was shown (or none was asked for), 1 if not.
 #ifdef XMP_MACHINE
 #include "Vxmp_machine.h"
@@ -51,19 +56,28 @@ int main(int argc, char **argv) {
     long ms = 20000;
     bool quiet = false, quick = false;
     std::vector<std::pair<unsigned, unsigned>> pokes;
-    std::vector<std::pair<std::string, std::string>> typing;
+    struct Typing { int console; std::string wait, keys; long delay; };
+    std::vector<Typing> typing;
+    int until_console = 3;
+    std::vector<int> screens;
+    // a text may name its console: @C:TEXT
+    auto on_console = [](std::string &text) { int c = 3; if (text.size() > 3 && text[0] == '@' && text[2] == ':') { c = text[1] - '0'; text = text.substr(3); } return c < 0 || c > 5 ? 3 : c; };
     std::vector<std::pair<int, std::string>> drive_files;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto next = [&]() { return std::string(i + 1 < argc ? argv[++i] : ""); };
-        if (a == "--until") until = next();
+        if (a == "--until") { until = next(); until_console = on_console(until); until = squeeze(until); }
+        else if (a == "--screen") screens.push_back(atoi(next().c_str()) % 6);
         else if (a == "--type") {
             std::string t = next(), keys; size_t eq = t.find('=');
             if (eq == std::string::npos) { fprintf(stderr, "--type takes TEXT=KEYS\n"); return 2; }
             for (size_t n = eq + 1; n < t.size(); n++) {
                 if (t[n] == '\\' && n + 1 < t.size() && t[n + 1] == 'r') { keys.push_back('\r'); n++; } else keys.push_back(t[n]);
             }
-            typing.push_back({t.substr(0, eq), keys});
+            std::string wait = t.substr(0, eq);
+            int c = on_console(wait);
+            long delay = wait.size() > 1 && wait[0] == '+' ? atol(wait.c_str() + 1) * 80000 : 0;
+            typing.push_back({c, squeeze(wait), keys, delay});
         }
         else if (a == "--ms") ms = atol(next().c_str());
         else if (a == "--quiet") quiet = true;
@@ -116,14 +130,17 @@ int main(int argc, char **argv) {
     top->i_cm_ack = 0; top->i_cm_rdata = 0;
     top->i_drive_ack = 0; top->i_drive_buff_addr = 0; top->i_drive_buff_dout = 0; top->i_drive_buff_wr = 0;
 
-    std::string console[3][4];
+    std::string console[6];                              // what each console was sent
     long clocks = 0, steps[3] = {0, 0, 0};
     bool shown = until.empty();
-    size_t printed = 0, said = 0, at_key = 0, typed_from = 0;
+    size_t printed = 0, said = 0, at_key = 0, typed_from[6] = {};
+    long waited = 0;
     long key_gap = 0;
     bool asked = false;
     uint32_t burst_at = 0; int burst_left = 0; long cpu_clocks = 0;
-    (void)burst_at; (void)burst_left; (void)cpu_clocks;
+    // the CPU is held until the operator has typed START
+    bool start_typed = false, ran_early = false; size_t start_looked = 0;
+    (void)burst_at; (void)burst_left; (void)cpu_clocks; (void)start_typed; (void)start_looked;
 
     const long limit = ms * 80000;
     while (clocks < limit && !(shown && !until.empty())) {
@@ -141,20 +158,24 @@ int main(int argc, char **argv) {
 #endif
         // a character a console holds out is taken in this clock
         for (int c = 0; c < 6; c++)
-            if (top->o_char_valid >> c & 1) (c < 4 ? console[0][c] : console[c - 3][1]).push_back(top->o_char >> (7 * c) & 0x7F);
-        bool key_taken = (top->i_key_valid & 8) && (top->o_key_ready & 8);
+            if (top->o_char_valid >> c & 1) console[c].push_back(top->o_char >> (7 * c) & 0x7F);
+        bool key_taken = top->i_key_valid & top->o_key_ready;
         top->clk = 1; top->eval();
         // the operator: a key, some time after the one before, once the text has been shown
         if (key_taken) { top->i_key_valid = 0; key_gap = 200000; }
         if (key_gap > 0) key_gap--;
+        if (said < typing.size() && typing[said].delay) waited++;
         if (!top->i_key_valid && key_gap == 0 && said < typing.size()) {
+            const Typing &t = typing[said];
+            int c = t.console;
             // the kernel drops a key that comes before it has finished its question
-            if (!asked && console[0][3].find(typing[said].first, typed_from) == std::string::npos) key_gap = 4096;
+            bool there = t.delay ? waited >= t.delay : squeeze(console[c].substr(typed_from[c])).find(t.wait) != std::string::npos;
+            if (!asked && !there) key_gap = 4096;
             else if (!asked) { asked = true; key_gap = 800000; }
             else {
-                top->i_key = (QData)(typing[said].second[at_key++] & 0x7F) << 21; top->i_key_valid = 8;
+                top->i_key = (QData)(t.keys[at_key++] & 0x7F) << (7 * c); top->i_key_valid = 1 << c;
                 // what the last key brings is looked for from here on
-                if (at_key == typing[said].second.size()) { said++; at_key = 0; asked = false; typed_from = console[0][3].size(); }
+                if (at_key == t.keys.size()) { said++; at_key = 0; asked = false; waited = 0; typed_from[c] = console[c].size(); }
             }
         }
         top->i_bm_ack = bm_req;
@@ -177,17 +198,21 @@ int main(int argc, char **argv) {
             else { top->i_mem_rdata = cm[mem_addr]; if (mem_burst) { burst_at = mem_addr + 1; burst_left = 15; } }
         }
         cpu_clocks += !top->o_cpu_held;
+        if (console[3].size() != start_looked) { start_looked = console[3].size(); start_typed = squeeze(console[3]).find("STARTCOS") != std::string::npos; }
+        // (not looked at in the first clocks, while the reset takes hold)
+        if (!top->o_cpu_held && !start_typed && !ran_early && clocks > 100) { ran_early = true; printf("\nthe CPU runs at %.3f s, before START has been typed\n", clocks / 8e7); }
 #endif
         top->eval();
         for (int g = 0; g < 3; g++) steps[g] += top->o_step >> g & 1;
         top->clk = 0; top->eval();
         clocks++;
-        std::string &kernel_console = console[0][3];
+        std::string &kernel_console = console[3];
         if (!quiet && kernel_console.size() > printed) {
             for (; printed < kernel_console.size(); printed++) { char c = kernel_console[printed]; if (c == '\n' || (c >= 0x20 && c < 0x7F)) putchar(c); }
             fflush(stdout);
         }
-        if (!until.empty() && (clocks & 0xFFF) == 0 && said == typing.size() && kernel_console.find(until, typed_from) != std::string::npos) shown = true;
+        if (!until.empty() && (clocks & 0xFFFF) == 0 && said == typing.size() &&
+            squeeze(console[until_console].substr(typed_from[until_console])).find(until) != std::string::npos) shown = true;
     }
     printf("\n%.3f s of machine time; steps: MIOP %ld, BIOP %ld, XIOP %ld; P %04x %04x %04x; expander disk sectors read %ld, written %ld; drive sectors read %ld, written %ld\n",
            clocks / 8e7, steps[0], steps[1], steps[2], (unsigned)(top->o_p & 0xFFFF), (unsigned)(top->o_p >> 16 & 0xFFFF),
@@ -197,11 +222,14 @@ int main(int argc, char **argv) {
 #endif
     for (int g = 1; g < 3; g++) {
         std::string first;
-        for (char c : console[g][1]) { if (c >= 0x20 && c < 0x7F) first.push_back(c); else if (!first.empty() && first.back() != '|') first.push_back('|'); }
+        for (char c : console[3 + g]) { if (c >= 0x20 && c < 0x7F) first.push_back(c); else if (!first.empty() && first.back() != '|') first.push_back('|'); }
         printf("console of the %s: %.160s\n", g == 1 ? "BIOP" : "XIOP", first.c_str());
     }
-    if (!shown) printf("`%s` did not appear on the MIOP's console\n", until.c_str());
+    for (int c : screens) printf("---- console %d\n%s----\n", c, screen(console[c]).c_str());
+    if (said < typing.size()) printf("`%s` did not appear on console %d\n", typing[said].wait.c_str(), typing[said].console);
+    if (!shown) printf("`%s` did not appear on console %d\n", until.c_str(), until_console);
+    if (ran_early) printf("the CPU did not wait for START\n");
     top->final();
     delete top;
-    return shown ? 0 : 1;
+    return shown && !ran_early ? 0 : 1;
 }

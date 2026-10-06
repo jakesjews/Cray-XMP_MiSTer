@@ -26,7 +26,17 @@ module hps_io #(
 	output wire [ 7:0] ioctl_dout,
 	input  wire        ioctl_wait,
 
-	output wire [10:0] ps2_key
+	output wire [10:0] ps2_key,
+
+	input  wire [     31:0] sd_lba      [VDNUM],
+	input  wire [      5:0] sd_blk_cnt  [VDNUM],
+	input  wire [VDNUM-1:0] sd_rd,
+	input  wire [VDNUM-1:0] sd_wr,
+	output wire [VDNUM-1:0] sd_ack,
+	output wire [     13:0] sd_buff_addr,
+	output wire [      7:0] sd_buff_dout,
+	input  wire [      7:0] sd_buff_din [VDNUM],
+	output wire             sd_buff_wr
 );
 
 	reg [127:0] sim_status  /* verilator public_flat_rw */ = 0;
@@ -45,6 +55,32 @@ module hps_io #(
 	assign ioctl_wr           = 0;
 	assign ioctl_addr         = 0;
 	assign ioctl_dout         = 0;
+
+	// the disk requests: what the core asks for, one field a disk, and what the
+	// harness answers
+	wire [32*VDNUM-1:0] sim_sd_lba  /* verilator public_flat_rd */;
+	wire [ 8*VDNUM-1:0] sim_sd_blk_cnt  /* verilator public_flat_rd */;
+	wire [ 8*VDNUM-1:0] sim_sd_din  /* verilator public_flat_rd */;
+	wire [   VDNUM-1:0] sim_sd_rd  /* verilator public_flat_rd */ = sd_rd;
+	wire [   VDNUM-1:0] sim_sd_wr  /* verilator public_flat_rd */ = sd_wr;
+	reg  [   VDNUM-1:0] sim_sd_ack  /* verilator public_flat_rw */ = 0;
+	reg  [        13:0] sim_sd_buff_addr  /* verilator public_flat_rw */ = 0;
+	reg  [         7:0] sim_sd_buff_dout  /* verilator public_flat_rw */ = 0;
+	reg                 sim_sd_buff_wr  /* verilator public_flat_rw */ = 0;
+
+	genvar g;
+	generate
+		for (g = 0; g < VDNUM; g = g + 1) begin : g_sd
+			assign sim_sd_lba[32*g+:32]   = sd_lba[g];
+			assign sim_sd_blk_cnt[8*g+:8] = {2'b00, sd_blk_cnt[g]};
+			assign sim_sd_din[8*g+:8]     = sd_buff_din[g];
+		end
+	endgenerate
+
+	assign sd_ack       = sim_sd_ack;
+	assign sd_buff_addr = sim_sd_buff_addr;
+	assign sd_buff_dout = sim_sd_buff_dout;
+	assign sd_buff_wr   = sim_sd_buff_wr;
 
 	wire unused = &{1'b0, clk_sys, status_menumask, ioctl_wait};
 

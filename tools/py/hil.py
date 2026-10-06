@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Drive the Cray1 core on a real MiSTer from the development machine.
+"""Drive the cores on a real MiSTer from the development machine.
+
+For the CRAY X-MP core (set CRAY_CORE=CrayXMP for deploy, shot and direct-video):
+
+  hil.py xmp-start [BOOTFILE] [-t SEC] [SESSION OPTIONS]
+                                   start the core through an MGL that mounts exp_disk.img
+                                   and drives.img of games/CrayXMP and loads the boot
+                                   file (BOOTFILE is copied there first), then work the
+                                   consoles as `session` does
+  hil.py session [-t SEC] [--break] [--type WAIT=KEYS]... [--until TEXT] [--screen C]...
+                                   work the consoles of the running core through the
+                                   serial port (see mister_agent.py); --break starts
+                                   the machine again first
+
+For the CRAY-1 core:
 
   hil.py deploy [RBF]              copy the core and the on-device agent
   hil.py launch [IMAGE] [-t SEC]   start the core (loading IMAGE through an MGL,
@@ -29,7 +43,9 @@ PW = os.environ.get('MISTER_PW', '1')
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 SSH_OPTS = ['-o', 'PreferredAuthentications=password', '-o', 'PubkeyAuthentication=no',
             '-o', 'StrictHostKeyChecking=accept-new', '-o', 'LogLevel=ERROR', '-o', 'ConnectTimeout=8']
-CORE = 'Cray1'
+CORE = os.environ.get('CRAY_CORE', 'Cray1')
+XMP_GAMES = '/media/fat/games/CrayXMP'
+XMP_MGL = '/tmp/CrayXMP_test.mgl'
 RBF_DEV = '/media/fat/_Computer/%s.rbf' % CORE
 GAMES = '/media/fat/games/%s' % CORE
 AGENT = '/tmp/mister_agent.py'
@@ -111,6 +127,44 @@ def cmd_launch(args):
     sys.stdout.buffer.write(ssh('cat /tmp/cray_uart.txt; cat /tmp/cray_uart.err >&2', capture=True))
 
 
+def run_session(seconds, args, then=''):
+    """Run the agent's session on the MiSTer, detached, because the network can
+    drop while a core loads; `then` is a shell command to run once it listens."""
+    quoted = ' '.join("'%s'" % a.replace("'", "'\\''") for a in args)
+    script = ('python3 %s session %g %s > /tmp/xmp_session.txt 2>&1\necho $? > /tmp/xmp_session.done\n'
+              % (AGENT, seconds, quoted))
+    ssh("rm -f /tmp/xmp_session.done; cat > /tmp/xmp_session.sh <<'HILEOF'\n%sHILEOF\n"
+        "(sh /tmp/xmp_session.sh > /dev/null 2>&1 &) ; sleep 0.5; %s" % (script, then or 'true'))
+    end = time.time() + seconds + 30
+    code = b''
+    while time.time() < end and not code.strip():
+        time.sleep(2)
+        code = ssh('cat /tmp/xmp_session.done 2>/dev/null', capture=True, check=False) or b''
+    sys.stdout.buffer.write(ssh('cat /tmp/xmp_session.txt', capture=True))
+    sys.stdout.flush()
+    if code.strip() != b'0':
+        sys.exit(1)
+
+
+def cmd_xmp_start(args):
+    seconds = take_time(args, 60)
+    push_agent()
+    if args and not args[0].startswith('--'):
+        scp_to(args.pop(0), XMP_GAMES + '/boot.ios')
+    mgl = ('<mistergamedescription><rbf>_Computer/CrayXMP</rbf>'
+           '<file delay="1" type="s" index="0" path="exp_disk.img"/>'
+           '<file delay="1" type="s" index="1" path="drives.img"/>'
+           '<file delay="1" type="f" index="1" path="boot.ios"/></mistergamedescription>')
+    ssh("cat > %s <<'EOF'\n%s\nEOF" % (XMP_MGL, mgl))
+    run_session(seconds, args, 'echo load_core %s > /dev/MiSTer_cmd' % XMP_MGL)
+
+
+def cmd_session(args):
+    seconds = take_time(args, 30)
+    push_agent()
+    run_session(seconds, args)
+
+
 def cmd_run(args):
     seconds = take_time(args, 8)
     push_agent()
@@ -173,6 +227,8 @@ def main():
     c, args = sys.argv[1], sys.argv[2:]
     if c == 'deploy': cmd_deploy(args)
     elif c == 'launch': cmd_launch(args)
+    elif c == 'xmp-start': cmd_xmp_start(args)
+    elif c == 'session': cmd_session(args)
     elif c == 'run': cmd_run(args)
     elif c == 'batch': cmd_batch(args)
     elif c == 'shot': cmd_shot(args)

@@ -1,0 +1,9 @@
+// Verilator arguments for the Ampex terminal bench.
+--cc --exe --build -j 0
+--top-module term_ampex_tb
+-Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-DECLFILENAME
+-O3 --x-assign unique --x-initial unique
+-CFLAGS "-O2 -std=c++17"
+sim/tb/term_ampex_tb.v
+rtl/terminal/term_ampex.v
+sim/harness/ampex_main.cpp

@@ -113,7 +113,10 @@ module iop #(
 	);
 
 	// 65,536 parcels with two ports: the processor's, and one for the
-	// Buffer Memory channel and the interfaces outside
+	// Buffer Memory channel and the interfaces outside.  Block memory makes no
+	// promise for a parcel that is read in the clock it is written in, and
+	// nothing here uses one: with RW_POISON the simulation makes such a read
+	// wrong, and the tests pass all the same.
 	(* ramstyle = "no_rw_check" *) reg [15:0] mem[0:65535]  /* verilator public_flat_rw */;
 	reg [15:0] port_addr, port_wdata;
 	reg        port_we;
@@ -121,10 +124,18 @@ module iop #(
 	always @(posedge clk) begin
 		if (mem_we) mem[mem_addr] <= mem_wdata;
 		mem_q <= mem[mem_addr];
+`ifdef RW_POISON
+		if (mem_we) mem_q <= ~mem_wdata;
+		if (port_we && port_addr == mem_addr) mem_q <= ~port_wdata;
+`endif
 	end
 	always @(posedge clk) begin
 		if (port_we) mem[port_addr] <= port_wdata;
 		port_q <= mem[port_addr];
+`ifdef RW_POISON
+		if (port_we) port_q <= ~port_wdata;
+		if (mem_we && mem_addr == port_addr) port_q <= ~mem_wdata;
+`endif
 	end
 
 	assign o_ch_strobe   = strobe && (number >= 6'd12);

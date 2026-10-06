@@ -18,6 +18,8 @@ Commands:
   run FILE SECONDS [--until TEXT] [--poison WORD:COUNT ...]
                                hold BREAK (the core's master clear), write the
                                image, release BREAK to dead start, capture output
+  session SECONDS [--break] [--type WAIT=KEYS]... [--until TEXT] [--screen C]...
+                               work the two consoles of the CRAY X-MP core
 """
 import fcntl
 import mmap
@@ -215,7 +217,7 @@ UI_SET_EVBIT, UI_SET_KEYBIT, UI_DEV_CREATE, UI_DEV_DESTROY = 0x40045564, 0x40045
 EV_SYN, EV_KEY = 0, 1
 KEY_CTRL, KEY_SHIFT = 29, 42
 NAMED = {'enter': 28, 'esc': 1, 'tab': 15, 'backspace': 14, 'space': 57, 'up': 103, 'down': 108, 'left': 105,
-         'right': 106, 'f12': 88, 'delete': 111}
+         'right': 106, 'f1': 59, 'f2': 60, 'f12': 88, 'delete': 111}
 PLAIN = dict(zip('1234567890-=', range(2, 14)))
 PLAIN.update(zip('qwertyuiop[]', range(16, 28)))
 PLAIN.update(zip('asdfghjkl;\'`', range(30, 42)))
@@ -280,8 +282,189 @@ def cmd_keys(args):
     os.close(fd)
 
 
+def squeeze(raw):
+    """What a console was sent, without blanks, control characters and the
+    escape sequences of an Ampex Dialogue 80: for finding a text whatever moved
+    the cursor between its words."""
+    out, n = [], 0
+    while n < len(raw):
+        c = raw[n]
+        if c == 0x1B:
+            n += 4 if raw[n + 1:n + 2] == b'=' else 3 if raw[n + 1:n + 2] == b'G' else 2
+            continue
+        if 0x20 < c < 0x7F:
+            out.append(c)
+        n += 1
+    return bytes(out)
+
+
+def render(raw):
+    """The 24 lines of 80 characters a console shows after what it was sent
+    (the sequences are those of rtl/terminal/term_ampex.v)."""
+    lines = [bytearray(b' ' * 80) for _ in range(24)]
+    line = column = n = 0
+
+    def feed():
+        nonlocal line
+        if line < 23:
+            line += 1
+        else:
+            lines.pop(0)
+            lines.append(bytearray(b' ' * 80))
+
+    while n < len(raw):
+        c = raw[n]
+        n += 1
+        if c == 0x1B and n < len(raw):
+            e = raw[n]
+            n += 1
+            if e == 0x3D and n + 1 < len(raw):
+                line = min(max(raw[n] - 0x20, 0), 23)
+                column = min(max(raw[n + 1] - 0x20, 0), 79)
+                n += 2
+            elif e == 0x47:
+                n += 1
+            elif e == 0x2A:
+                lines = [bytearray(b' ' * 80) for _ in range(24)]
+                line = column = 0
+            elif e == 0x54:
+                lines[line][column:] = b' ' * (80 - column)
+            elif e == 0x52:
+                lines.pop(line)
+                lines.append(bytearray(b' ' * 80))
+        elif c == 0x08:
+            column = max(column - 1, 0)
+        elif c == 0x0A:
+            feed()
+        elif c == 0x0C:
+            column = min(column + 1, 79)
+        elif c == 0x0D:
+            column = 0
+        elif 0x20 <= c < 0x7F:
+            lines[line][column] = c
+            if column < 79:
+                column += 1
+            else:
+                column = 0
+                feed()
+    text = [l.decode().rstrip() for l in lines]
+    while text and not text[-1]:
+        text.pop()
+    return '\n'.join(text)
+
+
+def cmd_session(args):
+    """session SECONDS [--break] [--type WAIT=KEYS]... [--until TEXT] [--gap SEC]
+               [--screen C]... [--raw FILE]
+
+    Work the two consoles of the CRAY X-MP core through the serial port, where
+    bit 7 of a byte names the console: clear is the operator's console, set
+    the station.  --type sends KEYS (\\r is RETURN) once a console has shown
+    WAIT; several are taken in order.  WAIT is found whatever blanks and cursor
+    movements lie between its characters; +N waits N milliseconds instead.  WAIT
+    is looked for on the operator's console, or on the station if it begins
+    with @0:, and KEYS go to the same console.  --until ends the session when
+    its text has been shown after the last KEYS; --break first holds a serial
+    BREAK, which starts the machine again.  What the operator's console prints
+    is copied to the output as it comes; --screen prints a console's 24 lines
+    at the end (0 the station, 3 the operator's).  Exit status 1 if the text of
+    --until did not come."""
+    seconds = float(args[0])
+    typing, screens, until, gap, raw_file, do_break = [], [], None, 0.004, None, False
+
+    def on_console(text):
+        if text[:1] == '@' and text[2:3] == ':':
+            return (1 if text[1] == '0' else 0), text[3:]
+        return 0, text
+
+    i = 1
+    while i < len(args):
+        a = args[i]
+        i += 1
+        if a == '--break':
+            do_break = True
+        elif a == '--type':
+            wait, keys = args[i].split('=', 1)
+            c, wait = on_console(wait)
+            delay = float(wait[1:]) / 1000 if wait[:1] == '+' and wait[1:].isdigit() else None
+            typing.append((c, squeeze(wait.encode()), keys.replace('\\r', '\r').encode(), delay))
+            i += 1
+        elif a == '--until':
+            until = on_console(args[i])
+            until = (until[0], squeeze(until[1].encode()))
+            i += 1
+        elif a == '--gap':
+            gap = float(args[i])
+            i += 1
+        elif a == '--screen':
+            screens.append(1 if args[i] == '0' else 0)
+            i += 1
+        elif a == '--raw':
+            raw_file = args[i]
+            i += 1
+        else:
+            sys.exit('session: unknown argument %s' % a)
+
+    fd = open_tty()
+    if do_break:
+        fcntl.ioctl(fd, TIOCSBRK)
+        time.sleep(0.1)
+        termios.tcflush(fd, termios.TCIOFLUSH)
+        fcntl.ioctl(fd, TIOCCBRK)
+    console = [bytearray(), bytearray()]
+    raw = bytearray()
+    typed_from = [0, 0]
+    said, shown = 0, False
+    out = sys.stdout
+    start = time.time()
+    waiting_since = start
+    while time.time() < start + seconds:
+        r, _, _ = select.select([fd], [], [], 0.02)
+        if r:
+            chunk = os.read(fd, 4096)
+            raw += chunk
+            for b in chunk:
+                console[b >> 7].append(b & 0x7F)
+                if not b >> 7 and (b == 0x0A or 0x20 <= b < 0x7F):
+                    out.write(chr(b))
+            out.flush()
+        if said < len(typing):
+            c, wait, keys, delay = typing[said]
+            there = time.time() - waiting_since >= delay if delay is not None else wait in squeeze(bytes(console[c][typed_from[c]:]))
+            if there:
+                # the kernel drops a key that comes before it has finished its question
+                time.sleep(0.05)
+                for k in keys:
+                    os.write(fd, bytes([k | (0x80 if c else 0)]))
+                    time.sleep(gap)
+                said += 1
+                typed_from = [len(console[0]), len(console[1])]
+                waiting_since = time.time()
+        elif until and until[1] in squeeze(bytes(console[until[0]][typed_from[until[0]]:])):
+            shown = True
+            break
+    # what is still on its way
+    end = time.time() + 0.3
+    while time.time() < end:
+        r, _, _ = select.select([fd], [], [], 0.05)
+        if r:
+            chunk = os.read(fd, 4096)
+            raw += chunk
+            for b in chunk:
+                console[b >> 7].append(b & 0x7F)
+    os.close(fd)
+    if raw_file:
+        open(raw_file, 'wb').write(raw)
+    for c in screens:
+        print('\n---- %s\n%s\n----' % ('station' if c else "operator's console", render(bytes(console[c]))))
+    print('\n%.1f s; %d characters on the operator\'s console, %d on the station' % (time.time() - start, len(console[0]), len(console[1])))
+    if until:
+        print('the text was shown' if shown else 'the text was NOT shown')
+        sys.exit(0 if shown else 1)
+
+
 COMMANDS = {'keys': cmd_keys, 'batch': cmd_batch, 'run': cmd_run, 'peek': cmd_peek, 'poke': cmd_poke, 'fill': cmd_fill, 'load': cmd_load,
-            'dump': cmd_dump, 'uart': cmd_uart}
+            'dump': cmd_dump, 'uart': cmd_uart, 'session': cmd_session}
 
 if __name__ == '__main__':
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:

@@ -78,19 +78,29 @@ module ios_disks #(
 	wire [13:0] track = {cylinder[d], 3'b0} + {2'b0, cylinder[d], 1'b0} + {10'b0, head[d]};  // 10 head groups
 	wire [17:0] sector = {track, 4'b0} + {3'b0, track, 1'b0} + {13'b0, i_a[4:0]};  // 18 sectors
 
-	// ---- the buffer: one side is the framework's, one the mover's
-	reg [ 7:0] buffer  [0:4095];
-	reg [11:0] b_addr;
-	reg [ 7:0] b_wdata;
-	reg        b_we;
-	reg [ 7:0] b_q;
+	// ---- the buffer: one side is the framework's, one the mover's.  Neither
+	// reads a byte in the clock it is written in.
+	(* ramstyle = "no_rw_check" *)reg  [ 7:0] buffer                              [0:4095];
+	reg  [11:0] b_addr;
+	reg  [ 7:0] b_wdata;
+	reg         b_we;
+	reg  [ 7:0] b_q;
+	wire        sd_we = i_sd_buff_wr && (|i_sd_ack);
 	always @(posedge clk) begin
-		if (i_sd_buff_wr && (|i_sd_ack)) buffer[i_sd_buff_addr] <= i_sd_buff_dout;
+		if (sd_we) buffer[i_sd_buff_addr] <= i_sd_buff_dout;
 		o_sd_buff_din <= buffer[i_sd_buff_addr];
+`ifdef RW_POISON
+		if (sd_we) o_sd_buff_din <= ~i_sd_buff_dout;
+		if (b_we && b_addr == i_sd_buff_addr) o_sd_buff_din <= ~b_wdata;
+`endif
 	end
 	always @(posedge clk) begin
 		if (b_we) buffer[b_addr] <= b_wdata;
 		b_q <= buffer[b_addr];
+`ifdef RW_POISON
+		if (b_we) b_q <= ~b_wdata;
+		if (sd_we && i_sd_buff_addr == b_addr) b_q <= ~i_sd_buff_dout;
+`endif
 	end
 
 	// ---- the mover

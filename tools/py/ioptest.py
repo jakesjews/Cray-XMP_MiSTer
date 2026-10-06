@@ -155,7 +155,7 @@ def machine(system, start):
     if start:
         for n, channel in enumerate(DRIVES):
             cmd += ['--drive', '%d=%s' % (n, os.path.join(system, 'biop_dk%o.img' % channel))]
-        cmd += ['--until', 'START COMPLETE', '--ms', '20000']
+        cmd += ['--until', 'START COMPLETE', '--ms', '6000']
         wanted += ['CPU <-> MIOP CHANNEL INIT', 'CPU <-> MIOP LINKAGE COMPLETE', 'START COMPLETE']
     else:
         cmd += ['--until', 'MFINIT: COMPLETE', '--ms', '3000']

@@ -115,19 +115,29 @@ module ios_expander #(
 	wire t_start = control && sel_tape && i_a[0];
 	wire d_start = control && sel_disk && i_a[0];
 
-	// ---- the sector of the disk: one side is the framework's, one ours
-	reg [7:0] sector  [0:511];
-	reg [8:0] s_addr;
-	reg [7:0] s_wdata;
-	reg       s_we;
-	reg [7:0] s_q;
+	// ---- the sector of the disk: one side is the framework's, one ours.
+	// Neither reads a byte in the clock it is written in.
+	(* ramstyle = "no_rw_check" *)reg  [7:0] sector                           [0:511];
+	reg  [8:0] s_addr;
+	reg  [7:0] s_wdata;
+	reg        s_we;
+	reg  [7:0] s_q;
+	wire       sd_we = i_sd_buff_wr && i_sd_ack;
 	always @(posedge clk) begin
-		if (i_sd_buff_wr && i_sd_ack) sector[i_sd_buff_addr] <= i_sd_buff_dout;
+		if (sd_we) sector[i_sd_buff_addr] <= i_sd_buff_dout;
 		o_sd_buff_din <= sector[i_sd_buff_addr];
+`ifdef RW_POISON
+		if (sd_we) o_sd_buff_din <= ~i_sd_buff_dout;
+		if (s_we && s_addr == i_sd_buff_addr) o_sd_buff_din <= ~s_wdata;
+`endif
 	end
 	always @(posedge clk) begin
 		if (s_we) sector[s_addr] <= s_wdata;
 		s_q <= sector[s_addr];
+`ifdef RW_POISON
+		if (s_we) s_q <= ~s_wdata;
+		if (sd_we && i_sd_buff_addr == s_addr) s_q <= ~i_sd_buff_dout;
+`endif
 	end
 
 	// ---- the work of the devices
