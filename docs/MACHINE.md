@@ -114,12 +114,17 @@ At the CRAY-1 setting:
 ## Differences from a real CRAY-1
 
 - **Timing.** One clock period is one cycle of the CPU's own clock: 105 MHz,
-  9.52 ns against the X-MP's 9.5 and the CRAY-1's 12.5. Functional unit times
-  in clock periods follow the upstream tables (076 takes the X-MP's four),
-  but memory references take longer than on the real machine and vary, and
-  an instruction that needs the result of another issues one clock period
-  after that result arrives, not in the clock period it arrives in. Programs
-  get the same results as on a CRAY-1 but not in the same number of clock
+  9.52 ns against the X-MP's 9.5 and the CRAY-1's 12.5. An instruction that
+  needs the result of another in an A or S register issues in the clock
+  period that result arrives, as on the real machine, and the scalar
+  functional units take the clock periods the manuals give (at the X-MP
+  setting those of HR-0032: the address multiply and 076 four, 072 one).
+  What is not the real machine's: memory references take longer and vary;
+  the vector shifts 150, 151 and 153 take four clock periods where the X-MP
+  has three; a branch on A0 or S0 issues one clock period after its register
+  is free, where the CRAY-1 waits two and the X-MP three; and a branch and a
+  change of instruction buffer take other numbers of clock periods than
+  theirs. Programs get the same results but not in the same number of clock
   periods.
 - **Chaining is looser than on the real machine.** An operation may start on
   a register that a functional unit is still filling as soon as the first
@@ -357,6 +362,11 @@ took the CPU from there to 105 MHz:
   result then goes from a flip-flop through one choice into the register
   file and its bypass. The floating-point units take their operands into
   registers before anything else, within their 6, 7 and 14 clock periods.
+- An instruction issues in the clock its operand arrives without the
+  decision becoming longer: beside the registers that have a result on its
+  way, each scheduler keeps the same list without the result that arrives
+  next, and that list is what an instruction's operands are held against.
+  The operand itself comes through the bypass.
 - Nothing wide waits for the decision to issue. 075, 025 and the return jump
   write their T or B register in the clock after they issue, 003 and 0014j0
   load the vector mask and the real-time clock then, and the units that are
@@ -365,8 +375,12 @@ took the CPU from there to 105 MHz:
   mask right behind a 003; the X-MP manual (HR-0032) lists both waits for
   the real machine.
 - A test and set looks at its semaphore a clock before it decides, the limit
-  check of the fetch pointer is kept in a register beside P, and the memory
-  unit forms its first address in a clock of its own.
+  check of the fetch pointer is kept in a register beside P and the target
+  of a branch in one of its own, and the memory unit forms its first address
+  in a clock of its own.
+- The port to DDR3 picks the next of its five users with one bit a user.
+  Indexing the users with a number had made Quartus build a multiplier into
+  the way of every memory request.
 - The I/O Subsystem is off the CPU's clock. An I/O Processor also stores a
   result in Local Memory a clock after forming it, so that the way from
   Local Memory through its adder does not lead back into a memory.
@@ -461,14 +475,24 @@ The I/O Subsystem and the core:
   as fast as the serial port carries them all arrive. The first session on
   the hardware found two things no simulation had: a key lost when keys
   queued up, and the printer's graphics mode.
+- The bridges between the two clocks have a bench of their own: pulses,
+  levels and memory requests under clocks of random periods and the
+  machine's own, requests that are taken back, and resets in the middle.
+  Faults put into the bridges are found by it or by the tests of the whole
+  machine. Three faults in how the machine is wired around them are not
+  noticed by any test yet: the CPU let go for a few clocks right after a
+  reset, a Disconnect that does not reach the CPU, and a reset that does not
+  reach the I/O Subsystem's side of the bridges.
 - The build with the CPU at 105 MHz and the I/O Subsystem at 80 MHz was run
   on a DE10-Nano from fresh disks and an empty Buffer Memory: kernel, COS
   loaded and started, start-up to its end, and the batch job, whose printout
-  is the one the earlier builds gave but for its times.
+  is the one the earlier builds gave but for its times. In an interactive
+  session at the station it fetched the dataset lister and the text editor
+  from the expander disk and ran them.
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: 26,838 ALMs (64%), 504 of 553 memory blocks,
-38 DSP blocks, 4 of 6 PLLs. The Local Memories of the three I/O Processors
+Quartus 17.0 for the DE10-Nano: 27,018 ALMs (64%), 503 of 553 memory blocks,
+37 DSP blocks, 4 of 6 PLLs. The Local Memories of the three I/O Processors
 take 384 of the memory blocks. Timing is met with the CPU at 105 MHz, with
 0.15 ns to spare, the I/O Subsystem at 80 MHz and the video side at 29.4 MHz.
