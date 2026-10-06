@@ -34,7 +34,7 @@ tools:
 	cargo build --release --examples --bins --manifest-path tools/Cargo.toml
 
 sim:
-	$(MAKE) -C sim cpu cpu-xmp fp emu iop ios xmp core ampex
+	$(MAKE) -C sim cpu cpu-xmp fp emu iop ios xmp core ampex spool
 
 rom: tools
 	@mkdir -p build

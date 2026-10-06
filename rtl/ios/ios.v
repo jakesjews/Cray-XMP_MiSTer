@@ -62,6 +62,12 @@ module ios #(
 	output wire [ 7:0] o_sd_buff_din,
 	input  wire        i_sd_buff_wr,
 
+	// the printer on the Peripheral Expander: a character, held out until it
+	// is taken; a form feed is a new page, a line feed a new line
+	output wire       o_print_valid,
+	output wire [7:0] o_print,
+	input  wire       i_print_ready,
+
 	// the mainframe: its output channel 11 octal to the MIOP's channel 20,
 	// the MIOP's channel 21 to its input channel 10; a parcel with Ready,
 	// answered by Resume, the end by Disconnect, each a pulse of one clock.
@@ -260,7 +266,10 @@ module ios #(
 		.i_sd_buff_addr(i_sd_buff_addr),
 		.i_sd_buff_dout(i_sd_buff_dout),
 		.o_sd_buff_din (o_sd_buff_din),
-		.i_sd_buff_wr  (i_sd_buff_wr)
+		.i_sd_buff_wr  (i_sd_buff_wr),
+		.o_print_valid (o_print_valid),
+		.o_print       (o_print),
+		.i_print_ready (i_print_ready)
 	);
 
 	ios_link mainframe (

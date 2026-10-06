@@ -17,7 +17,12 @@
 //               2 sector, 3 count of sectors.  With a command in C (0 read,
 //               10 write, 20 format, 120 return to cylinder 0) B is the Local
 //               Memory address.  A sector is 256 parcels.
-//   17  printer accepts everything and prints nothing.
+//   17  printer A is a command that Pulse runs: 0 new page, 3 new line, 6 take
+//               the interrupt request back.  B is a count of parcels,
+//               negative; writing a Local Memory address to C prints that
+//               many parcels from there, two characters each.  What is
+//               printed leaves here a character at a time, a form feed for a
+//               new page and a line feed for a new line.
 //
 // The tape is a file in .tap form in a memory of 64-bit words, the first byte
 // of the file in bits 63 to 56 of word 0: a record is its length in bytes (4
@@ -66,7 +71,12 @@ module ios_expander #(
 	input  wire [ 8:0] i_sd_buff_addr,
 	input  wire [ 7:0] i_sd_buff_dout,
 	output reg  [ 7:0] o_sd_buff_din,
-	input  wire        i_sd_buff_wr
+	input  wire        i_sd_buff_wr,
+
+	// the printer: a character is held out until it is taken
+	output reg        o_print_valid,
+	output reg  [7:0] o_print,
+	input  wire       i_print_ready
 );
 
 	localparam [5:0] PRINTER = 6'o17, TAPE = 6'o22, DISK = 6'o60;
@@ -87,14 +97,16 @@ module ios_expander #(
 	reg [15:0] d_a, d_b, d_c;
 	reg d_busy, d_done, d_int;
 	reg [15:0] d_cylinder, d_head, d_sector, d_count;
-	reg [15:0] p_a, p_status;
-	reg p_done, p_int;
+	reg [15:0] p_a, p_b, p_at, p_status;
+	reg p_busy, p_done, p_int;
+	reg p_wait, p_text;  // something to print waits for the tape and the disk: parcels, or one character
+	reg [7:0] p_low;
 
 	wire sel_printer = (address == PRINTER);
 	wire sel_tape = (address == TAPE);
 	wire sel_disk = (address == DISK);
 	wire exists = sel_printer || sel_tape || sel_disk;
-	wire s_busy = (sel_tape && t_busy) || (sel_disk && d_busy);
+	wire s_busy = (sel_printer && p_busy) || (sel_tape && t_busy) || (sel_disk && d_busy);
 	wire s_done = (sel_printer && p_done) || (sel_tape && t_done) || (sel_disk && d_done);
 	wire s_int = (sel_printer && p_int) || (sel_tape && t_int) || (sel_disk && d_int);
 	wire s_masked = (sel_printer && masked[0]) || (sel_tape && masked[1]) || (sel_disk && masked[2]);
@@ -143,7 +155,8 @@ module ios_expander #(
 	// ---- the work of the devices
 	localparam X_IDLE = 5'd0, X_T_LEN = 5'd1, X_T_FETCH = 5'd2, X_T_HIGH = 5'd3, X_T_LOW = 5'd4, X_T_PUT = 5'd5,
 		X_D_NEXT = 5'd6, X_D_READ = 5'd7, X_D_WAIT = 5'd8, X_D_HIGH = 5'd9, X_D_LOW = 5'd10, X_D_PUT = 5'd11,
-		X_D_GET = 5'd12, X_D_GOT = 5'd13, X_D_FILL = 5'd14, X_D_WRITE = 5'd15, X_D_SENT = 5'd16;
+		X_D_GET = 5'd12, X_D_GOT = 5'd13, X_D_FILL = 5'd14, X_D_WRITE = 5'd15, X_D_SENT = 5'd16,
+		X_P_GET = 5'd17, X_P_GOT = 5'd18, X_P_HIGH = 5'd19, X_P_LOW = 5'd20;
 	reg [4:0] x;
 	reg [4:0] x_back;  // where to go on with the byte of the tape that was not at hand
 	reg t_wait, d_wait;  // a Start that waits for the other device to finish
@@ -192,7 +205,9 @@ module ios_expander #(
 			delay                   <= 8'd0;
 			{t_busy, t_done, t_int} <= 3'b0;
 			{d_busy, d_done, d_int} <= 3'b0;
-			{p_done, p_int}         <= 2'b0;
+			{p_busy, p_done, p_int} <= 3'b0;
+			p_wait                  <= 1'b0;
+			o_print_valid           <= 1'b0;
 			t_pos                   <= 24'd0;
 			t_state                 <= 2'd0;
 			t_word_valid            <= 1'b0;
@@ -240,14 +255,16 @@ module ios_expander #(
 						if (sel_disk) d_a <= i_a;
 					end
 					4'o15: begin
+						if (sel_printer) p_b <= i_a;
 						if (sel_tape) t_b <= i_a;
 						if (sel_disk) d_b <= i_a;
 					end
 					4'o16: begin
 						if (sel_printer) begin
-							p_done   <= 1'b1;
-							p_int    <= 1'b1;
-							p_status <= 16'h4000;
+							p_at             <= i_a;
+							p_text           <= 1'b1;
+							p_wait           <= 1'b1;
+							{p_busy, p_done} <= 2'b10;
 						end
 						if (sel_tape) t_c <= i_a;
 						if (sel_disk) begin
@@ -265,13 +282,15 @@ module ios_expander #(
 						if (sel_printer) begin
 							if (i_a[1]) p_int <= 1'b0;
 							if (i_a[2]) begin
-								p_done <= 1'b1;
 								// new page and new line are printed; 6 takes the request back
 								if ((p_a == 16'd0) || (p_a == 16'd3)) begin
-									p_int    <= 1'b1;
-									p_status <= 16'h4000;
+									p_low            <= (p_a == 16'd0) ? 8'h0C : 8'h0A;
+									p_text           <= 1'b0;
+									p_wait           <= 1'b1;
+									{p_busy, p_done} <= 2'b10;
 								end else begin
 									if (p_a == 16'd6) p_int <= 1'b0;
+									p_done   <= 1'b1;
 									p_status <= 16'd0;
 								end
 							end
@@ -337,6 +356,13 @@ module ios_expander #(
 						d_left     <= 16'd0;
 					end
 					x <= X_D_NEXT;
+				end else if (p_wait) begin
+					p_wait <= 1'b0;
+					if (!p_text) x <= X_P_LOW;
+					else if (p_b == 16'd0) begin
+						{p_busy, p_done, p_int} <= 3'b011;
+						p_status                <= 16'h4000;
+					end else x <= X_P_GET;
 				end
 
 				// a byte of the tape that is not in the word at hand
@@ -492,6 +518,44 @@ module ios_expander #(
 					d_left   <= d_left - 16'd1;
 					o_sd_lba <= o_sd_lba + 32'd1;
 					x        <= X_D_NEXT;
+				end
+
+				// from Local Memory to the printer, the high character of a parcel first
+				X_P_GET:
+				if (!o_dma_req) begin
+					o_dma_req  <= 1'b1;
+					o_dma_we   <= 1'b0;
+					o_dma_addr <= p_at;
+				end else if (i_dma_ack) begin
+					o_dma_req <= 1'b0;
+					x         <= X_P_GOT;
+				end
+				X_P_GOT: begin
+					o_print       <= i_dma_rdata[15:8];
+					o_print_valid <= 1'b1;
+					p_low         <= i_dma_rdata[7:0];
+					p_at          <= p_at + 16'd1;
+					p_b           <= p_b + 16'd1;
+					x             <= X_P_HIGH;
+				end
+				X_P_HIGH:
+				if (i_print_ready) begin
+					o_print_valid <= 1'b0;
+					x             <= X_P_LOW;
+				end
+				// the low character, or the one that a new page or a new line is
+				X_P_LOW:
+				if (!o_print_valid) begin
+					o_print       <= p_low;
+					o_print_valid <= 1'b1;
+				end else if (i_print_ready) begin
+					o_print_valid <= 1'b0;
+					if (p_text && (p_b != 16'd0)) x <= X_P_GET;
+					else begin
+						{p_busy, p_done, p_int} <= 3'b011;
+						p_status                <= 16'h4000;
+						x                       <= X_IDLE;
+					end
 				end
 
 				default: x <= X_IDLE;

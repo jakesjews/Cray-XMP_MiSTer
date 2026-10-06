@@ -305,3 +305,6 @@ lint_off -rule UNUSEDSIGNAL -file "CrayXMP.sv" -match "*Signal is not used: 'm_c
 lint_off -rule UNUSEDSIGNAL -file "CrayXMP.sv" -match "*Bits of signal are not used: 'sd_buff_addr'[13:12]*"
 lint_off -rule UNUSEDSIGNAL -file "CrayXMP.sv" -match "*Bits of signal are not used: 'bm_addr'[23:22]*"
 lint_off -rule UNUSEDSIGNAL -file "CrayXMP.sv" -match "*Bits of signal are not used: 'char'[41:28,20:7]*"
+// Only the printer file's mounting matters, and its length in blocks of 512 bytes.
+lint_off -rule UNUSEDSIGNAL -file "CrayXMP.sv" -match "*Bits of signal are not used: 'img_mounted'[1:0]*"
+lint_off -rule UNUSEDSIGNAL -file "CrayXMP.sv" -match "*Bits of signal are not used: 'img_size'[63:41,8:0]*"

@@ -298,59 +298,78 @@ def squeeze(raw):
     return bytes(out)
 
 
-def render(raw):
-    """The 24 lines of 80 characters a console shows after what it was sent
-    (the sequences are those of rtl/terminal/term_ampex.v)."""
-    lines = [bytearray(b' ' * 80) for _ in range(24)]
-    line = column = n = 0
+class Ampex:
+    """The screen of an Ampex Dialogue 80, a character at a time: 24 lines of
+    80 characters (the sequences are those of rtl/terminal/term_ampex.v)."""
 
-    def feed():
-        nonlocal line
-        if line < 23:
-            line += 1
+    def __init__(self):
+        self.lines = [bytearray(b' ' * 80) for _ in range(24)]
+        self.line = self.column = 0
+        self.escape = 0        # 1 after ESC, 2 the row follows, 3 the column, 4 one character to drop
+        self.row = 0
+
+    def feed(self):
+        if self.line < 23:
+            self.line += 1
         else:
-            lines.pop(0)
-            lines.append(bytearray(b' ' * 80))
+            self.lines.pop(0)
+            self.lines.append(bytearray(b' ' * 80))
 
-    while n < len(raw):
-        c = raw[n]
-        n += 1
-        if c == 0x1B and n < len(raw):
-            e = raw[n]
-            n += 1
-            if e == 0x3D and n + 1 < len(raw):
-                line = min(max(raw[n] - 0x20, 0), 23)
-                column = min(max(raw[n + 1] - 0x20, 0), 79)
-                n += 2
-            elif e == 0x47:
-                n += 1
-            elif e == 0x2A:
-                lines = [bytearray(b' ' * 80) for _ in range(24)]
-                line = column = 0
-            elif e == 0x54:
-                lines[line][column:] = b' ' * (80 - column)
-            elif e == 0x52:
-                lines.pop(line)
-                lines.append(bytearray(b' ' * 80))
+    def put(self, c):
+        c &= 0x7F
+        if self.escape == 1:
+            self.escape = 0
+            if c == 0x3D:
+                self.escape = 2
+            elif c == 0x47:
+                self.escape = 4
+            elif c == 0x2A:
+                self.lines = [bytearray(b' ' * 80) for _ in range(24)]
+                self.line = self.column = 0
+            elif c == 0x54:
+                self.lines[self.line][self.column:] = b' ' * (80 - self.column)
+            elif c == 0x52:
+                self.lines.pop(self.line)
+                self.lines.append(bytearray(b' ' * 80))
+        elif self.escape == 2:
+            self.row, self.escape = c, 3
+        elif self.escape == 3:
+            self.line = min(max(self.row - 0x20, 0), 23)
+            self.column = min(max(c - 0x20, 0), 79)
+            self.escape = 0
+        elif self.escape == 4:
+            self.escape = 0
+        elif c == 0x1B:
+            self.escape = 1
         elif c == 0x08:
-            column = max(column - 1, 0)
+            self.column = max(self.column - 1, 0)
         elif c == 0x0A:
-            feed()
+            self.feed()
         elif c == 0x0C:
-            column = min(column + 1, 79)
+            self.column = min(self.column + 1, 79)
         elif c == 0x0D:
-            column = 0
+            self.column = 0
         elif 0x20 <= c < 0x7F:
-            lines[line][column] = c
-            if column < 79:
-                column += 1
+            self.lines[self.line][self.column] = c
+            if self.column < 79:
+                self.column += 1
             else:
-                column = 0
-                feed()
-    text = [l.decode().rstrip() for l in lines]
-    while text and not text[-1]:
-        text.pop()
-    return '\n'.join(text)
+                self.column = 0
+                self.feed()
+
+    def text(self):
+        text = [l.decode().rstrip() for l in self.lines]
+        while text and not text[-1]:
+            text.pop()
+        return '\n'.join(text)
+
+
+def render(raw):
+    """The 24 lines a console shows after what it was sent."""
+    screen = Ampex()
+    for c in raw:
+        screen.put(c)
+    return screen.text()
 
 
 def cmd_session(args):
@@ -361,7 +380,9 @@ def cmd_session(args):
     bit 7 of a byte names the console: clear is the operator's console, set
     the station.  --type sends KEYS (\\r is RETURN) once a console has shown
     WAIT; several are taken in order.  WAIT is found whatever blanks and cursor
-    movements lie between its characters; +N waits N milliseconds instead.  WAIT
+    movements lie between its characters, or when the screen shows it and did
+    not at the last KEYS (the station sends only what differs from what is
+    there); +N waits N milliseconds instead.  WAIT
     is looked for on the operator's console, or on the station if it begins
     with @0:, and KEYS go to the same console.  --until ends the session when
     its text has been shown after the last KEYS; --break first holds a serial
@@ -412,8 +433,15 @@ def cmd_session(args):
         termios.tcflush(fd, termios.TCIOFLUSH)
         fcntl.ioctl(fd, TIOCCBRK)
     console = [bytearray(), bytearray()]
+    screen = [Ampex(), Ampex()]
+    before = [b'', b'']             # the screens at the last keys, without blanks
     raw = bytearray()
     typed_from = [0, 0]
+
+    def has(c, want):
+        if want in squeeze(bytes(console[c][typed_from[c]:])):
+            return True
+        return want not in before[c] and want in squeeze(screen[c].text().encode())
     said, shown = 0, False
     out = sys.stdout
     start = time.time()
@@ -425,12 +453,13 @@ def cmd_session(args):
             raw += chunk
             for b in chunk:
                 console[b >> 7].append(b & 0x7F)
+                screen[b >> 7].put(b)
                 if not b >> 7 and (b == 0x0A or 0x20 <= b < 0x7F):
                     out.write(chr(b))
             out.flush()
         if said < len(typing):
             c, wait, keys, delay = typing[said]
-            there = time.time() - waiting_since >= delay if delay is not None else wait in squeeze(bytes(console[c][typed_from[c]:]))
+            there = time.time() - waiting_since >= delay if delay is not None else has(c, wait)
             if there:
                 # the kernel drops a key that comes before it has finished its question
                 time.sleep(0.05)
@@ -439,8 +468,9 @@ def cmd_session(args):
                     time.sleep(gap)
                 said += 1
                 typed_from = [len(console[0]), len(console[1])]
+                before = [squeeze(screen[n].text().encode()) for n in range(2)]
                 waiting_since = time.time()
-        elif until and until[1] in squeeze(bytes(console[until[0]][typed_from[until[0]]:])):
+        elif until and has(until[0], until[1]):
             shown = True
             break
     # what is still on its way
@@ -452,11 +482,12 @@ def cmd_session(args):
             raw += chunk
             for b in chunk:
                 console[b >> 7].append(b & 0x7F)
+                screen[b >> 7].put(b)
     os.close(fd)
     if raw_file:
         open(raw_file, 'wb').write(raw)
     for c in screens:
-        print('\n---- %s\n%s\n----' % ('station' if c else "operator's console", render(bytes(console[c]))))
+        print('\n---- %s\n%s\n----' % ('station' if c else "operator's console", screen[c].text()))
     print('\n%.1f s; %d characters on the operator\'s console, %d on the station' % (time.time() - start, len(console[0]), len(console[1])))
     if until:
         print('the text was shown' if shown else 'the text was NOT shown')

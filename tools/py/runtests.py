@@ -8,7 +8,8 @@
                                   then the I/O Processor: 400 random programs, and
                                   the self-check of three of them together; then
                                   the X-MP core: its terminal on 400 random screens,
-                                  and its message when no boot file is loaded
+                                  its message when no boot file is loaded, and the
+                                  self-check on the whole core with what it prints
     runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
                                   floating-point operation, 10,000 random programs and
                                   2,000 for the X-MP mode; then, if the COS 1.17
@@ -113,7 +114,9 @@ def main():
     ok &= step('I/O Processor: 400 random programs', [PY, IOP, 'rand', '1', '200', '-j', jobs])
     ok &= step('I/O Processors together: self-check', [PY, IOP, 'selftest'])
     ok &= step('X-MP core: the terminal on 400 random screens', [PY, CORE, 'screens'])
+    ok &= step('X-MP core: the printer\'s file, 400 of them', [PY, CORE, 'spool'])
     ok &= step('X-MP core: no boot file', [PY, CORE, 'nofile'])
+    ok &= step('X-MP core: the self-check, with its printing on the screen and in the file', [PY, CORE, 'printer'])
     if a[0] == 'quick':
         ok &= step('200 random programs', [PY, DIFF, 'rand', '1', '200', '-n', '250', '-j', jobs])
     else:

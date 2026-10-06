@@ -16,7 +16,8 @@ not depend on:
      rewinds, reads part of a record and finds the rest passed over
   4. it writes two sectors to the expander's disk, reads them back to another
      place under another name for the same sectors, and finds them the same;
-     the drive's interrupt request obeys the mask and the interrupt mode
+     the drive's interrupt request obeys the mask and the interrupt mode;
+     and it prints a new page, six characters and a new line
   5. the MIOP starts the BIOP and the XIOP as the kernel does, telling each
      who it is through a parcel it changes in Buffer Memory
   6. the BIOP tries its first disk drive: the buffer echo, the Status
@@ -30,6 +31,7 @@ Each processor then writes its number and OK on its console (channel 47 on
 the MIOP, 43 on the others), or F and a letter: C clock, P Q R priority,
 a to m the tape, n the Done flag of the expander, W a drive did not finish,
 B wrong address after the read, X what was read is not what was written,
+E the printer did not finish,
 I J K M N the interrupt request of the disk, p to z the BIOP's drive and
 its channel into central memory, L no word came, D wrong word, T a word was
 not taken.
@@ -99,7 +101,8 @@ WHO = 4          # the parcel that tells a processor its number; word 1 of Buffe
 R_WHO, R_AT, R_CONSOLE, R_COUNT, R_WORD, R_TABLE, R_EXPECT, R_SLOT, R_FROM, R_TO = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 CLOCK, MOS, EXB = 4, 5, 0o17
 HIA, HOA, DRIVE = 0o14, 0o15, 0o20      # channels of the BIOP
-TAPE, DISK = 0o22, 0o60          # addresses on the Peripheral Expander
+PRINTER, TAPE, DISK = 0o17, 0o22, 0o60          # addresses on the Peripheral Expander
+PRINTED = b'\x0cPRINT!\n'       # what the printer is given
 # the tape: a record of 300 bytes, one of 5, a file mark
 RECORD = bytes((7 * n + 3) & 0xFF for n in range(300))
 SHORT = bytes([1, 2, 3, 4, 5])
@@ -217,8 +220,12 @@ def program():
         check(expected, failure)
 
     def start():
-        """Start the device and wait for it as the kernel does: bit 15 of status 1."""
+        """Start the device and wait for it."""
         exb(0o17, 1)
+        finished('W')
+
+    def finished(failure):
+        """Wait for the device as the kernel does: bit 15 of status 1."""
         loop, done = fresh('drive'), fresh('driven')
         p.a(0)
         p.ins(0o024, R_COUNT)
@@ -229,7 +236,7 @@ def program():
         p.jump_if('C=1', done)
         p.ins(0o027, R_COUNT)
         p.jump_if('A#0', loop)
-        p.a(ord('W'))
+        p.a(ord(failure))
         p.jump('fail')
         p.label(done)
 
@@ -350,6 +357,27 @@ def program():
     p.ins(0o026, R_FROM)
     p.ink(0o017, WRITTEN + PARCELS)
     p.jump_if('A#0', compare)
+
+    # the printer: a new page, three parcels of this program, a new line
+    p.jump('text_end')
+    p.label('text')
+    for at in range(1, 7, 2):
+        p.word(PRINTED[at] << 8 | PRINTED[at + 1])
+    p.label('text_end')
+    exb(5, PRINTER)
+    exb(0o14, 0)
+    exb(0o17, 4)                         # Pulse
+    finished('E')
+    exb(0o17, 2)
+    exb(0o15, 0x10000 - 3)
+    p.ink(0o014, 'text')
+    exb(0o16)
+    finished('E')
+    exb(0o17, 2)
+    exb(0o14, 3)
+    exb(0o17, 4)
+    finished('E')
+    exb(0o17, 2)
     exb(0)
 
     # ---- 5. start the BIOP (output channel 7) and the XIOP (output channel 13)

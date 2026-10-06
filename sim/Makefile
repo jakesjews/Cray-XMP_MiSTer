@@ -2,7 +2,7 @@
 ROOT  := $(abspath ..)
 BUILD := $(ROOT)/sim/build
 
-.PHONY: emu core ampex cpu cpu-xmp fp iop ios xmp clean
+.PHONY: emu core ampex spool cpu cpu-xmp fp iop ios xmp clean
 
 # Core-level simulation of the MiSTer wrapper
 emu: $(BUILD)/emu/Vemu
@@ -20,6 +20,11 @@ $(BUILD)/core/Vemu: $(ROOT)/sim/core.vc $(wildcard $(ROOT)/sim/harness/*) $(wild
 ampex: $(BUILD)/ampex/Vterm_ampex_tb
 $(BUILD)/ampex/Vterm_ampex_tb: $(ROOT)/sim/ampex.vc $(ROOT)/sim/harness/ampex_main.cpp $(ROOT)/sim/tb/term_ampex_tb.v $(ROOT)/rtl/terminal/term_ampex.v
 	mkdir -p $(BUILD)/ampex && cd $(ROOT) && verilator -f sim/ampex.vc --Mdir $(BUILD)/ampex -o Vterm_ampex_tb
+
+# The printer's file against what it should hold
+spool: $(BUILD)/spool/Vprint_spool
+$(BUILD)/spool/Vprint_spool: $(ROOT)/sim/spool.vc $(ROOT)/sim/harness/spool_main.cpp $(ROOT)/rtl/mister/print_spool.v
+	mkdir -p $(BUILD)/spool && cd $(ROOT) && verilator -f sim/spool.vc --Mdir $(BUILD)/spool -o Vprint_spool
 
 # CPU-level simulation
 cpu: $(BUILD)/cpu/Vcray_cpu

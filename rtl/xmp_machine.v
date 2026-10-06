@@ -74,6 +74,12 @@ module xmp_machine #(
 	output wire [ 7:0] o_sd_buff_din,
 	input  wire        i_sd_buff_wr,
 
+	// the printer on the Peripheral Expander: a character, held out until it
+	// is taken; a form feed is a new page, a line feed a new line
+	output wire       o_print_valid,
+	output wire [7:0] o_print,
+	input  wire       i_print_ready,
+
 	// the nine DD-29 drives
 	output wire [31:0] o_drive_lba,
 	output wire [ 8:0] o_drive_rd,
@@ -162,6 +168,9 @@ module xmp_machine #(
 		.i_sd_buff_dout    (i_sd_buff_dout),
 		.o_sd_buff_din     (o_sd_buff_din),
 		.i_sd_buff_wr      (i_sd_buff_wr),
+		.o_print_valid     (o_print_valid),
+		.o_print           (o_print),
+		.i_print_ready     (i_print_ready),
 		.i_cpu_ready       (out_ready[0]),
 		.i_cpu_parcel      (out_data[15:0]),
 		.o_cpu_resume      (from_cpu_resume),

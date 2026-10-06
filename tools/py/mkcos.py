@@ -10,7 +10,10 @@ biop_dk20.img to biop_dk32.img and target/cos_117/iop_kern.bin.  Written are
   OUT_DIR/games/CrayXMP/cos117.ios    the boot file: kernel and boot tape
   OUT_DIR/games/CrayXMP/exp_disk.img  the disk of the Peripheral Expander, as it is
   OUT_DIR/games/CrayXMP/drives.img    the nine drives, one after another
-  OUT_DIR/_Computer/COS 1.17.mgl      starts the core with all three in place
+  OUT_DIR/games/CrayXMP/printer.txt   takes what the printer prints: 8 MB of
+                                      empty lines, which the core fills from
+                                      the top
+  OUT_DIR/_Computer/COS 1.17.mgl      starts the core with all four in place
 
 Copy the two folders onto the SD card.  drives.img is 5.5 GB, so the card (or
 the folder the MiSTer looks for games in) must not be FAT32.
@@ -24,11 +27,13 @@ from mkboot import boot_file  # noqa: E402
 
 DRIVES = (0o20, 0o21, 0o22, 0o24, 0o25, 0o26, 0o30, 0o31, 0o32)   # the BIOP's disk channels
 DRIVE_BYTES = 823 * 10 * 18 * 4096      # cylinders, head groups, sectors, bytes
+PRINTER_BYTES = 8 << 20
 
 MGL = '''<mistergamedescription>
     <rbf>_Computer/CrayXMP</rbf>
     <file delay="1" type="s" index="0" path="exp_disk.img"/>
     <file delay="1" type="s" index="1" path="drives.img"/>
+    <file delay="1" type="s" index="2" path="printer.txt"/>
     <file delay="1" type="f" index="1" path="cos117.ios"/>
 </mistergamedescription>
 '''
@@ -70,6 +75,12 @@ def main(argv):
             joined.truncate((names[3:].index(n) + 1) * DRIVE_BYTES)
             joined.seek(0, os.SEEK_END)
             print('drives.img: %s' % n)
+
+    # what was printed before stays: the core goes on behind it
+    printer = os.path.join(games, 'printer.txt')
+    if not os.path.exists(printer):
+        open(printer, 'wb').write(b'\n' * PRINTER_BYTES)
+        print('printer.txt')
 
     open(os.path.join(computer, 'COS 1.17.mgl'), 'w').write(MGL)
     print('COS 1.17.mgl')

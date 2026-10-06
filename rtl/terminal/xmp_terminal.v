@@ -1,20 +1,23 @@
-// The two consoles of the CRAY X-MP core on one display: the operator's
-// console of the I/O Subsystem and the station.  Each is an Ampex Dialogue 80
-// screen of its own that is kept up to date all the time; `visible` chooses the
-// one that is shown.  Video timing and fonts are those of the CRAY-1 core.
+// The screens of the CRAY X-MP core on one display: the operator's console of
+// the I/O Subsystem, the station, and what the printer prints.  Each is an
+// Ampex Dialogue 80 screen of its own that is kept up to date all the time;
+// `visible` chooses the one that is shown.  Video timing and fonts are those
+// of the CRAY-1 core.
 
-module xmp_terminal (
+module xmp_terminal #(
+	parameter SCREENS = 3
+) (
 	input wire clk,
 	input wire reset,
 
-	input wire ce_pix,
-	input wire font_8x8,
-	input wire visible,   // 0 the operator's console, 1 the station
+	input wire       ce_pix,
+	input wire       font_8x8,
+	input wire [1:0] visible,   // the number of the screen that is shown
 
 	// characters to display, one stream a screen
-	input  wire [13:0] rx_data,
-	input  wire [ 1:0] rx_valid,
-	output wire [ 1:0] rx_ready,
+	input  wire [7*SCREENS-1:0] rx_data,
+	input  wire [  SCREENS-1:0] rx_valid,
+	output wire [  SCREENS-1:0] rx_ready,
 
 	output wire hsync,
 	output wire vsync,
@@ -23,16 +26,16 @@ module xmp_terminal (
 	output wire video
 );
 
-	wire [10:0] raddr;
-	wire [ 7:0] rdata  [0:1];
-	wire [ 4:0] top_row[0:1]  /* verilator public_flat_rd */;
-	wire [ 4:0] cur_y  [0:1]  /* verilator public_flat_rd */;
-	wire [ 6:0] cur_x  [0:1]  /* verilator public_flat_rd */;
-	wire [ 1:0] wrote;
+	wire [       10:0] raddr;
+	wire [        7:0] rdata  [0:SCREENS-1];
+	wire [        4:0] top_row[0:SCREENS-1]  /* verilator public_flat_rd */;
+	wire [        4:0] cur_y  [0:SCREENS-1]  /* verilator public_flat_rd */;
+	wire [        6:0] cur_x  [0:SCREENS-1]  /* verilator public_flat_rd */;
+	wire [SCREENS-1:0] wrote;
 
 	genvar g;
 	generate
-		for (g = 0; g < 2; g = g + 1) begin : g_screen
+		for (g = 0; g < SCREENS; g = g + 1) begin : g_screen
 			// 24 rows of 80 columns; one port for the terminal, which never reads
 			// a character in the clock it writes it in, and one for the video
 			(* ramstyle = "no_rw_check" *)reg  [ 7:0] screen[0:2047]  /* verilator public_flat_rd */;
@@ -73,7 +76,7 @@ module xmp_terminal (
 	// cursor blink: about 1 Hz, restarted (cursor solid) by a write to the screen shown
 	wire       frame_tick;
 	reg  [5:0] blink;
-	reg        shown;
+	reg  [1:0] shown;
 	always @(posedge clk) begin
 		shown <= visible;
 		if (reset || wrote[visible] || shown != visible) blink <= 0;

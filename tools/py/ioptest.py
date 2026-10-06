@@ -27,8 +27,8 @@ the kernel, on the system model and on the same three processors in hardware
 description: the real-time clock, the order in which channels that ask for an
 interrupt are reported, the expander's tape and disk, the start of one
 processor by another, a drive of the BIOP and its channel into central
-memory, and a word from each processor to each other one.  Both must report
-OK three times.
+memory, a word from each processor to each other one, and the printer.  Both
+must report OK three times and print the same.
 
 machine runs the whole machine in hardware description (module xmp_machine: the
 CPU with the X-MP features and the I/O Subsystem) on the same software, without
@@ -175,7 +175,7 @@ def selftest():
     subprocess.run([sys.executable, os.path.join(ROOT, 'tests/ios/selftest.py'), there], check=True)
     script = os.path.join(OUT, 'selftest.script')
     with open(script, 'w') as f:
-        f.write('run 60\nscreen kernel\nscreen 1.1\nscreen 3.1\n')
+        f.write('run 60\nscreen kernel\nscreen 1.1\nscreen 3.1\nprinter\n')
     model = subprocess.run([SYS, there, '--script', script, '--quiet'], capture_output=True, text=True, errors='replace').stdout
     said = [line.strip() for line in model.splitlines() if ':' in line and len(line.strip()) <= 5]
     hardware = subprocess.run([BOOT, os.path.join(there, 'target/cos_117/iop_kern.bin'), os.path.join(there, 'boot_tape.tap'),
@@ -183,10 +183,13 @@ def selftest():
     lines = [line.strip() for line in hardware.splitlines()]
     shown = [line for line in lines if len(line) <= 5 and ':' in line]
     shown += [line.split(': ', 1)[1] for line in lines if line.startswith('console of the ') and ': ' in line]
+    # what the printer was given: a new page, six characters, a new line
+    said += [line.strip() for line in model.splitlines() if line.startswith('<0c>')]
+    shown += [line[9:].replace('<nl>', '') for line in lines if line.startswith('printed: ')]
     failed = 0
     for name, got in (('the model', said), ('the hardware description', shown)):
         print('%s: %s' % (name, ' '.join(got) or 'nothing'))
-        failed += got != ['0:OK', '1:OK', '3:OK']
+        failed += got != ['0:OK', '1:OK', '3:OK', '<0c>PRINT!']
     print('2 runs, %d failed' % failed)
     return failed == 0
 

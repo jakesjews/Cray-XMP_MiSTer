@@ -61,7 +61,8 @@ module emu (
 	// DDR3, above central memory and Buffer Memory.  The disks are images that
 	// stay on the SD card: slot 0 the disk on the Peripheral Expander, slot 1 the
 	// nine DD-29 drives on the BIOP's channels 20 to 32 (octal), one after
-	// another in one file.
+	// another in one file.  Slot 2 is a text file that takes what the printer
+	// on the Peripheral Expander prints.
 	`include "build_id.v"
 	localparam CONF_STR = {
 		"CrayXMP;;",
@@ -69,6 +70,7 @@ module emu (
 		"F1,IOS,Load boot file,34000000;",
 		"S0,IMG,Expander disk;",
 		"S1,IMG,Disk drives;",
+		"S2,TXT,Printer file;",
 		"-;",
 		"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 		"O[4:3],Text color,White,Green,Amber,Cyan;",
@@ -111,17 +113,19 @@ module emu (
 
 	// the disks: 512-byte blocks, one for a sector of the expander disk and
 	// eight for a sector of a DD-29
-	wire [31:0] sd_lba      [2];
-	wire [ 5:0] sd_blk_cnt  [2];
-	wire [ 1:0] sd_rd, sd_wr, sd_ack;
+	wire [31:0] sd_lba      [3];
+	wire [ 5:0] sd_blk_cnt  [3];
+	wire [ 2:0] sd_rd, sd_wr, sd_ack;
 	wire [13:0] sd_buff_addr;
 	wire [ 7:0] sd_buff_dout;
-	wire [ 7:0] sd_buff_din [2];
+	wire [ 7:0] sd_buff_din [3];
 	wire        sd_buff_wr;
+	wire [ 2:0] img_mounted;
+	wire [63:0] img_size;
 
 	hps_io #(
 		.CONF_STR(CONF_STR),
-		.VDNUM   (2),
+		.VDNUM   (3),
 		.BLKSZ   (2)
 	) hps_io (
 		.clk_sys  (clk_cpu),
@@ -137,6 +141,8 @@ module emu (
 
 		.ioctl_download(ioctl_download),
 
+		.img_mounted (img_mounted),
+		.img_size    (img_size),
 		.sd_lba      (sd_lba),
 		.sd_blk_cnt  (sd_blk_cnt),
 		.sd_rd       (sd_rd),
@@ -288,6 +294,9 @@ module emu (
 	wire exp_rd, exp_wr;
 	wire cpu_held;
 
+	wire [7:0] print_char;
+	wire print_valid, print_ready;
+
 	xmp_machine #(
 		.CLOCKS_PER_MS(CPU_HZ / 1000)
 	) machine (
@@ -338,6 +347,10 @@ module emu (
 		.o_sd_buff_din (exp_din),
 		.i_sd_buff_wr  (sd_buff_wr),
 
+		.o_print_valid(print_valid),
+		.o_print      (print_char),
+		.i_print_ready(print_ready),
+
 		.o_drive_lba      (drive_lba),
 		.o_drive_rd       (drive_rd),
 		.o_drive_wr       (drive_wr),
@@ -362,14 +375,43 @@ module emu (
 		for (int n = 1; n < 9; n = n + 1) if (drive_rd[n] | drive_wr[n]) drive_base = n * DRIVE_BLOCKS;
 	end
 
-	assign sd_rd          = {|drive_rd, exp_rd};
-	assign sd_wr          = {|drive_wr, exp_wr};
+	// What the printer prints goes to a text file and to a screen; a character
+	// is taken when both can take it.
+	wire [31:0] spool_lba;
+	wire [7:0] spool_din;
+	wire spool_rd, spool_wr, spool_ready, shown_ready;
+	assign print_ready = spool_ready && shown_ready;
+
+	print_spool spool (
+		.clk(clk_cpu),
+
+		.i_char (print_char),
+		.i_valid(print_valid && shown_ready),
+		.o_ready(spool_ready),
+
+		.i_mounted  (img_mounted[2]),
+		.i_blocks   (img_size[40:9]),
+		.o_lba      (spool_lba),
+		.o_rd       (spool_rd),
+		.o_wr       (spool_wr),
+		.i_ack      (sd_ack[2]),
+		.i_buff_addr(sd_buff_addr[8:0]),
+		.i_buff_dout(sd_buff_dout),
+		.o_buff_din (spool_din),
+		.i_buff_wr  (sd_buff_wr && sd_ack[2])
+	);
+
+	assign sd_rd          = {spool_rd, |drive_rd, exp_rd};
+	assign sd_wr          = {spool_wr, |drive_wr, exp_wr};
 	assign sd_lba[0]      = exp_lba;
 	assign sd_lba[1]      = drive_base + drive_lba;
+	assign sd_lba[2]      = spool_lba;
 	assign sd_blk_cnt[0]  = 6'd0;
 	assign sd_blk_cnt[1]  = 6'd7;
+	assign sd_blk_cnt[2]  = 6'd0;
 	assign sd_buff_din[0] = exp_din;
 	assign sd_buff_din[1] = drive_din;
+	assign sd_buff_din[2] = spool_din;
 
 	// stretch activity so it is visible
 	reg [19:0] act_cnt, disk_cnt;
@@ -473,16 +515,52 @@ module emu (
 		if (key_tgl[2] != key_tgl[1]) ps2_key_s <= {~ps2_key_s[10], ps2_key[9:0]};
 	end
 
-	// F1 shows the operator's console and F2 the station; keys go to the one shown
-	reg visible, key_stb;
+	// F1 shows the operator's console, F2 the station and F3 what the printer
+	// prints; keys go to the station while it is shown and to the operator's
+	// console otherwise
+	reg [1:0] visible;
+	reg       key_stb;
 	always @(posedge clk_sys) begin
 		key_stb <= ps2_key_s[10];
-		if (reset) visible <= 1'b0;
+		if (reset) visible <= 2'd0;
 		else if (key_stb != ps2_key_s[10] && ps2_key_s[9:8] == 2'b10) begin
-			if (ps2_key_s[7:0] == 8'h05) visible <= 1'b0;
-			if (ps2_key_s[7:0] == 8'h06) visible <= 1'b1;
+			if (ps2_key_s[7:0] == 8'h05) visible <= 2'd0;
+			if (ps2_key_s[7:0] == 8'h06) visible <= 2'd1;
+			if (ps2_key_s[7:0] == 8'h04) visible <= 2'd2;
 		end
 	end
+
+	// the printer's characters for its screen
+	wire [6:0] shown_char, prt_data;
+	wire shown_valid, shown_taken, prt_valid, prt_ready;
+
+	print_screen print_screen (
+		.clk  (clk_cpu),
+		.reset(reset_cpu),
+
+		.i_char (print_char),
+		.i_valid(print_valid && spool_ready),
+		.o_ready(shown_ready),
+
+		.o_char (shown_char),
+		.o_valid(shown_valid),
+		.i_ready(shown_taken)
+	);
+
+	cdc_stream #(
+		.W(7)
+	) printer_tx (
+		.src_clk  (clk_cpu),
+		.src_reset(reset_cpu),
+		.src_data (shown_char),
+		.src_valid(shown_valid),
+		.src_ready(shown_taken),
+		.dst_clk  (clk_sys),
+		.dst_reset(reset),
+		.dst_data (prt_data),
+		.dst_valid(prt_valid),
+		.dst_ready(prt_ready)
+	);
 
 	wire no_file, started;
 	cdc_bit sync_no_file (
@@ -519,7 +597,7 @@ module emu (
 		.reset     (reset),
 		.uart_reset(uart_reset),
 
-		.visible(visible),
+		.visible(visible == 2'd1),
 		.no_file(no_file),
 		.started(started),
 
@@ -565,9 +643,9 @@ module emu (
 		.font_8x8(font_8x8),
 		.visible (visible),
 
-		.rx_data (term_data),
-		.rx_valid(term_valid),
-		.rx_ready(term_ready),
+		.rx_data ({prt_data, term_data}),
+		.rx_valid({prt_valid, term_valid}),
+		.rx_ready({prt_ready, term_ready}),
 
 		.hsync (HSync),
 		.vsync (VSync),

@@ -2,7 +2,9 @@
 """Check the CRAY X-MP core as a whole (module emu of CrayXMP.sv) in simulation.
 
     coretest.py screens [SEED [CASES]]
+    coretest.py spool [CASES]
     coretest.py nofile
+    coretest.py printer
     coretest.py boot [SYSTEM]
     coretest.py start [SYSTEM]
     coretest.py restart [SYSTEM]
@@ -11,10 +13,19 @@ screens checks the core's terminal (rtl/terminal/term_ampex.v) against the
 reference model's: random character streams, CASES of them (default 400), and
 the screens they leave.
 
+spool checks the printer's file (rtl/mister/print_spool.v): random printing
+into files of random lengths, part of them used before, CASES of them (default
+400), and what the files hold afterwards.
+
 The others run the core with stand-ins for the MiSTer framework, the PLL and
 DDR3 (sim/harness/core_main.cpp).  Memory is full of junk, as DDR3 is.
 
 nofile starts the core with no boot file: it has to say so on the screen.
+
+printer loads the self-checking program of tests/ios/selftest.py as the boot
+file.  The program has to report OK on the operator's console, and what it
+prints has to be on the printer's screen and in the printer's file, behind
+the five blocks an earlier session is made to have left there.
 
 boot loads a boot file made from the COS 1.17 software in SYSTEM (default:
 CRAY1_SYSTEM, or the directory research/Cray 1 Disk Image from Youtube),
@@ -32,7 +43,7 @@ and ask for the date, and the CPU has to wait.  About three minutes.
 
 Each run also compares the two screens in the core with what the serial port
 carried, and fails if the CPU runs before START has been typed.  Needs make
-tools and make -C sim core ampex.
+tools and make -C sim core ampex spool.
 """
 import os
 import subprocess
@@ -41,6 +52,7 @@ import sys
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 CORE = os.environ.get('CRAY_CORE_SIM', os.path.join(ROOT, 'sim/build/core/Vemu'))
 AMPEX = os.environ.get('CRAY_AMPEX_SIM', os.path.join(ROOT, 'sim/build/ampex/Vterm_ampex_tb'))
+SPOOL = os.environ.get('CRAY_SPOOL_SIM', os.path.join(ROOT, 'sim/build/spool/Vprint_spool'))
 RANDOM = os.path.join(ROOT, 'tools/target/release/examples/screen_random')
 OUT = os.path.join(ROOT, 'build/core')
 # the channels of the BIOP's nine drives, in order
@@ -73,8 +85,34 @@ def screens(seed, cases):
     return r.returncode == 0
 
 
+def spool(cases):
+    r = subprocess.run([SPOOL, str(cases)], capture_output=True, text=True)
+    print((r.stdout + r.stderr).strip())
+    print('1 runs, %d failed' % (r.returncode != 0))
+    return r.returncode == 0
+
+
 def nofile():
     return report(run(['--ms', '30']), ['CRAY X-MP', 'Load a boot file from the menu to start it.'])
+
+
+def printer():
+    there = os.path.join(OUT, 'selftest')
+    subprocess.run([sys.executable, os.path.join(ROOT, 'tests/ios/selftest.py'), there], check=True)
+    boot, printed = os.path.join(OUT, 'selftest.ios'), os.path.join(OUT, 'printer.txt')
+    subprocess.run([sys.executable, os.path.join(ROOT, 'tools/py/mkboot.py'), os.path.join(there, 'target/cos_117/iop_kern.bin'),
+                    os.path.join(there, 'boot_tape.tap'), boot], check=True, stdout=subprocess.DEVNULL)
+    if os.path.exists(printed):
+        os.remove(printed)
+    r = run([boot, '--ms', '330', '--screen', '2', '--printed', '5', '--printer', printed])
+    # a new page is an empty line on the screen, under the line the cursor was on
+    ok = report(r, ['0:OK', "---- printer's screen\n\n\nPRINT!\n"])
+    text = open(printed, 'rb').read() if os.path.exists(printed) else b''
+    # the earlier session's blocks as they were, then the page, the text and the line, and blanks up to the block's end
+    want = text[:2560] == bytes(10 if n % 64 == 63 else 46 for n in range(2560)) and text[2560:].rstrip(b' ') == b'\x0cPRINT!\n'
+    if not want:
+        print('FAIL: the printer\'s file holds %r behind the earlier blocks' % text[2560:2600])
+    return ok and want
 
 
 def boot_file(system):
@@ -112,8 +150,12 @@ def main():
     system = os.environ.get('CRAY1_SYSTEM', os.path.join(ROOT, 'research/Cray 1 Disk Image from Youtube'))
     if a and a[0] == 'screens':
         ok = screens(int(a[1]) if len(a) > 1 else 1, int(a[2]) if len(a) > 2 else 400)
+    elif a and a[0] == 'spool':
+        ok = spool(int(a[1]) if len(a) > 1 else 400)
     elif a == ['nofile']:
         ok = nofile()
+    elif a == ['printer']:
+        ok = printer()
     elif a and a[0] in ('boot', 'start', 'restart'):
         ok = {'boot': boot, 'start': start, 'restart': restart}[a[0]](a[1] if len(a) > 1 else system)
     else:

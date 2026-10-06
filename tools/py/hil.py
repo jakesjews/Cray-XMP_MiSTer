@@ -4,10 +4,11 @@
 For the CRAY X-MP core (set CRAY_CORE=CrayXMP for deploy, shot and direct-video):
 
   hil.py xmp-start [BOOTFILE] [-t SEC] [SESSION OPTIONS]
-                                   start the core through an MGL that mounts exp_disk.img
-                                   and drives.img of games/CrayXMP and loads the boot
-                                   file (BOOTFILE is copied there first), then work the
-                                   consoles as `session` does
+                                   start the core through an MGL that mounts exp_disk.img,
+                                   drives.img and printer.txt of games/CrayXMP and loads
+                                   the boot file (BOOTFILE is copied there first), then
+                                   work the consoles as `session` does
+  hil.py printed [--new]           what is in the printer's file; --new empties it first
   hil.py session [-t SEC] [--break] [--type WAIT=KEYS]... [--until TEXT] [--screen C]...
                                    work the consoles of the running core through the
                                    serial port (see mister_agent.py); --break starts
@@ -46,6 +47,8 @@ SSH_OPTS = ['-o', 'PreferredAuthentications=password', '-o', 'PubkeyAuthenticati
 CORE = os.environ.get('CRAY_CORE', 'Cray1')
 XMP_GAMES = '/media/fat/games/CrayXMP'
 XMP_MGL = '/tmp/CrayXMP_test.mgl'
+# the printer's file when nothing has been printed: 8 MB of empty lines
+NEW_PRINTER = "head -c 8388608 /dev/zero | tr '\\0' '\\n' > %s/printer.txt" % XMP_GAMES
 RBF_DEV = '/media/fat/_Computer/%s.rbf' % CORE
 GAMES = '/media/fat/games/%s' % CORE
 AGENT = '/tmp/mister_agent.py'
@@ -154,9 +157,20 @@ def cmd_xmp_start(args):
     mgl = ('<mistergamedescription><rbf>_Computer/CrayXMP</rbf>'
            '<file delay="1" type="s" index="0" path="exp_disk.img"/>'
            '<file delay="1" type="s" index="1" path="drives.img"/>'
+           '<file delay="1" type="s" index="2" path="printer.txt"/>'
            '<file delay="1" type="f" index="1" path="boot.ios"/></mistergamedescription>')
     ssh("cat > %s <<'EOF'\n%s\nEOF" % (XMP_MGL, mgl))
+    ssh("test -f %s/printer.txt || %s" % (XMP_GAMES, NEW_PRINTER))
     run_session(seconds, args, 'echo load_core %s > /dev/MiSTer_cmd' % XMP_MGL)
+
+
+def cmd_printed(args):
+    """What the printer's file holds, without the empty lines behind it."""
+    if '--new' in args:
+        ssh(NEW_PRINTER)
+        return
+    text = ssh('cat %s/printer.txt' % XMP_GAMES, capture=True)
+    sys.stdout.buffer.write(text.rstrip(b'\n') + b'\n')
 
 
 def cmd_session(args):
@@ -229,6 +243,7 @@ def main():
     elif c == 'launch': cmd_launch(args)
     elif c == 'xmp-start': cmd_xmp_start(args)
     elif c == 'session': cmd_session(args)
+    elif c == 'printed': cmd_printed(args)
     elif c == 'run': cmd_run(args)
     elif c == 'batch': cmd_batch(args)
     elif c == 'shot': cmd_shot(args)

@@ -79,31 +79,71 @@ static std::string squeeze(const std::string &raw) {
     return out;
 }
 
-// The 24 lines of 80 characters that console shows after what it was sent
-// (tools/crates/ios/src/screen.rs has the sequences).
-static std::string screen(const std::string &raw) {
-    std::vector<std::string> lines(24, std::string(80, ' '));
-    int line = 0, column = 0;
-    auto feed = [&]() { if (line < 23) line++; else { lines.erase(lines.begin()); lines.push_back(std::string(80, ' ')); } };
-    for (size_t n = 0; n < raw.size(); n++) {
-        unsigned char c = raw[n] & 0x7F;
-        if (c == 0x1B && n + 1 < raw.size()) {
-            unsigned char e = raw[++n] & 0x7F;
-            if (e == '=' && n + 2 < raw.size()) {
-                int r = (raw[n + 1] & 0x7F) - 0x20, k = (raw[n + 2] & 0x7F) - 0x20; n += 2;
-                line = r < 0 ? 0 : r > 23 ? 23 : r; column = k < 0 ? 0 : k > 79 ? 79 : k;
-            } else if (e == 'G') n++;
-            else if (e == '*') { for (auto &l : lines) l.assign(80, ' '); line = column = 0; }
-            else if (e == 'T') for (int k = column; k < 80; k++) lines[line][k] = ' ';
-            else if (e == 'R') { lines.erase(lines.begin() + line); lines.push_back(std::string(80, ' ')); }
-        } else if (c == 0x08) { if (column > 0) column--; }
+// The screen of an Ampex Dialogue 80, a character at a time: 24 lines of 80
+// characters (tools/crates/ios/src/screen.rs has the sequences).
+struct AmpexScreen {
+    std::vector<std::string> lines = std::vector<std::string>(24, std::string(80, ' '));
+    int line = 0, column = 0, escape = 0;   // escape: 1 after ESC, 2 the row follows, 3 the column, 4 one character to drop
+    int row = 0;
+    void feed() { if (line < 23) line++; else { lines.erase(lines.begin()); lines.push_back(std::string(80, ' ')); } }
+    void put(unsigned char c) {
+        c &= 0x7F;
+        switch (escape) {
+        case 1:
+            escape = 0;
+            if (c == '=') escape = 2;
+            else if (c == 'G') escape = 4;
+            else if (c == '*') { for (auto &l : lines) l.assign(80, ' '); line = column = 0; }
+            else if (c == 'T') { for (int k = column; k < 80; k++) lines[line][k] = ' '; }
+            else if (c == 'R') { lines.erase(lines.begin() + line); lines.push_back(std::string(80, ' ')); }
+            return;
+        case 2: row = c; escape = 3; return;
+        case 3: {
+            int r = row - 0x20, k = c - 0x20;
+            line = r < 0 ? 0 : r > 23 ? 23 : r; column = k < 0 ? 0 : k > 79 ? 79 : k;
+            escape = 0;
+            return;
+        }
+        case 4: escape = 0; return;
+        }
+        if (c == 0x1B) escape = 1;
+        else if (c == 0x08) { if (column > 0) column--; }
         else if (c == 0x0A) feed();
         else if (c == 0x0C) { if (column < 79) column++; }
         else if (c == 0x0D) column = 0;
         else if (c >= 0x20 && c < 0x7F) { lines[line][column] = c; if (column < 79) column++; else { column = 0; feed(); } }
     }
-    std::string out;
-    for (auto &l : lines) { size_t end = l.find_last_not_of(' '); out += (end == std::string::npos ? "" : l.substr(0, end + 1)) + "\n"; }
-    while (out.size() > 1 && out[out.size() - 1] == '\n' && out[out.size() - 2] == '\n') out.pop_back();
-    return out;
+    // the lines without the blanks at their ends and without the empty ones at the bottom
+    std::string text() const {
+        std::string out;
+        for (auto &l : lines) { size_t end = l.find_last_not_of(' '); out += (end == std::string::npos ? "" : l.substr(0, end + 1)) + "\n"; }
+        while (out.size() > 1 && out[out.size() - 1] == '\n' && out[out.size() - 2] == '\n') out.pop_back();
+        return out;
+    }
+};
+
+// The 24 lines of 80 characters that console shows after what it was sent.
+static std::string screen(const std::string &raw) {
+    AmpexScreen s;
+    for (unsigned char c : raw) s.put(c);
+    return s.text();
 }
+
+// What the benches wait for on a console.  A text has come when it is in what
+// the console was sent since the last key, whatever blanks and cursor
+// movements lie between its characters; or when the screen shows it now and
+// did not when that key was typed, because the station sends only the
+// characters of a display that differ from what is there.
+struct Shown {
+    std::string raw;                     // everything the console was sent
+    AmpexScreen now;
+    size_t typed_from = 0;
+    std::string before;                  // the screen at the last key, without blanks
+    void put(unsigned char c) { raw.push_back(c); now.put(c); }
+    void typed() { typed_from = raw.size(); before = squeeze(now.text()); }
+    void clear() { raw.clear(); now = AmpexScreen(); typed_from = 0; before.clear(); }
+    bool has(const std::string &want) const {
+        if (squeeze(raw.substr(typed_from)).find(want) != std::string::npos) return true;
+        return before.find(want) == std::string::npos && squeeze(now.text()).find(want) != std::string::npos;
+    }
+};

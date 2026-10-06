@@ -121,6 +121,9 @@ int main(int argc, char **argv) {
     top->i_key_valid = 0; top->i_key = 0; top->i_char_ready = 077;
     top->i_tape_ack = 0; top->i_tape_data = 0; top->i_tape_bytes = tape.size();
     top->i_sd_ack = 0; top->i_sd_buff_addr = 0; top->i_sd_buff_dout = 0; top->i_sd_buff_wr = 0;
+    top->i_print_ready = 0;
+    std::string printed_text;            // what the printer was given
+    int print_wait = 0;
 #ifdef XMP_MACHINE
     top->i_mem_ack = 0; top->i_mem_rdata = 0;
 #else
@@ -131,9 +134,10 @@ int main(int argc, char **argv) {
     top->i_drive_ack = 0; top->i_drive_buff_addr = 0; top->i_drive_buff_dout = 0; top->i_drive_buff_wr = 0;
 
     std::string console[6];                              // what each console was sent
+    Shown on[6];                                         // and what the benches look for in it
     long clocks = 0, steps[3] = {0, 0, 0};
     bool shown = until.empty();
-    size_t printed = 0, said = 0, at_key = 0, typed_from[6] = {};
+    size_t printed = 0, said = 0, at_key = 0;
     long waited = 0;
     long key_gap = 0;
     bool asked = false;
@@ -156,9 +160,12 @@ int main(int argc, char **argv) {
         bool mem_req = top->o_mem_req, mem_we = top->o_mem_we, mem_burst = top->o_mem_burst;
         uint32_t mem_addr = top->o_mem_addr; uint64_t mem_wdata = top->o_mem_wdata; bool mem_acked = top->i_mem_ack;
 #endif
+        // the printer's character is taken after a while, as a slow reader takes it
+        bool print_taken = top->o_print_valid && top->i_print_ready;
+        if (print_taken) printed_text.push_back(top->o_print);
         // a character a console holds out is taken in this clock
         for (int c = 0; c < 6; c++)
-            if (top->o_char_valid >> c & 1) console[c].push_back(top->o_char >> (7 * c) & 0x7F);
+            if (top->o_char_valid >> c & 1) { unsigned char ch = top->o_char >> (7 * c) & 0x7F; console[c].push_back(ch); on[c].put(ch); }
         bool key_taken = top->i_key_valid & top->o_key_ready;
         top->clk = 1; top->eval();
         // the operator: a key, some time after the one before, once the text has been shown
@@ -169,15 +176,18 @@ int main(int argc, char **argv) {
             const Typing &t = typing[said];
             int c = t.console;
             // the kernel drops a key that comes before it has finished its question
-            bool there = t.delay ? waited >= t.delay : squeeze(console[c].substr(typed_from[c])).find(t.wait) != std::string::npos;
+            bool there = t.delay ? waited >= t.delay : on[c].has(t.wait);
             if (!asked && !there) key_gap = 4096;
             else if (!asked) { asked = true; key_gap = 800000; }
             else {
                 top->i_key = (QData)(t.keys[at_key++] & 0x7F) << (7 * c); top->i_key_valid = 1 << c;
                 // what the last key brings is looked for from here on
-                if (at_key == t.keys.size()) { said++; at_key = 0; asked = false; waited = 0; typed_from[c] = console[c].size(); }
+                if (at_key == t.keys.size()) { said++; at_key = 0; asked = false; waited = 0; on[c].typed(); }
             }
         }
+        if (print_taken) { top->i_print_ready = 0; print_wait = 3 + clocks % 5; }
+        else if (print_wait > 0 && --print_wait == 0) top->i_print_ready = 1;
+        else if (!top->i_print_ready && print_wait == 0) print_wait = 2;
         top->i_bm_ack = bm_req;
         if (bm_req) { if (bm_we) bm[bm_addr] = bm_wdata; else top->i_bm_rdata = bm[bm_addr]; }
         top->i_tape_ack = tape_req;
@@ -212,7 +222,7 @@ int main(int argc, char **argv) {
             fflush(stdout);
         }
         if (!until.empty() && (clocks & 0xFFFF) == 0 && said == typing.size() &&
-            squeeze(console[until_console].substr(typed_from[until_console])).find(until) != std::string::npos) shown = true;
+            on[until_console].has(until)) shown = true;
     }
     printf("\n%.3f s of machine time; steps: MIOP %ld, BIOP %ld, XIOP %ld; P %04x %04x %04x; expander disk sectors read %ld, written %ld; drive sectors read %ld, written %ld\n",
            clocks / 8e7, steps[0], steps[1], steps[2], (unsigned)(top->o_p & 0xFFFF), (unsigned)(top->o_p >> 16 & 0xFFFF),
@@ -226,6 +236,12 @@ int main(int argc, char **argv) {
         printf("console of the %s: %.160s\n", g == 1 ? "BIOP" : "XIOP", first.c_str());
     }
     for (int c : screens) printf("---- console %d\n%s----\n", c, screen(console[c]).c_str());
+    if (!printed_text.empty()) {
+        // as cray1-sys shows it
+        printf("printed: ");
+        for (unsigned char c : printed_text) { if (c == '\n') printf("<nl>"); else if (c >= 0x20 && c < 0x7F) putchar(c); else if (c != 0 && c != '\r') printf("<%02x>", c); }
+        printf("\n");
+    }
     if (said < typing.size()) printf("`%s` did not appear on console %d\n", typing[said].wait.c_str(), typing[said].console);
     if (!shown) printf("`%s` did not appear on console %d\n", until.c_str(), until_console);
     if (ran_early) printf("the CPU did not wait for START\n");

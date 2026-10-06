@@ -6,7 +6,8 @@
 //
 //   Vemu [BOOTFILE] [--disk N=FILE]... [--drive N=FILE]... [--type TEXT=KEYS]...
 //        [--press TEXT=KEYS]... [--until TEXT] [--ms N] [--reset-at MS] [--reset-on TEXT] [--screen C]...
-//        [--frame OUT.ppm] [--ddr fast|normal|slow] [--disk-wait CLOCKS] [--seed N] [--quiet]
+//        [--printed BLOCKS] [--printer OUT] [--frame OUT.ppm] [--ddr fast|normal|slow]
+//        [--disk-wait CLOCKS] [--seed N] [--quiet]
 //
 // BOOTFILE (tools/py/mkboot.py) is put where the menu loads it; without one
 // nothing is loaded.  Memory is full of junk otherwise, as DDR3 is.  --disk
@@ -14,10 +15,13 @@
 // nine DD-29 drives one after another.  --drive gives the image of one drive
 // (0 to 8) instead, as if the nine were joined.  A file is never written to:
 // blocks the run writes are kept in memory.  What has no file reads as zeros.
+// Slot 2, the printer's file, is 64 blocks of line feeds, of which --printed
+// says how many an earlier session has used; --printer writes the file out at
+// the end, without the line feeds behind what was printed.
 //
 // --type sends KEYS on the serial port once a console has shown TEXT (\r is
-// RETURN); --press types them on the keyboard, where {f1} and {f2} are the keys
-// that choose the screen.  Several are taken in order.  TEXT is found whatever
+// RETURN); --press types them on the keyboard, where {f1}, {f2} and {f3} are
+// the keys that choose the screen.  Several are taken in order.  TEXT is found whatever
 // blanks and cursor movements lie between its characters; +N waits N
 // milliseconds instead.  TEXT is looked for on the operator's console, or on
 // the station if it begins with @0: (the numbers are those of the consoles in
@@ -25,8 +29,9 @@
 // one whose screen is shown.  The run ends when TEXT of --until has been shown,
 // or after N milliseconds of machine time (default 20000).  --reset-at presses
 // the menu's reset at that time, --reset-on when the operator's console has
-// shown TEXT.  --screen C prints a console's 24 lines at the end; --frame
-// writes the last video frame.
+// shown TEXT.  --screen C prints a console's 24 lines at the end, and
+// --screen 2 the printer's screen as the core holds it; --frame writes the
+// last video frame.
 //
 // At the end the two screens in the core are compared with what the serial
 // port carried.  The CPU must not run before the operator has typed START:
@@ -57,6 +62,7 @@ struct HpsDisks {
     static constexpr uint32_t DRIVE_BLOCKS = 1185120;    // of a DD-29
     std::vector<FILE *> file;
     FILE *drive[9] = {};                 // the parts of slot 1, if it has no file of its own
+    std::vector<uint8_t> printer;        // slot 2, the printer's file
     std::vector<std::map<uint32_t, std::array<uint8_t, 512>>> written;
     int state = 0, wait = 0, at = 0, disk = 0, bytes = 0, phase = 0, latency = 200;
     bool writing = false; uint32_t lba = 0;
@@ -68,6 +74,7 @@ struct HpsDisks {
 
     void load() {
         data.assign(bytes, 0);
+        if (disk == 2) { for (int n = 0; n < bytes; n++) data[n] = (size_t)lba * 512 + n < printer.size() ? printer[(size_t)lba * 512 + n] : 0; return; }
         FILE *f = file[disk]; uint32_t at = lba;
         if (!f && disk == 1 && lba / DRIVE_BLOCKS < 9) { f = drive[lba / DRIVE_BLOCKS]; at = lba % DRIVE_BLOCKS; }
         if (f && fseeko(f, (off_t)at * 512, SEEK_SET) == 0) { size_t n = fread(data.data(), 1, bytes, f); (void)n; }
@@ -77,6 +84,7 @@ struct HpsDisks {
         }
     }
     void store() {
+        if (disk == 2) { for (int n = 0; n < bytes; n++) if ((size_t)lba * 512 + n < printer.size()) printer[(size_t)lba * 512 + n] = data[n]; return; }
         for (int b = 0; b < bytes / 512; b++) memcpy(written[disk][lba + b].data(), &data[b * 512], 512);
     }
     // one clock: what the core drove before the edge.  The block number, the
@@ -123,6 +131,9 @@ int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
     std::string boot, frame, until, reset_on, ddr = "normal";
     long ms = 20000, reset_at = -1;
+    int printed_blocks = 0;
+    std::string printer_out;
+    bool printer_screen = false;
     bool quiet = false;
     uint32_t seed = 1;
     int until_console = 0, disk_wait = 200;
@@ -136,7 +147,9 @@ int main(int argc, char **argv) {
         std::string a = argv[i];
         auto next = [&]() { return std::string(i + 1 < argc ? argv[++i] : ""); };
         if (a == "--until") { until = next(); until_console = on_console(until); until = squeeze(until); }
-        else if (a == "--screen") screens.push_back(atoi(next().c_str()) == 0);
+        else if (a == "--screen") { int c = atoi(next().c_str()); if (c == 2) printer_screen = true; else screens.push_back(c == 0); }
+        else if (a == "--printed") printed_blocks = atoi(next().c_str());
+        else if (a == "--printer") printer_out = next();
         else if (a == "--type" || a == "--press") {
             std::string t = next(), keys; size_t eq = t.find('=');
             if (eq == std::string::npos) { fprintf(stderr, "%s takes TEXT=KEYS\n", a.c_str()); return 2; }
@@ -144,6 +157,7 @@ int main(int argc, char **argv) {
                 if (t[n] == '\\' && n + 1 < t.size() && t[n + 1] == 'r') { keys.push_back('\r'); n++; }
                 else if (t.compare(n, 4, "{f1}") == 0) { keys.push_back(0x01); n += 3; }
                 else if (t.compare(n, 4, "{f2}") == 0) { keys.push_back(0x02); n += 3; }
+                else if (t.compare(n, 4, "{f3}") == 0) { keys.push_back(0x03); n += 3; }
                 else keys.push_back(t[n]);
             }
             std::string wait = t.substr(0, eq);
@@ -171,8 +185,11 @@ int main(int argc, char **argv) {
     else if (ddr == "slow") { ram.prof.lat_min = 8; ram.prof.lat_max = 40; ram.prof.busy_pct = 30; ram.prof.gap_pct = 30; ram.prof.stall_pct_x1000 = 500; }
     if (!boot.empty() && !ram.load(boot, 0x4000000)) { fprintf(stderr, "cannot read %s\n", boot.c_str()); return 2; }
 
-    HpsDisks disks(2);
+    HpsDisks disks(3);
     disks.latency = disk_wait;
+    // the printer's file: line feeds, behind what an earlier session printed
+    disks.printer.assign(64 * 512, '\n');
+    for (int n = 0; n < printed_blocks * 512 && n < (int)disks.printer.size(); n++) disks.printer[n] = n % 64 == 63 ? '\n' : '.';
     for (auto &d : disk_files)
         if (d.first < 0 || d.first > 1 || !(disks.file[d.first] = fopen(d.second.c_str(), "rb"))) { fprintf(stderr, "cannot read the image of slot %d\n", d.first); return 2; }
     for (auto &d : drive_files)
@@ -188,7 +205,7 @@ int main(int argc, char **argv) {
     // on in the core, so a capital letter is the letter's key alone.
     auto events_of = [&](unsigned char c) {
         std::vector<int> ev;
-        if (c == 0x01 || c == 0x02) { int code = c == 0x01 ? 0x05 : 0x06; ev = {0x200 | code, code}; return ev; }
+        if (c >= 0x01 && c <= 0x03) { int code = c == 0x01 ? 0x05 : c == 0x02 ? 0x06 : 0x04; ev = {0x200 | code, code}; return ev; }
         if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
         if (!key_of.count(c)) return ev;
         int code = key_of[c] & 0xFF, shift = key_of[c] >> 8;
@@ -201,7 +218,8 @@ int main(int argc, char **argv) {
 
     // the core reads its fonts and its key map from where they are in the
     // source tree; every file named on the command line is open by now
-    if (!frame.empty() && frame[0] != '/') { char here[4096]; if (getcwd(here, sizeof here)) frame = std::string(here) + "/" + frame; }
+    for (std::string *path : {&frame, &printer_out})
+        if (!path->empty() && (*path)[0] != '/') { char here[4096]; if (getcwd(here, sizeof here)) *path = std::string(here) + "/" + *path; }
     if (chdir("rtl/terminal") != 0) { fprintf(stderr, "run this from the top of the source tree\n"); return 2; }
 
     Vemu *top = new Vemu;
@@ -218,7 +236,8 @@ int main(int argc, char **argv) {
     const double cpu_ratio = 73.5 / 29.4;       // machine clock cycles per video clock cycle
 
     std::string console[2];              // what the serial port carried: 0 the operator's console, 1 the station
-    size_t seen = 0, printed = 0, typed_from[2] = {0, 0};
+    Shown on[2];                         // and what the bench looks for in it
+    size_t seen = 0, printed = 0;
     size_t said = 0, at_key = 0;
     bool asked = false, shown = false;
     long clocks = 0, key_gap = 0, waited = 0, reset_left = 0, idle_for = 0;
@@ -235,6 +254,10 @@ int main(int argc, char **argv) {
             if (t == 60)  r->emu__DOT__hps_io__DOT__sim_download = 1;
             if (t == 400) r->emu__DOT__hps_io__DOT__sim_download = 0;
         }
+        // the printer's file is mounted: its length, then the notice
+        if (t == 30) r->emu__DOT__hps_io__DOT__sim_img_size = disks.printer.size();
+        if (t == 40) r->emu__DOT__hps_io__DOT__sim_img_mounted = 4;
+        if (t == 50) r->emu__DOT__hps_io__DOT__sim_img_mounted = 0;
 
         // values the core drove during this video clock
         mon.step(top->UART_TXD);
@@ -243,6 +266,7 @@ int main(int argc, char **argv) {
         for (; seen < mon.text.size(); seen++) {
             unsigned char b = mon.text[seen];
             console[b >> 7].push_back(b & 0x7F);
+            on[b >> 7].put(b & 0x7F);
         }
         // the CPU is held until the kernel has been told to start it
         if (console[0].size() != start_looked) {
@@ -276,10 +300,10 @@ int main(int argc, char **argv) {
             uint32_t addr = top->DDRAM_ADDR; uint8_t bc = top->DDRAM_BURSTCNT, be = top->DDRAM_BE;
             uint64_t din = top->DDRAM_DIN;
             unsigned sd_rd = r->emu__DOT__hps_io__DOT__sim_sd_rd, sd_wr = r->emu__DOT__hps_io__DOT__sim_sd_wr;
-            uint64_t sd_lba = r->emu__DOT__hps_io__DOT__sim_sd_lba;
+            const auto &sd_lba = r->emu__DOT__hps_io__DOT__sim_sd_lba;
             unsigned sd_cnt = r->emu__DOT__hps_io__DOT__sim_sd_blk_cnt, sd_din = r->emu__DOT__hps_io__DOT__sim_sd_din;
-            const uint32_t lbas[2] = {(uint32_t)sd_lba, (uint32_t)(sd_lba >> 32)};
-            const unsigned counts[2] = {sd_cnt & 0xFF, sd_cnt >> 8}, dins[2] = {sd_din & 0xFF, sd_din >> 8};
+            const uint32_t lbas[3] = {sd_lba[0], sd_lba[1], sd_lba[2]};
+            const unsigned counts[3] = {sd_cnt & 0xFF, sd_cnt >> 8 & 0xFF, sd_cnt >> 16}, dins[3] = {sd_din & 0xFF, sd_din >> 8 & 0xFF, sd_din >> 16};
             r->emu__DOT__pll__DOT__sim_clk1 = 1; top->eval();
             ram.step(rd, we, addr, bc, din, be);
             top->DDRAM_BUSY = ram.busy;
@@ -295,7 +319,7 @@ int main(int argc, char **argv) {
             if (reset_at >= 0 && clocks == reset_at * 73500) { r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u; reset_left = 2000; }
             if (reset_left > 0 && --reset_left == 0) {
                 r->emu__DOT__hps_io__DOT__sim_status[0] &= ~1u;
-                for (int c = 0; c < 2; c++) { console[c].clear(); typed_from[c] = 0; }
+                for (int c = 0; c < 2; c++) { console[c].clear(); on[c].clear(); }
                 printed = 0; start_looked = 0; start_typed = false; light_fades = 2000000;
             }
 
@@ -311,7 +335,7 @@ int main(int argc, char **argv) {
                 const Typing &ty = typing[said];
                 int c = ty.console;
                 // the kernel drops a key that comes before it has finished its question
-                bool there = ty.delay ? waited >= ty.delay : squeeze(console[c].substr(typed_from[c])).find(ty.wait) != std::string::npos;
+                bool there = ty.delay ? waited >= ty.delay : on[c].has(ty.wait);
                 if (!asked && !there) key_gap = 4096;
                 else if (!asked) { asked = true; key_gap = 800000; }
                 else {
@@ -320,7 +344,7 @@ int main(int argc, char **argv) {
                     // what the last key brings is looked for from here on
                     if (++at_key >= ty.keys.size()) {
                         said++; at_key = 0; asked = false; waited = 0;
-                        for (int n = 0; n < 2; n++) typed_from[n] = console[n].size();
+                        for (int n = 0; n < 2; n++) on[n].typed();
                     }
                     if (pressed) { key_events = events_of(key); key_gap = 1; }
                     else if (key) { drv.send(std::string(1, (char)(key | (c ? 0x80 : 0)))); key_gap = 200000; }
@@ -331,7 +355,7 @@ int main(int argc, char **argv) {
             r->emu__DOT__pll__DOT__sim_clk1 = 0; top->eval();
             clocks++;
             if (!until.empty() && (clocks & 0xFFFF) == 0 && said == typing.size() && ending < 0 &&
-                squeeze(console[until_console].substr(typed_from[until_console])).find(until) != std::string::npos) shown = true;
+                on[until_console].has(until)) shown = true;
         }
         top->CLK_50M = 0; top->eval();
 
@@ -363,6 +387,23 @@ int main(int argc, char **argv) {
     }
 
     for (int c : screens) printf("\n---- %s\n%s----\n", c ? "station" : "operator's console", screen(console[c]).c_str());
+    if (printer_screen) {
+        // nothing else carries what the printer's screen shows: its 24 lines as the core holds them
+        int top_row = r->emu__DOT__terminal__DOT__top_row[2];
+        printf("\n---- printer's screen\n");
+        for (int y = 0; y < 24; y++) {
+            std::string line;
+            for (int x = 0; x < 80; x++) line.push_back(r->emu__DOT__terminal__DOT__g_screen__BRA__2__KET____DOT__screen[(y + top_row) % 24 * 80 + x]);
+            size_t end = line.find_last_not_of(' ');
+            printf("%s\n", end == std::string::npos ? "" : line.substr(0, end + 1).c_str());
+        }
+        printf("----\n");
+    }
+    if (!printer_out.empty()) {
+        size_t end = disks.printer.size();
+        while (end > 0 && disks.printer[end - 1] == '\n') end--;
+        if (FILE *f = fopen(printer_out.c_str(), "wb")) { fwrite(disks.printer.data(), 1, end, f); fclose(f); }
+    }
     if (!frame.empty()) vid.write_ppm(frame.c_str());
     printf("\n%.3f s of machine time; memory: %llu reads, %llu writes%s; disk requests: %ld read, %ld written; %d frames (%ld lines, hsync every %ld pixels)\n",
            clocks / 73500e3, (unsigned long long)ram.reads, (unsigned long long)ram.writes, ram.bad_access ? ", BAD DDR3 ACCESS" : "",

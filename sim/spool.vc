@@ -1,0 +1,10 @@
+// Verilator arguments for the bench of the printer's file (module print_spool).
+// A part full block waits 64 clocks here, not a quarter of a second.
+--cc --exe --build -j 0
+--top-module print_spool
+-GQUIET=6
+-Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-DECLFILENAME
+-O3 --x-assign unique --x-initial unique
+-CFLAGS "-O2 -std=c++17"
+rtl/mister/print_spool.v
+sim/harness/spool_main.cpp
