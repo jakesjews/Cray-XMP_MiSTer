@@ -121,7 +121,7 @@ UI_SET_EVBIT, UI_SET_KEYBIT, UI_DEV_CREATE, UI_DEV_DESTROY = 0x40045564, 0x40045
 EV_SYN, EV_KEY = 0, 1
 KEY_CTRL, KEY_SHIFT = 29, 42
 NAMED = {'enter': 28, 'esc': 1, 'tab': 15, 'backspace': 14, 'space': 57, 'up': 103, 'down': 108, 'left': 105,
-         'right': 106, 'f1': 59, 'f2': 60, 'f12': 88, 'delete': 111}
+         'right': 106, 'f1': 59, 'f2': 60, 'f3': 61, 'f12': 88, 'delete': 111}
 PLAIN = dict(zip('1234567890-=', range(2, 14)))
 PLAIN.update(zip('qwertyuiop[]', range(16, 28)))
 PLAIN.update(zip('asdfghjkl;\'`', range(30, 42)))

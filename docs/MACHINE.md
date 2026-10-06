@@ -299,6 +299,11 @@ file on the SD card (`rtl/mister/print_spool.v`). The file has a fixed length
 and is all line feeds when new; printing fills it from the top and goes on,
 in a later session, behind what is there.
 
+The printer is a plotter as well: in its graphics mode the parcels it is given
+are dots, 1,056 to a row. The banner page of a job has a picture drawn that
+way. Here a character stands for eight dots, `X` if any is set, so a row of
+dots is as wide as a line of text and the file stays text.
+
 ## Clocks
 
 The machine and the HPS interface, which brings the disks' blocks, run on one
@@ -318,7 +323,7 @@ first fit missed that by 0.99 ns: in the I/O Processors, from Local Memory
 through the adder into the operand registers, and in the CPU's paths into the
 T register file and the memory unit, which have less room in a fuller FPGA.
 That build ran COS on a DE10-Nano all the same. The clock is 73.5 MHz until
-those paths are worked on.
+those paths are worked on; at that the fit has 0.7 ns to spare.
 
 What limits the CPU is the path every result takes in one clock period: off
 the result bus, through the register file's bypass, through operand selection
@@ -328,6 +333,11 @@ beside it.
 Memory is slower than the real machine's: a scalar load takes about 25 clock
 periods against 11 on a CRAY-1, and vector transfers move about one word
 every two clock periods, not one per clock period.
+
+COS keeps its own time of day by counting the CPU's clock periods, and the
+core's are longer than an X-MP's. The times in a job's log therefore fall
+behind: in two runs on a DE10-Nano they were about a quarter slow against the
+station's clock, which the I/O Subsystem keeps in real milliseconds.
 
 ## Memory
 
@@ -401,12 +411,18 @@ The I/O Subsystem and the core:
   that arrives before the MIOP listens, and I/O Master Clear without the
   CPU's. The self-checking program now starts the CPU on a few instructions
   of its own for those.
-- On a DE10-Nano the first build booted the kernel, loaded and started COS,
-  logged the station on and went through COS's start-up with the nine drives,
-  typed on the keyboard and on the serial port.
+- On a DE10-Nano: the kernel boots and lists the files of its disk; COS is
+  loaded and started; the station logs on; start-up reads the nine drives and
+  completes; a batch job runs and its printout, banner picture and log, is in
+  the printer's file and on the printer's screen; a reset with COS running
+  brings the kernel back with the CPU held, and COS starts again; keys typed
+  as fast as the serial port carries them all arrive. The first session on
+  the hardware found two things no simulation had: a key lost when keys
+  queued up, and the printer's graphics mode.
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano, first fit: 26,703 ALMs (64%), 504 of 553
-memory blocks, 38 DSP blocks. The Local Memories of the three I/O Processors
-take 384 of the memory blocks.
+Quartus 17.0 for the DE10-Nano: 27,020 ALMs (64%), 509 of 553 memory blocks,
+38 DSP blocks. The Local Memories of the three I/O Processors take 384 of the
+memory blocks. Timing is met with the machine at 73.5 MHz and the video side
+at 29.4 MHz.

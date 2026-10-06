@@ -2,8 +2,9 @@
 
 This core is a CRAY X-MP supercomputer with its I/O Subsystem, and it runs the
 Cray Operating System, COS 1.17. You start the machine the way its operators
-did: answer the I/O Subsystem at the operator's console, dead start COS, and
-log on at the station.
+did: answer the I/O Subsystem at the operator's console, dead start COS, log
+on at the station and submit batch jobs. What the jobs print goes to a text
+file on the SD card.
 
 ## What you need
 
@@ -15,7 +16,7 @@ log on at the station.
 
 ## Setup
 
-1. Build the core and copy `output_files/CrayXMP.rbf` to `_Computer` on the SD card: see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+1. Copy `CrayXMP_YYYYMMDD.rbf` from [releases](releases) to the `_Computer` folder on the SD card.
 2. Run `python3 tools/py/mkcos.py "COS folder" out`.
 3. Copy the folders `out/games` and `out/_Computer` onto the SD card.
 4. Start **COS 1.17** from the Computer menu.
@@ -28,21 +29,41 @@ log on at the station.
 4. Type `STATION`, then press **F2** to see the station.
 5. Type `LOGON`.
 6. Type `STMSG`. When COS asks for configuration changes, type `REPLY,0,GO`.
-7. Type `STMSG` again. If it shows `NO LABEL WAS FOUND ON DEVICE BMR-0-20`, type `REPLY,10,CONTINUE`.
-8. Type `STMSG,I` to watch start-up finish.
-
-**F1** shows the operator's console again.
+7. Type `STMSG,I` after a few seconds to see how far start-up is. It ends with `STARTUP COMPLETE`.
+8. If the list stops at `RE-READING $EFT` for device `BMR-0-20`, type `STMSG`. It shows
+   `NO LABEL WAS FOUND ON DEVICE BMR-0-20`; type `REPLY,10,CONTINUE`.
 
 **Commands are in capital letters.** Caps Lock is on when the core starts.
 
+## Running a job
+
+1. On the station type `CLASS,ALL,ON`, then `LIMIT,5`.
+2. Type `SUBMIT,JTEST30`. It is a test job that comes with the system and ends in an abort.
+3. Press **F3** to see what the printer prints.
+
+The printout is also in `games/CrayXMP/printer.txt` on the SD card. New
+printing goes behind what is already there.
+
+`FSTAT` on the operator's console lists the files on the system's disk, `JTEST30` among them.
+
+## Screens
+
+- **F1** the operator's console
+- **F2** the station
+- **F3** the printer
+
+Keys go to the station while it is shown, and to the operator's console otherwise.
+
 ## Menu options
 
+- Reset starts the machine again; COS has to be dead started again.
 - Aspect ratio
 - Text color: white, green, amber or cyan
 - Font: 8x16 on a 31 kHz raster, or 8x8 on a 15 kHz raster
 
 ## Troubleshooting
 
+- `Load a boot file from the menu to start it.`: the core was started without its files. Start **COS 1.17**, not **CrayXMP**.
 - `INVALID COMMAND`: the command was typed in small letters. Press Caps Lock.
 - `Concentrator ordinal 3  VAX interface select error. Command aborted.` a while after `START`:
   there is no front-end computer. COS runs without one.
