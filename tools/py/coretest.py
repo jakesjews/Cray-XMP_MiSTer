@@ -23,9 +23,10 @@ DDR3 (sim/harness/core_main.cpp).  Memory is full of junk, as DDR3 is.
 nofile starts the core with no boot file: it has to say so on the screen.
 
 printer loads the self-checking program of tests/ios/selftest.py as the boot
-file.  The program has to report OK on the operator's console, and what it
-prints has to be on the printer's screen and in the printer's file, behind
-the five blocks an earlier session is made to have left there.
+file.  The program has to report OK on the operator's console, which takes
+three keys that come in one burst, and what it prints has to be on the
+printer's screen and in the printer's file, behind the five blocks an earlier
+session is made to have left there.
 
 boot loads a boot file made from the COS 1.17 software in SYSTEM (default:
 CRAY1_SYSTEM, or the directory research/Cray 1 Disk Image from Youtube),
@@ -104,7 +105,8 @@ def printer():
                     os.path.join(there, 'boot_tape.tap'), boot], check=True, stdout=subprocess.DEVNULL)
     if os.path.exists(printed):
         os.remove(printed)
-    r = run([boot, '--ms', '330', '--screen', '2', '--printed', '5', '--printer', printed])
+    # the program also wants three keys, which come in one burst on the serial port
+    r = run([boot, '--ms', '330', '--screen', '2', '--printed', '5', '--printer', printed, '--type', '+1=AB\\r', '--burst'])
     # a new page is an empty line on the screen, under the line the cursor was on
     ok = report(r, ['0:OK', "---- printer's screen\n\n\nPRINT!\n"])
     text = open(printed, 'rb').read() if os.path.exists(printed) else b''

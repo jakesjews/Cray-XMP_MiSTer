@@ -31,7 +31,9 @@ memory, a word from each processor to each other one, and the printer.  Both
 must report OK three times and print the same.  It runs a second time on the
 whole machine, where the program also starts the CPU on a program of a few
 instructions and exchanges parcels with it over the channel pair, to see
-that a parcel that waits is not lost and what I/O Master Clear does.
+that a parcel that waits is not lost and what I/O Master Clear does.  Three
+keys are typed on the operator's console one behind the other, and the
+program must get all three.
 
 machine runs the whole machine in hardware description (module xmp_machine: the
 CPU with the X-MP features and the I/O Subsystem) on the same software, without
@@ -181,14 +183,14 @@ def selftest():
         subprocess.run([sys.executable, os.path.join(ROOT, 'tests/ios/selftest.py'), there] + (['--cpu'] if cpu else []), check=True)
         script = os.path.join(OUT, 'selftest.script')
         with open(script, 'w') as f:
-            f.write('run 80\nscreen kernel\nscreen 1.1\nscreen 3.1\nprinter\n')
+            f.write('type kernel AB\nrun 80\nscreen kernel\nscreen 1.1\nscreen 3.1\nprinter\n')
         ran = subprocess.run([SYS, there, '--script', script, '--quiet'], capture_output=True, text=True, errors='replace')
         model, summary = ran.stdout, ran.stderr
         said = [line.strip() for line in model.splitlines() if ':' in line and len(line.strip()) <= 5]
         # with the mainframe the program starts the CPU itself, and holds it again at its end
         bench = [MACHINE, '--cpu-may-run'] if cpu else [BOOT]
         hardware = subprocess.run(bench + [os.path.join(there, 'target/cos_117/iop_kern.bin'), os.path.join(there, 'boot_tape.tap'),
-                                           '--ms', '80'], capture_output=True, text=True, errors='replace').stdout
+                                           '--ms', '80', '--type', '+1=AB\\r', '--burst'], capture_output=True, text=True, errors='replace').stdout
         lines = [line.strip() for line in hardware.splitlines()]
         shown = [line for line in lines if len(line) <= 5 and ':' in line]
         shown += [line.split(': ', 1)[1] for line in lines if line.startswith('console of the ') and ': ' in line]

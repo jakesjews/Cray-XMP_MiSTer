@@ -3,7 +3,10 @@
 // in tools/crates/ios/src/devices.rs.
 //
 // Keyboard: a key that arrives sets Done.  Function 10 reads it and clears
-// Done; function 0 clears Done, and a key that was not read is lost.
+// Done; function 0 clears Done, and a key that was not read is lost.  The
+// software reads a key and then clears the channel, so the next key must not
+// come in between: it is taken KEY_GAP clocks after the one before was read
+// at the earliest, as keys on a serial line follow each other.
 // Display: function 14 sends the low seven bits of the accumulator; the
 // channel is Busy until the terminal has taken the character and then Done.
 // Function 0 clears Busy and Done.  A character always goes out, whether or
@@ -12,7 +15,9 @@
 // The Interrupt Enable flags of both channels are kept with those of the
 // other channels, in iop.v.
 
-module ios_console (
+module ios_console #(
+	parameter KEY_GAP = 400000  // 5 ms
+) (
 	input wire clk,
 	input wire rst,  // Master Clear of the I/O Processor
 
@@ -35,13 +40,16 @@ module ios_console (
 	input  wire       i_char_ready
 );
 
-	reg [6:0] key;
+	reg [ 6:0] key;
+	reg [19:0] gap;  // clocks until the next key may come
 
-	assign o_key_ready = !o_key_done && !rst;
+	assign o_key_ready = !o_key_done && (gap == 20'd0) && !rst;
 
 	always @(posedge clk) begin
 		o_data <= 16'd0;
+		if (gap != 20'd0) gap <= gap - 20'd1;
 		if (rst) begin
+			gap            <= 20'd0;
 			o_key_done     <= 1'b0;
 			o_display_busy <= 1'b0;
 			o_display_done <= 1'b0;
@@ -57,6 +65,7 @@ module ios_console (
 				o_display_done <= 1'b1;
 			end
 			if (i_keyboard && ((i_function == 4'o00) || (i_function == 4'o10))) begin
+				if (o_key_done) gap <= KEY_GAP[19:0];
 				o_key_done <= 1'b0;
 				if (i_function == 4'o10) o_data <= {9'b0, key};
 			end

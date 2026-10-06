@@ -7,7 +7,7 @@
 //   Vemu [BOOTFILE] [--disk N=FILE]... [--drive N=FILE]... [--type TEXT=KEYS]...
 //        [--press TEXT=KEYS]... [--until TEXT] [--ms N] [--reset-at MS] [--reset-on TEXT] [--screen C]...
 //        [--printed BLOCKS] [--printer OUT] [--until-printed TEXT] [--frame OUT.ppm] [--ddr fast|normal|slow]
-//        [--disk-wait CLOCKS] [--seed N] [--quiet]
+//        [--disk-wait CLOCKS] [--burst] [--seed N] [--quiet]
 //
 // BOOTFILE (tools/py/mkboot.py) is put where the menu loads it; without one
 // nothing is loaded.  Memory is full of junk otherwise, as DDR3 is.  --disk
@@ -27,7 +27,8 @@
 // milliseconds instead.  TEXT is looked for on the operator's console, or on
 // the station if it begins with @0: (the numbers are those of the consoles in
 // sim/harness/ios_main.cpp); typed KEYS go to that console, pressed ones to the
-// one whose screen is shown.  The run ends when TEXT of --until has been shown,
+// one whose screen is shown.  With --burst the typed KEYS follow each other as
+// fast as the serial port carries them, not a few milliseconds apart.  The run ends when TEXT of --until has been shown,
 // or after N milliseconds of machine time (default 20000).  --reset-at presses
 // the menu's reset at that time, --reset-on when the operator's console has
 // shown TEXT.  --screen C prints a console's 24 lines at the end, and
@@ -135,7 +136,7 @@ int main(int argc, char **argv) {
     int printed_blocks = 0;
     std::string printer_out, until_printed;
     bool printer_screen = false;
-    bool quiet = false;
+    bool quiet = false, burst = false;
     uint32_t seed = 1;
     int until_console = 0, disk_wait = 200;
     struct Typing { int console; bool pressed; std::string wait, keys; long delay; };
@@ -175,6 +176,7 @@ int main(int argc, char **argv) {
         else if (a == "--disk-wait") disk_wait = atoi(next().c_str());
         else if (a == "--seed") seed = (uint32_t)atol(next().c_str());
         else if (a == "--quiet") quiet = true;
+        else if (a == "--burst") burst = true;
         else if (a == "--disk") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) disk_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a == "--drive") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) drive_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a[0] == '-') { fprintf(stderr, "unknown option %s\n", a.c_str()); return 2; }
@@ -349,7 +351,7 @@ int main(int argc, char **argv) {
                         for (int n = 0; n < 2; n++) on[n].typed();
                     }
                     if (pressed) { key_events = events_of(key); key_gap = 1; }
-                    else if (key) { drv.send(std::string(1, (char)(key | (c ? 0x80 : 0)))); key_gap = 200000; }
+                    else if (key) { drv.send(std::string(1, (char)(key | (c ? 0x80 : 0)))); key_gap = burst ? 1 : 200000; }
                 }
             }
 

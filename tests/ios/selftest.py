@@ -26,7 +26,10 @@ not depend on:
      reads them back
   7. every processor sends a word of its own to each of the others, and
      each word arrives where it should and is seen to be taken
-  8. with --cpu, for a machine that has the mainframe: the BIOP puts a
+  8. the MIOP reads the three keys A, B and RETURN from its console, which
+     whoever runs the program types one behind the other, and clears the
+     keyboard channel after each as the kernel does; none may be lost
+  9. with --cpu, for a machine that has the mainframe: the BIOP puts a
      program into central memory and the MIOP lets the CPU go.  The program
      offers sixteen parcels on the CPU's output channel 11 and takes parcels
      on its input channel 10.  The MIOP takes eight, the first of which has
@@ -42,7 +45,8 @@ E the printer did not finish,
 I J K M N the interrupt request of the disk, p to z the BIOP's drive and
 its channel into central memory, L no word came, D wrong word, T a word was
 not taken, G no parcels from the mainframe, H not the parcels it sent, O it
-took none, U V parcels passed after I/O Master Clear.
+took none, U V parcels passed after I/O Master Clear, 1 no key came, 2 not
+the key that was typed.
 """
 import os
 import sys
@@ -110,6 +114,8 @@ R_WHO, R_AT, R_CONSOLE, R_COUNT, R_WORD, R_TABLE, R_EXPECT, R_SLOT, R_FROM, R_TO
 CLOCK, MOS, EXB = 4, 5, 0o17
 HIA, HOA, DRIVE = 0o14, 0o15, 0o20      # channels of the BIOP
 CIA, COA = 0o20, 0o21                   # the MIOP's channels to the mainframe
+KEYBOARD = 0o46                         # of the MIOP's operator's console
+KEYS = b'AB\r'                          # what is typed there
 # The mainframe's program, words 0 to 43 octal of central memory: the exchange
 # package of a CPU with the X-MP features (P = parcel 100, monitor mode, the
 # largest fields), at word 20
@@ -617,7 +623,18 @@ def program(cpu):
         wait_done(7 + 2 * slot, 'T')     # and the word we sent that way was taken
         p.label(skip)
 
-    # ---- 8. the mainframe, from the MIOP.  The BIOP's word has come, so its
+    # ---- 8. three keys (the MIOP).  They were typed long ago: the first waits
+    # in the channel and the others come as soon as there is room.
+    p.ins(0o020, R_WHO)
+    p.jump_if('A#0', 'no_keys')
+    for key in KEYS:
+        wait_done(KEYBOARD, '1')
+        p.fn(KEYBOARD, 0o10)
+        check(key, '2')
+        p.fn(KEYBOARD, 0)
+    p.label('no_keys')
+
+    # ---- 9. the mainframe, from the MIOP.  The BIOP's word has come, so its
     # program is in central memory.
     def pause():
         loop = fresh('pause')

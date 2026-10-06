@@ -4,7 +4,7 @@
 // the sectors of the Peripheral Expander's disk and of the BIOP's nine drives.
 //
 //   Vios KERNEL TAPE [DISK] [--drive N=FILE]... [--until TEXT] [--type TEXT=KEYS]...
-//        [--ms N] [--poke PARCEL=VALUE]... [--quiet]
+//        [--ms N] [--poke PARCEL=VALUE]... [--burst] [--quiet]
 //
 // KERNEL is the IOP kernel (parcels, high byte first), which is put into
 // Buffer Memory at address 0; TAPE the boot tape in .tap format; DISK the
@@ -16,7 +16,9 @@
 // or after N milliseconds of machine time (default 20000).  --type presses
 // KEYS on that console once it has shown TEXT (\r is RETURN); several are
 // taken in order.  TEXT is found whatever blanks and cursor movements lie
-// between its characters.  A TEXT of +N waits N milliseconds instead.  Both
+// between its characters.  A TEXT of +N waits N milliseconds instead.  With
+// --burst a key is held out the moment the one before has been taken, not a
+// few milliseconds later.  Both
 // TEXTs can begin with @C: for another console: 0 is the station, 3 the
 // operator's, 4 the BIOP's, 5 the XIOP's.  --screen C prints that console as
 // its 24 lines at the end.  --poke changes a parcel of the kernel (hexadecimal).
@@ -55,7 +57,7 @@ int main(int argc, char **argv) {
     std::vector<std::string> files;
     std::string until;
     long ms = 20000;
-    bool quiet = false, quick = false, cpu_may_run = false;
+    bool quiet = false, quick = false, cpu_may_run = false, burst = false;
     std::vector<std::pair<unsigned, unsigned>> pokes;
     struct Typing { int console; std::string wait, keys; long delay; };
     std::vector<Typing> typing;
@@ -84,6 +86,7 @@ int main(int argc, char **argv) {
         else if (a == "--quiet") quiet = true;
         else if (a == "--quick") quick = true;
         else if (a == "--cpu-may-run") cpu_may_run = true;
+        else if (a == "--burst") burst = true;
         else if (a == "--drive") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) drive_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a == "--poke") { unsigned p = 0, v = 0; sscanf(next().c_str(), "%x=%x", &p, &v); pokes.push_back({p, v}); }
         else files.push_back(a);
@@ -171,7 +174,7 @@ int main(int argc, char **argv) {
         bool key_taken = top->i_key_valid & top->o_key_ready;
         top->clk = 1; top->eval();
         // the operator: a key, some time after the one before, once the text has been shown
-        if (key_taken) { top->i_key_valid = 0; key_gap = 200000; }
+        if (key_taken) { top->i_key_valid = 0; key_gap = burst ? 0 : 200000; }
         if (key_gap > 0) key_gap--;
         if (said < typing.size() && typing[said].delay) waited++;
         if (!top->i_key_valid && key_gap == 0 && said < typing.size()) {

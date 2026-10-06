@@ -360,7 +360,9 @@ module ios #(
 			localparam         [5:0] KEYBOARD = (g < 4) ? (32 + 2 * g) : 34;
 			wire       here = strobe[IOP];
 			wire [5:0] channel = number[6*IOP+:6];
-			ios_console console (
+			ios_console #(
+				.KEY_GAP(5 * CLOCKS_PER_MS)
+			) console (
 				.clk           (clk),
 				.rst           (master_clear[IOP]),
 				.i_keyboard    (here && (channel == KEYBOARD)),
