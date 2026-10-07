@@ -1,4 +1,4 @@
-# CRAY X-MP for MiSTer
+# [CRAY X-MP](https://en.wikipedia.org/wiki/Cray_X-MP) for MiSTer
 
 This core is a CRAY X-MP supercomputer running the Cray Operating System,
 COS 1.17. You start the machine the way its operators did: answer the
