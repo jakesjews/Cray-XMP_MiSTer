@@ -1,5 +1,6 @@
 //! Media: disk images that are read from a file and written to memory only,
-//! and the boot tape.
+//! and the boot tape.  An image can be saved as a new file with what was
+//! written to it.
 //!
 //! The formats are those of the cray-sim project's ready-to-run system
 //! (`research/notes/ios-devices-spec.md`, parts 8.6, 10.2 and 10.3): they
@@ -7,14 +8,15 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 
 /// A disk image: blocks of a fixed size, no header.  Parcels are stored high
 /// byte first.  Blocks that are written are kept in memory and the file is
 /// never changed; a block that the file does not have reads as zeros.
 pub struct Image {
     file: Option<File>,
+    path: Option<PathBuf>,
     block: usize,
     written: HashMap<u64, Box<[u8]>>,
 }
@@ -24,6 +26,7 @@ impl Image {
     pub fn empty(block: usize) -> Image {
         Image {
             file: None,
+            path: None,
             block,
             written: HashMap::new(),
         }
@@ -33,6 +36,7 @@ impl Image {
     pub fn open(path: &Path, block: usize) -> std::io::Result<Image> {
         Ok(Image {
             file: Some(File::open(path)?),
+            path: Some(path.to_path_buf()),
             block,
             written: HashMap::new(),
         })
@@ -46,6 +50,28 @@ impl Image {
     /// Blocks written since the image was opened.
     pub fn written_blocks(&self) -> usize {
         self.written.len()
+    }
+
+    /// Write the image as it now is to a new file at `to`: the file it was
+    /// opened from, with the blocks that were written since.  An image with
+    /// no file behind it ends with its last written block.
+    pub fn save(&self, to: &Path) -> std::io::Result<()> {
+        match &self.path {
+            Some(from) => {
+                std::fs::copy(from, to)?;
+            }
+            None => {
+                File::create(to)?;
+            }
+        }
+        let mut file = std::fs::OpenOptions::new().write(true).open(to)?;
+        let mut blocks: Vec<_> = self.written.iter().collect();
+        blocks.sort_by_key(|(index, _)| **index);
+        for (index, bytes) in blocks {
+            file.seek(SeekFrom::Start(index * self.block as u64))?;
+            file.write_all(bytes)?;
+        }
+        file.flush()
     }
 
     /// Block `index` as parcels.
@@ -342,5 +368,24 @@ mod tests {
         assert_eq!(image.read(3), [0x1234, 0x5678, 0, 0]);
         assert_eq!(image.read(2), [0; 4]);
         assert_eq!(image.written_blocks(), 1);
+    }
+
+    #[test]
+    fn image_saved_with_what_was_written() {
+        let dir = std::env::temp_dir().join(format!("cray1-image-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (from, to) = (dir.join("from.img"), dir.join("to.img"));
+        std::fs::write(&from, [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]).unwrap();
+        let mut image = Image::open(&from, 4).unwrap();
+        image.write(1, &[0xAABB, 0xCCDD]);
+        image.write(3, &[0x1122]);
+        image.save(&to).unwrap();
+        assert_eq!(
+            std::fs::read(&to).unwrap(),
+            [1, 2, 3, 4, 0xAA, 0xBB, 0xCC, 0xDD, 9, 10, 11, 12, 0x11, 0x22, 0, 0]
+        );
+        // the file it was opened from is as it was
+        assert_eq!(std::fs::read(&from).unwrap().len(), 12);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

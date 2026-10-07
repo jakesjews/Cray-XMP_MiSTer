@@ -4,14 +4,14 @@
 //! ```text
 //! cray1-sys SYSTEM [--script FILE] [--ms N] [--clock YYMMDD,HHMMSS] [--log FILE]
 //!           [--poke PARCEL=VALUE]... [--two-iops] [--instant] [--timing NAME=N]...
-//!           [--quiet]
+//!           [--save DIR] [--quiet]
 //! ```
 //!
 //! * `SYSTEM`: a directory with the software as the cray-sim project
 //!   distributes it: `target/cos_117/iop_kern.bin` (the IOP kernel),
 //!   `boot_tape.tap` (the overlays), `exp_disk.img` (the disk on the
 //!   Peripheral Expander) and `biop_dkNN.img` (DD-29 drives, NN the BIOP
-//!   channel in octal).  No file is ever written to.
+//!   channel in octal).  None of these files is ever written to.
 //! * `--script FILE`: what the operator does, one step a line:
 //!
 //!   ```text
@@ -41,6 +41,10 @@
 //! * `--timing NAME=N`: one of the times of `Timing` (`system.rs`), in
 //!   clock periods of 12.5 ns: `disk_sector=400000` is a disk that takes
 //!   5 ms for a sector.
+//! * `--save DIR`: at the end write the disks that were written to into
+//!   DIR, under their names in `SYSTEM`: each is its file with what the
+//!   software wrote.  That is how a system is installed on empty drives and
+//!   kept.  DIR must not be `SYSTEM`.
 //! * `--quiet`: do not copy the kernel console to standard output.
 //!
 //! The exit status is 0 if the script ran to its end, 1 if a wait gave up
@@ -57,7 +61,7 @@ use std::process::ExitCode;
 /// Clock periods of 12.5 ns in a millisecond.
 const MILLISECOND: u64 = 80_000;
 
-const USAGE: &str = "usage: cray1-sys SYSTEM [--script FILE] [--ms N] [--wait SECONDS] [--clock YYMMDD,HHMMSS] [--log FILE] [--poke PARCEL=VALUE]... [--two-iops] [--instant] [--timing NAME=N]... [--quiet]";
+const USAGE: &str = "usage: cray1-sys SYSTEM [--script FILE] [--ms N] [--wait SECONDS] [--clock YYMMDD,HHMMSS] [--log FILE] [--poke PARCEL=VALUE]... [--two-iops] [--instant] [--timing NAME=N]... [--save DIR] [--quiet]";
 
 struct Options {
     system: PathBuf,
@@ -72,6 +76,7 @@ struct Options {
     timing: Vec<(String, u32)>,
     replay: Option<(usize, String, u64)>,
     without: Vec<(usize, u8)>,
+    save: Option<PathBuf>,
     quiet: bool,
 }
 
@@ -89,6 +94,7 @@ fn options() -> Result<Options, String> {
         timing: Vec::new(),
         replay: None,
         without: Vec::new(),
+        save: None,
         quiet: false,
     };
     let mut system = None;
@@ -158,6 +164,7 @@ fn options() -> Result<Options, String> {
                 o.timing
                     .push(parsed.ok_or("--timing takes NAME=CLOCK-PERIODS")?);
             }
+            "--save" => o.save = Some(PathBuf::from(value("--save")?)),
             "--quiet" => o.quiet = true,
             _ if arg.starts_with("--") => return Err(format!("{} is not an option", arg)),
             _ if system.is_none() => system = Some(PathBuf::from(arg)),
@@ -172,6 +179,43 @@ fn read(path: &Path) -> Result<Vec<u8>, String> {
     std::fs::read(path).map_err(|e| format!("{}: {}", path.display(), e))
 }
 
+/// The BIOP channels that have a drive: those with an image in `system`.
+fn drives(system: &Path) -> Vec<u8> {
+    (0o20..0o40u8)
+        .filter(|channel| system.join(format!("biop_dk{:o}.img", channel)).exists())
+        .collect()
+}
+
+/// Write the disks that were written to into `dir`.
+fn save(system: &System, o: &Options, dir: &Path) -> Result<(), String> {
+    let same = |a: &Path, b: &Path| match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
+    if same(dir, &o.system) {
+        return Err("--save needs a directory other than SYSTEM".into());
+    }
+    let (expander, disks) = system.written();
+    if expander > 0 {
+        let to = dir.join("exp_disk.img");
+        system
+            .save_expander_disk(&to)
+            .map_err(|e| format!("{}: {}", to.display(), e))?;
+        eprintln!("  saved {}", to.display());
+    }
+    for (index, channel) in drives(&o.system).into_iter().enumerate() {
+        if disks[index] > 0 {
+            let to = dir.join(format!("biop_dk{:o}.img", channel));
+            system
+                .save_disk(index, &to)
+                .map_err(|e| format!("{}: {}", to.display(), e))?;
+            eprintln!("  saved {}", to.display());
+        }
+    }
+    Ok(())
+}
+
 fn build(o: &Options) -> Result<System, String> {
     let kernel = read(&o.system.join("target/cos_117/iop_kern.bin"))?;
     let tape = Tape::from_tap(&read(&o.system.join("boot_tape.tap"))?)?;
@@ -179,13 +223,11 @@ fn build(o: &Options) -> Result<System, String> {
     let disk =
         Image::open(&disk, DISK_SECTOR_BYTES).map_err(|e| format!("{}: {}", disk.display(), e))?;
     let mut config = Config::new(kernel, tape, disk);
-    for channel in 0o20..0o40u8 {
+    for channel in drives(&o.system) {
         let path = o.system.join(format!("biop_dk{:o}.img", channel));
-        if path.exists() {
-            let image = Image::open(&path, DD29_SECTOR_BYTES)
-                .map_err(|e| format!("{}: {}", path.display(), e))?;
-            config.disks.push((channel, image));
-        }
+        let image = Image::open(&path, DD29_SECTOR_BYTES)
+            .map_err(|e| format!("{}: {}", path.display(), e))?;
+        config.disks.push((channel, image));
     }
     if let Some((date, time)) = &o.clock {
         if !config.with_clock(date, time) {
@@ -472,6 +514,12 @@ fn main() -> ExitCode {
     runner.report();
     if runner.system.cpu_stopped().is_some() {
         status = 1;
+    }
+    if let Some(dir) = &o.save {
+        if let Err(e) = save(&runner.system, &o, dir) {
+            eprintln!("cray1-sys: {}", e);
+            return ExitCode::from(66);
+        }
     }
     ExitCode::from(status)
 }

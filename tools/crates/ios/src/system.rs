@@ -1065,4 +1065,13 @@ impl System {
             self.side.disks.iter().map(|d| d.written()).collect(),
         )
     }
+    /// The expander disk as it now is, as a new file.
+    pub fn save_expander_disk(&self, to: &std::path::Path) -> std::io::Result<()> {
+        self.side.expander.save_disk(to)
+    }
+    /// DD-29 `index`, in the order of `Config::disks`, as it now is, as a
+    /// new file.
+    pub fn save_disk(&self, index: usize, to: &std::path::Path) -> std::io::Result<()> {
+        self.side.disks[index].save(to)
+    }
 }

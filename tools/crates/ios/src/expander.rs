@@ -450,6 +450,11 @@ impl Expander {
         self.disk.image.written_blocks()
     }
 
+    /// The disk's image as it now is, as a new file.
+    pub fn save_disk(&self, to: &std::path::Path) -> std::io::Result<()> {
+        self.disk.image.save(to)
+    }
+
     fn exists(&self, device: u8) -> bool {
         match device {
             PRINTER | TAPE | DISK => true,

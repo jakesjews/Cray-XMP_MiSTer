@@ -234,6 +234,11 @@ impl Dd29 {
         self.image.written_blocks()
     }
 
+    /// The drive's image as it now is, as a new file.
+    pub fn save(&self, to: &std::path::Path) -> std::io::Result<()> {
+        self.image.save(to)
+    }
+
     fn sector(&self, sector: u16) -> u64 {
         (self.cylinder as u64 * DD29_HEADS + self.head as u64) * DD29_SECTORS + sector as u64
     }
