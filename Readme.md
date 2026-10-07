@@ -116,3 +116,24 @@ Keys go to the station while it is shown, and to the operator's console otherwis
   COS looks for a front-end computer, which this machine does not have. It runs without one.
 
 How the machine is built, where it differs from a real one and how to work on the core are in [docs](docs).
+
+## Credits
+
+Thanks to the people whose work this core rests on:
+
+- [Chris Fenton](https://www.chrisfenton.com/homebrew-cray-1a/) for the CRAY-1 in an FPGA that the CPU started from,
+  and for [reading COS 1.17 off its disk pack](https://www.chrisfenton.com/cos-recovery/).
+- [andrastantos](https://github.com/andrastantos) for bringing that disk back to life in [cray-sim](https://github.com/andrastantos/cray-sim),
+  which the core was checked against, and for telling how in [The Cray Files](https://www.modularcircuits.com/blog/articles/the-cray-files/).
+- [kej715](https://github.com/kej715) for [COS-Tools](https://github.com/kej715/COS-Tools) and the [compiler kit for COS](https://github.com/kej715/ack):
+  the assembler and the loader on the disk.
+- [davidgiven](https://github.com/davidgiven) and the Vrije Universiteit for the [Amsterdam Compiler Kit](https://github.com/davidgiven/ack), which those two are compiled with.
+- [Zorislav-Shoyat](https://github.com/Zorislav-Shoyat) for [Cray-on-FPGA](https://github.com/Zorislav-Shoyat/Cray-on-FPGA) and the
+  [CAL translator](https://github.com/Zorislav-Shoyat/CAL-Cray-Assembly-Language-Translator), a second opinion on the CPU and on the assembler.
+- Robert Hyatt, Albert Gower and Harry Nelson for Cray Blitz, and [swenson](https://github.com/swenson) for
+  [keeping its sources](https://github.com/swenson/cray-blitz): real Cray code to test with.
+- [fvaneijk](https://github.com/fvaneijk) for the [VT52 core](https://github.com/MiSTer-devel/VT52_MiSTer), where the fonts and the video timing come from,
+  and Dimitar Zhekov for the [Terminus Font](https://terminus-font.sourceforge.net/).
+- [sorgelig](https://github.com/sorgelig) and the [MiSTer project](https://github.com/MiSTer-devel) for the framework.
+- [Bitsavers](http://www.bitsavers.org/pdf/cray/) and [cray-history.net](https://cray-history.net/) for the Cray manuals.
+- The [Verilator](https://www.veripool.org/verilator/) and [Verible](https://github.com/chipsalliance/verible) projects for the simulator and the formatter.
