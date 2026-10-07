@@ -297,19 +297,40 @@ Device times are not those of the real devices. The disks answer as fast as
 the SD card does; the software was found to work with all devices from
 instant to several times slower than real ones.
 
-One thing in the software is changed when the disks are made for the core
-([tools/py/mkcos.py](../tools/py/mkcos.py)). The parameter file COS is
-started with makes drives 24 to 26 a striped group but marks the three
-drives themselves as not available. COS then has the group in its tables
-with no members and one drive's 18 sectors to a track, while the I/O
-Subsystem's software spreads a track of the group over the three drives, 54
-sectors to a head. A request that COS lets run past sector 17 comes back
-with other sectors than the ones it addressed at the next head, and a
-dataset that lands on the group ends in `BLOCK NUMBER ERROR`. The first
-dataset of an interactive session does land there. The cray-sim simulator
-gives the same error with the same disks, with the same blocks handed to
-COS. The group is switched off, as the later copy of that file in cray-sim
-has it.
+### The system on the card
+
+The package for the SD card ([tools/py/mkcos.py](../tools/py/mkcos.py)) is
+COS installed on one drive, where the machine the software came from had
+nine. The I/O Subsystem has all nine drives, and the nine-drive system of
+the cray-sim project runs on the core as it is; the package only makes COS
+use the first. What is changed is in two lists of parameters on the expander
+disk, the ones COS is installed and started with:
+
+- The master device on channel 20 is the only drive. It is no longer
+  reserved for requests by name: with nothing but reserved devices COS
+  halts during the install.
+- The striped group is off. The parameters make drives 24 to 26 a striped
+  group but mark the three drives themselves as not available. COS then has
+  the group in its tables with no members and one drive's 18 sectors to a
+  track, while the I/O Subsystem's software spreads a track of the group
+  over the three drives, 54 sectors to a head. A request that COS lets run
+  past sector 17 comes back with other sectors than the ones it addressed at
+  the next head, and a dataset that lands on the group ends in `BLOCK NUMBER
+  ERROR`. The cray-sim simulator gives the same error with the same disks,
+  with the same blocks handed to COS.
+- The device in Buffer Memory is off. Buffer Memory does not keep its
+  contents, and with the device COS asks at every start whether to write its
+  label anew.
+
+The drive is made on the system model: COS installs itself on an empty
+drive, and a job saves the programs of [software/cos-tools](../software/cos-tools/README.md)
+on it. Nothing of COS itself is patched.
+
+The software has no list of users, so an `ACCOUNT` statement is taken as it
+comes. Who owns a saved dataset still matters: an interactive session is
+the user `SYSTEM`, a job is the user its `ACCOUNT` statement names, and what
+a job saves without naming one belongs to `SYSTEM` after the next start,
+where that job no longer finds it. So the jobs here name `SYSTEM`.
 
 ### Starting
 
@@ -533,11 +554,21 @@ The I/O Subsystem and the core:
   expected, with the text whole; that has not been looked into. With direct
   video a RetroTINK 4K reports the 8x16 font's picture as 1872x524p
   (1280x384) at 58.80 MHz, 31.41 kHz and 59.94 Hz.
+- The package for the SD card was run on a DE10-Nano as it comes out of its
+  zip file, with the core under its present name: COS starts from the one
+  drive with a single question; the three example jobs assemble, compile
+  and interpret their programs and print what the system model prints; in
+  an interactive session a program is written in the editor, assembled,
+  linked and run, and a FORTRAN program is written, saved and compiled by a
+  job submitted from the session, whose printout comes out on the station's
+  printer; after a reset and a second start a new session gets the saved
+  texts back. The same session runs on the system model, where the package
+  is made.
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: 28,318 ALMs (68%), 528 of 553 memory blocks,
+Quartus 17.0 for the DE10-Nano: 28,290 ALMs (68%), 528 of 553 memory blocks,
 37 DSP blocks, 4 of 6 PLLs. The Local Memories of the three I/O Processors
 take 384 of the memory blocks, the line buffers of the framework's
-scandoubler 26. Timing is met with the CPU at 105 MHz, with 0.36 ns to spare,
+scandoubler 26. Timing is met with the CPU at 105 MHz, with 0.54 ns to spare,
 the I/O Subsystem at 80 MHz and the video side at 58.8 MHz.

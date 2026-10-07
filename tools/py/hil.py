@@ -2,11 +2,12 @@
 """Drive the CRAY X-MP core on a real MiSTer from the development machine.
 
   hil.py deploy [RBF]              copy the core and the on-device agent
-  hil.py start [BOOTFILE] [-t SEC] [SESSION OPTIONS]
+  hil.py start [BOOTFILE] [-t SEC] [--mgl PATH] [SESSION OPTIONS]
                                    start the core through an MGL that mounts exp_disk.img,
                                    drives.img and printer.txt of games/Cray-XMP and loads
                                    the boot file (BOOTFILE is copied there first), then
-                                   work the consoles as `session` does
+                                   work the consoles as `session` does; --mgl starts it
+                                   through an MGL that is on the MiSTer already
   hil.py session [-t SEC] [--break] [--type WAIT=KEYS]... [--until TEXT] [--screen C]...
                                    work the consoles of the running core through the
                                    serial port (see mister_agent.py); --break resets
@@ -21,10 +22,11 @@
   hil.py shot OUT.png [--scaled]   take a screenshot (needs direct video off); --scaled is
                                    the picture as it is put on the screen
   hil.py direct-video on|off       per-core direct video override in MiSTer.ini
+  hil.py put FILE PATH             copy a file to the MiSTer
   hil.py sh COMMAND                run a shell command on the MiSTer
 
-The disk images are not copied by this script: put exp_disk.img and drives.img
-(tools/py/mkcos.py) into /media/fat/games/Cray-XMP once.
+The disk images are not copied by this script: unpack the package for the SD
+card (tools/py/mkcos.py) on the MiSTer once.
 
 Environment: MISTER (default root@mister), MISTER_PW (default 1).
 """
@@ -126,17 +128,24 @@ def run_session(seconds, args, then=''):
 def cmd_start(args):
     seconds = take_time(args, 60)
     push_agent()
-    if args and not args[0].startswith('--'):
-        scp_to(args.pop(0), GAMES + '/boot.ios')
-    mgl = ('<mistergamedescription><rbf>_Computer/' + CORE + '</rbf>'
-           '<file delay="1" type="s" index="0" path="exp_disk.img"/>'
-           '<file delay="1" type="s" index="1" path="drives.img"/>'
-           '<file delay="1" type="s" index="2" path="printer.txt"/>'
-           '<file delay="1" type="f" index="1" path="boot.ios"/></mistergamedescription>')
-    ssh("cat > %s <<'EOF'\n%s\nEOF" % (MGL, mgl))
-    ssh("test -f %s/printer.txt || %s" % (GAMES, NEW_PRINTER))
+    if '--mgl' in args:
+        # an MGL that is on the MiSTer already, as the package for the SD card brings one
+        i = args.index('--mgl')
+        path = args[i + 1]
+        del args[i:i + 2]
+    else:
+        path = MGL
+        if args and not args[0].startswith('--'):
+            scp_to(args.pop(0), GAMES + '/boot.ios')
+        mgl = ('<mistergamedescription><rbf>_Computer/' + CORE + '</rbf>'
+               '<file delay="1" type="s" index="0" path="exp_disk.img"/>'
+               '<file delay="1" type="s" index="1" path="drives.img"/>'
+               '<file delay="1" type="s" index="2" path="printer.txt"/>'
+               '<file delay="1" type="f" index="1" path="boot.ios"/></mistergamedescription>')
+        ssh("cat > %s <<'EOF'\n%s\nEOF" % (MGL, mgl))
+        ssh("test -f %s/printer.txt || %s" % (GAMES, NEW_PRINTER))
     # the screens are empty when the core starts
-    run_session(seconds, ['--fresh'] + args, 'echo load_core %s > /dev/MiSTer_cmd' % MGL)
+    run_session(seconds, ['--fresh'] + args, 'echo "load_core %s" > /dev/MiSTer_cmd' % path)
 
 
 def cmd_printed(args):
@@ -207,6 +216,7 @@ def main():
     elif c in ('uart', 'peek', 'poke', 'fill', 'keys'):
         push_agent()
         agent([c] + args)
+    elif c == 'put': scp_to(args[0], args[1])
     elif c == 'sh': ssh(' '.join(args))
     else: sys.exit(__doc__)
 

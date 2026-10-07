@@ -24,6 +24,9 @@ is made of and where it differs from a real one, see [MACHINE.md](MACHINE.md).
   [Template_MiSTer](https://github.com/MiSTer-devel/Template_MiSTer).
 - `sim/`: Verilator simulations. `tools/`: assembler, reference models, scripts.
 - `tests/`: test programs.
+- `software/cos-tools/`: the programs and libraries that are installed on the
+  drive of the package for the SD card, built to run under COS.
+- `releases/`: the core and that package.
 - `lint/`: Verilator file list, waivers and a PLL stub for `make lint`.
 
 `make` lists the commands below.
@@ -81,10 +84,11 @@ the consoles, and the two links to the mainframe. It runs the I/O Subsystem's
 own software, and through it COS 1.17. The hardware description was written
 from this model and is checked against it.
 
-The software is not part of this repository. `cray1-sys` takes the directory
-of the ready-to-run COS 1.17 system of the cray-sim project (the IOP kernel,
-the boot tape, the expander disk and the drive images) and never writes to
-it. What the operator types comes from a script:
+`cray1-sys` takes the directory of the ready-to-run COS 1.17 system of the
+cray-sim project (the IOP kernel, the boot tape, the expander disk and the
+drive images) and never writes to it; a channel whose drive image is missing
+has no drive. `--save DIR` writes the disks that were written to into another
+directory at the end. What the operator types comes from a script:
 
 ```sh
 tools/target/release/cray1-sys DIRECTORY --script tests/sys/cos.script
@@ -101,6 +105,26 @@ the script steps and the options, among them the timing of the devices.
 the software is in `research/Cray 1 Disk Image from Youtube` or in the
 directory `CRAY1_SYSTEM` names, and compares the start of the boot with one
 recorded on the cray-sim simulator. `make test` runs the script above.
+
+## The package for the SD card
+
+`releases/Cray-XMP_COS-1.17.zip` is made by the system model:
+
+```sh
+make tools
+python3 tools/py/mkcos.py DIRECTORY out --zip releases/Cray-XMP_COS-1.17.zip
+```
+
+`DIRECTORY` needs `boot_tape.tap`, `exp_disk.img` and
+`target/cos_117/iop_kern.bin` of the cray-sim project's COS 1.17. The script
+gives the model an empty drive and has COS install itself on it
+(`START COS_117 INSTALL`), starts COS again and runs one job that saves the
+programs and libraries of [software/cos-tools](../software/cos-tools/README.md)
+on the drive and enters the programs as commands, then starts COS from the
+finished files and runs the three example jobs, whose printout it checks. It
+takes about eight minutes. The header of the script says what is changed in
+the software and why: one drive instead of nine, and which user the jobs
+run as.
 
 ## Simulations
 
@@ -296,21 +320,19 @@ an interactive session gets a file with `FETCH,DN=HELLO,MF=AP,TEXT=BIN/HELLO.`
 and runs it with `HELLO.` The script's header has the layout of the disk and
 of a dataset. Taking every dataset of the COS 1.17 disk apart and putting it
 together again gives the same bytes. The directory holds 34 files, of which
-that disk uses 26.
+the disk as it was recovered uses 26 and the one in the package 29.
 
-On the system model, programs put on the disk this way run under COS: one
-assembled with [COS-Tools](https://github.com/kej715/COS-Tools), a C program
-compiled with [its ACK](https://github.com/kej715/ack) in a batch job, and a
-job that assembles, links and runs its own source with the assembler and
-loader of COS-Tools running under COS. At the interactive console programs
-built with that runtime do not get their output through yet.
+This is the way to bring in a program compiled elsewhere, with
+[the ACK for the X-MP](https://github.com/kej715/ack) for instance, or a job
+with its own deck. What a program built with that kit's runtime writes to
+`$OUT` is printed when it runs in a job; in an interactive session it does
+not reach the screen, which is why FORTRAN and LISP are run as jobs.
 
 ## Testing on a MiSTer
 
 `tools/py/hil.py` drives a MiSTer over SSH (`MISTER`, default `root@mister`;
-`MISTER_PW`, default `1`). It needs `sshpass`. Put `exp_disk.img` and
-`drives.img` into `/media/fat/games/Cray-XMP` once ([tools/py/mkcos.py](../tools/py/mkcos.py)
-makes them).
+`MISTER_PW`, default `1`). It needs `sshpass`. Unpack the package for the SD
+card on the MiSTer once.
 
 ```sh
 python3 tools/py/hil.py deploy                  # copy the core
@@ -332,10 +354,9 @@ operator's). A serial BREAK resets the machine as the menu's reset does;
 `session --break` sends one.
 
 For a start as after a power cycle, stop the machine first (`hil.py session
---break`), then put fresh drive images in place and clear Buffer Memory
-(`hil.py fill 0o20000000 0o20000000 0`). A COS that is still running writes
-to both again, and the next start ends in `CRAY HALT`. The numbers of COS's
-start-up questions are not fixed; read them off the station's screen.
+--break`), then put a fresh `drives.img` in place and load the core again,
+which clears the memories. A COS that is still running writes to the drive
+again, and a start on a fresh drive with the old memory ends in `CRAY HALT`.
 
 Screenshots need direct video off: `hil.py direct-video off`, `hil.py shot out.png`,
 `hil.py direct-video on`.
