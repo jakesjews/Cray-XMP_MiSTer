@@ -5,7 +5,7 @@ is made of and where it differs from a real one, see [MACHINE.md](MACHINE.md).
 
 ## Layout
 
-- `CrayXMP.sv`: the MiSTer `emu` wrapper. `files.qip` lists what Quartus builds.
+- `Cray-XMP.sv`: the MiSTer `emu` wrapper. `files.qip` lists what Quartus builds.
 - `rtl/xmp_machine.v`: the machine. The CPU with the X-MP features and the I/O
   Subsystem, joined by the channel pair between them.
 - `rtl/cray/`: CPU modules written for this core.
@@ -35,15 +35,15 @@ bottle named `Quartus` on macOS.
 
 ```sh
 ./build.sh map        # analysis and synthesis only
-./build.sh compile    # full flow, writes output_files/CrayXMP.rbf
+./build.sh compile    # full flow, writes output_files/Cray-XMP.rbf
 ```
 
 `compile` exits with status 2 if timing is not met.
 
-**Do not edit `files.qip`, `CrayXMP.qsf` or any RTL while a build runs.** Quartus
+**Do not edit `files.qip`, `Cray-XMP.qsf` or any RTL while a build runs.** Quartus
 stops with "Settings File changed outside of the Quartus Prime software" and
-rewrites `CrayXMP.qsf` as one large flattened file. If that happens, restore
-`CrayXMP.qsf` to its 78-line form before building again.
+rewrites `Cray-XMP.qsf` as one large flattened file. If that happens, restore
+`Cray-XMP.qsf` to its 78-line form before building again.
 
 A memory that both of its ports write must carry `(* ramstyle = "no_rw_check" *)`,
 or Quartus builds it from flip-flops; the first synthesis of this core needed
@@ -131,7 +131,7 @@ sim/build/core/Vemu BOOTFILE --disk 0=exp_disk.img --until 'ENTER DATE'
   machine (`rtl/xmp_machine.v`), CPU included, with central memory served by
   the test bench. `--quick` leaves out the tests of memory and most of the
   BIOP's test of its drives.
-- `sim/build/core/Vemu` is the core as the MiSTer runs it (`CrayXMP.sv`), with
+- `sim/build/core/Vemu` is the core as the MiSTer runs it (`Cray-XMP.sv`), with
   stand-ins for `hps_io`, the PLL, DDR3 and the framework's `video_mixer` and
   `video_freak`, which pass the picture through. It loads a boot file into memory
   that is otherwise full of junk, serves the image slots, types on the serial
@@ -309,7 +309,7 @@ built with that runtime do not get their output through yet.
 
 `tools/py/hil.py` drives a MiSTer over SSH (`MISTER`, default `root@mister`;
 `MISTER_PW`, default `1`). It needs `sshpass`. Put `exp_disk.img` and
-`drives.img` into `/media/fat/games/CrayXMP` once ([tools/py/mkcos.py](../tools/py/mkcos.py)
+`drives.img` into `/media/fat/games/Cray-XMP` once ([tools/py/mkcos.py](../tools/py/mkcos.py)
 makes them).
 
 ```sh
@@ -355,7 +355,7 @@ The same operations are available through
 `python3 tools/py/verible.py format|format-check [files...]`. `format-check`
 returns nonzero when formatting differs; both return nonzero on tool errors.
 
-The project scope is the `CrayXMP.sv` wrapper and the Verilog and SystemVerilog
+The project scope is the `Cray-XMP.sv` wrapper and the Verilog and SystemVerilog
 sources under `rtl/` and `sim/`, including new, untracked files. Ignored files
 are excluded.
 

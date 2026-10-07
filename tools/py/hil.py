@@ -4,7 +4,7 @@
   hil.py deploy [RBF]              copy the core and the on-device agent
   hil.py start [BOOTFILE] [-t SEC] [SESSION OPTIONS]
                                    start the core through an MGL that mounts exp_disk.img,
-                                   drives.img and printer.txt of games/CrayXMP and loads
+                                   drives.img and printer.txt of games/Cray-XMP and loads
                                    the boot file (BOOTFILE is copied there first), then
                                    work the consoles as `session` does
   hil.py session [-t SEC] [--break] [--type WAIT=KEYS]... [--until TEXT] [--screen C]...
@@ -24,7 +24,7 @@
   hil.py sh COMMAND                run a shell command on the MiSTer
 
 The disk images are not copied by this script: put exp_disk.img and drives.img
-(tools/py/mkcos.py) into /media/fat/games/CrayXMP once.
+(tools/py/mkcos.py) into /media/fat/games/Cray-XMP once.
 
 Environment: MISTER (default root@mister), MISTER_PW (default 1).
 """
@@ -38,7 +38,7 @@ PW = os.environ.get('MISTER_PW', '1')
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 SSH_OPTS = ['-o', 'PreferredAuthentications=password', '-o', 'PubkeyAuthentication=no',
             '-o', 'StrictHostKeyChecking=accept-new', '-o', 'LogLevel=ERROR', '-o', 'ConnectTimeout=8']
-CORE = 'CrayXMP'
+CORE = 'Cray-XMP'
 RBF_DEV = '/media/fat/_Computer/%s.rbf' % CORE
 GAMES = '/media/fat/games/%s' % CORE
 AGENT = '/tmp/mister_agent.py'
@@ -169,7 +169,7 @@ def cmd_shot(args):
 
 def cmd_direct_video(args):
     # A per-core section in MiSTer.ini overrides the global setting.  Only the
-    # [CrayXMP] section is touched; a one-time backup is kept next to the file.
+    # [Cray-XMP] section is touched; a one-time backup is kept next to the file.
     script = r"""
 import re, os, shutil
 p = '/media/fat/MiSTer.ini'

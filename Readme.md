@@ -17,7 +17,7 @@ for a year make sure it is before 2000.
 
 ## Setup
 
-1. Copy `CrayXMP_YYYYMMDD.rbf` from [releases](releases) to the `_Computer` folder on the SD card.
+1. Copy `Cray-XMP_YYYYMMDD.rbf` from [releases](releases) to the `_Computer` folder on the SD card.
 2. Run `python3 tools/py/mkcos.py "COS folder" out`.
 3. Copy the folders `out/games` and `out/_Computer` onto the SD card.
 4. Start **COS 1.17** from the Computer menu.
@@ -46,7 +46,7 @@ Commands are in capital letters. Caps Lock is on when the core starts.
    in an abort.
 2. Press **F3** to see what the printer prints.
 
-The printout is also in `games/CrayXMP/printer.txt` on the SD card, after what was printed before.
+The printout is also in `games/Cray-XMP/printer.txt` on the SD card, after what was printed before.
 
 `FSTAT` on the operator's console lists the files on the system's disk, `JTEST30` among them.
 
@@ -109,7 +109,7 @@ Keys go to the station while it is shown, and to the operator's console otherwis
 
 ## Troubleshooting
 
-- `Load a boot file from the menu to start it.`: start **COS 1.17** from the menu, not **CrayXMP**.
+- `Load a boot file from the menu to start it.`: start **COS 1.17** from the menu, not **Cray-XMP**.
 - `INVALID COMMAND`: the command was typed in small letters. Press Caps Lock.
 - `CS009 - UNKNOWN VERB` for `TEDI.` or `CAL`: run `SUBMIT,JTOOLS` first.
 - `CRAY HALT` during start-up after the disk images were replaced: start **COS 1.17** from the

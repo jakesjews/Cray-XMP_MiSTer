@@ -59,7 +59,7 @@ module emu #(
 	// on the Peripheral Expander prints.
 	`include "build_id.v"
 	localparam CONF_STR = {
-		"CrayXMP;;",
+		"Cray-XMP;;",
 		"-;",
 		"F1,IOS,Load boot file,34000000;",
 		"S0,IMG,Expander disk;",

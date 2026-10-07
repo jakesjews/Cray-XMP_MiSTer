@@ -7,13 +7,13 @@ from the COS 1.17 set as the cray-sim project distributes it.
 SYSTEM_DIR holds boot_tape.tap, exp_disk.img, the nine drive images
 biop_dk20.img to biop_dk32.img and target/cos_117/iop_kern.bin.  Written are
 
-  OUT_DIR/games/CrayXMP/cos117.ios    the boot file: kernel and boot tape
-  OUT_DIR/games/CrayXMP/exp_disk.img  the disk of the Peripheral Expander, with
+  OUT_DIR/games/Cray-XMP/cos117.ios    the boot file: kernel and boot tape
+  OUT_DIR/games/Cray-XMP/exp_disk.img  the disk of the Peripheral Expander, with
                                       the striped group of drives switched off
                                       and the programs of software/cos-tools
                                       added
-  OUT_DIR/games/CrayXMP/drives.img    the nine drives, one after another
-  OUT_DIR/games/CrayXMP/printer.txt   takes what the printer prints: 8 MB of
+  OUT_DIR/games/Cray-XMP/drives.img    the nine drives, one after another
+  OUT_DIR/games/Cray-XMP/printer.txt   takes what the printer prints: 8 MB of
                                       empty lines, which the core fills from
                                       the top
   OUT_DIR/_Computer/COS 1.17.mgl      starts the core with all four in place
@@ -51,7 +51,7 @@ DRIVE_BYTES = 823 * 10 * 18 * 4096      # cylinders, head groups, sectors, bytes
 PRINTER_BYTES = 8 << 20
 
 MGL = '''<mistergamedescription>
-    <rbf>_Computer/CrayXMP</rbf>
+    <rbf>_Computer/Cray-XMP</rbf>
     <file delay="1" type="s" index="0" path="exp_disk.img"/>
     <file delay="1" type="s" index="1" path="drives.img"/>
     <file delay="1" type="s" index="2" path="printer.txt"/>
@@ -105,7 +105,7 @@ def main(argv):
     if len(argv) != 2:
         sys.exit(__doc__)
     system, out = argv
-    games = os.path.join(out, 'games', 'CrayXMP')
+    games = os.path.join(out, 'games', 'Cray-XMP')
     computer = os.path.join(out, '_Computer')
     names = ['boot_tape.tap', 'exp_disk.img', os.path.join('target', 'cos_117', 'iop_kern.bin')]
     names += ['biop_dk%o.img' % channel for channel in DRIVES]

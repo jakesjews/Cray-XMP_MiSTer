@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the CRAY X-MP core as a whole (module emu of CrayXMP.sv) in simulation.
+"""Check the CRAY X-MP core as a whole (module emu of Cray-XMP.sv) in simulation.
 
     coretest.py screens [SEED [CASES]]
     coretest.py spool [CASES]

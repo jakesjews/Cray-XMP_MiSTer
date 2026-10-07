@@ -363,13 +363,13 @@ out in the CPU's clock and handed back. Either of them meets the video clock
 only in `rtl/mister/cdc.v`: a two-flip-flop synchroniser for levels and a
 handshake that carries one console character at a time in each direction.
 
-`CrayXMP.sdc` tells the timing analyser that the three are unrelated; the
+`Cray-XMP.sdc` tells the timing analyser that the three are unrelated; the
 framework's own constraints know the core's first PLL only. The core-level
 simulation runs all three. The benches of the machine without the MiSTer give
 the CPU and the I/O Subsystem one clock, which the bridges take as well.
 
 The CPU's clock is set in `rtl/pll/pll_0002.v` (`output_clock_frequency1`).
-The I/O Subsystem's is set in `rtl/pll_ios.v` and named in `CrayXMP.sv`
+The I/O Subsystem's is set in `rtl/pll_ios.v` and named in `Cray-XMP.sv`
 (`IOS_HZ`), from which the I/O Processors' clocks count their milliseconds.
 
 The first build with the I/O Subsystem missed 81.67 MHz by 0.99 ns. What

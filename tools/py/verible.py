@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 EXTENSIONS = {".v", ".sv", ".vh", ".svh"}
 SOURCES = [
-    "CrayXMP.sv",
+    "Cray-XMP.sv",
     "rtl",
     "sim",
     ":(exclude)sys/**",

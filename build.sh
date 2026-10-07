@@ -1,15 +1,15 @@
 #!/bin/zsh
-# Build the CrayXMP MiSTer core with Quartus Prime 17.0 running under CrossOver
-# on macOS.  On Windows or Linux open CrayXMP.qpf in Quartus instead.
+# Build the Cray-XMP MiSTer core with Quartus Prime 17.0 running under CrossOver
+# on macOS.  On Windows or Linux open Cray-XMP.qpf in Quartus instead.
 # Usage: ./build.sh [map|compile|clean]   (default: compile)
 #   map     - synthesis only (fast syntax/elaboration check)
-#   compile - full flow (map, fit, asm, sta) -> output_files/CrayXMP.rbf
+#   compile - full flow (map, fit, asm, sta) -> output_files/Cray-XMP.rbf
 set -e
 cd "$(dirname "$0")"
 CX=${CROSSOVER_BIN:-/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin}
 BOTTLE=${QUARTUS_BOTTLE:-Quartus}
 QBIN="C:/intelFPGA_lite/17.0/quartus/bin64"
-PROJ=CrayXMP
+PROJ=Cray-XMP
 MODE=${1:-compile}
 LOG=build_${MODE}.log
 run_q() { "$CX/wine" --bottle "$BOTTLE" --workdir "$PWD" --cx-app "$QBIN/$1" "${@:2}"; }

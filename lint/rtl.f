@@ -80,4 +80,4 @@ rtl/cray/cray-1x/scalar_pop_lz.v
 rtl/cray/cray-1x/scalar_shift.v
 rtl/cray/cray-1x/t_regfile_hard.v
 rtl/cray/cray-1x/v_scheduler.v
-CrayXMP.sv
+Cray-XMP.sv

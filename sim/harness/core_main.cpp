@@ -1,4 +1,4 @@
-// Core-level simulation of the CRAY X-MP core (module emu of CrayXMP.sv) with
+// Core-level simulation of the CRAY X-MP core (module emu of Cray-XMP.sv) with
 // stand-ins for hps_io, the PLL and the DDR3 port.  The bench does what a
 // user's MiSTer does: it loads the boot file into memory, serves the disk
 // images a block at a time, types on the keyboard or on the HPS serial port,

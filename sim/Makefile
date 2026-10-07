@@ -7,7 +7,7 @@ BUILD := $(ROOT)/sim/build
 # Core-level simulation of the CRAY X-MP core
 core: $(BUILD)/core/Vemu
 $(BUILD)/core/Vemu: $(ROOT)/sim/core.vc $(wildcard $(ROOT)/sim/harness/*) $(wildcard $(ROOT)/sim/stubs/*) \
-                    $(ROOT)/CrayXMP.sv $(ROOT)/files.qip $(wildcard $(ROOT)/rtl/*.v $(ROOT)/rtl/*/*.v $(ROOT)/rtl/*/*.sv $(ROOT)/rtl/cray/cray-1x/*.v)
+                    $(ROOT)/Cray-XMP.sv $(ROOT)/files.qip $(wildcard $(ROOT)/rtl/*.v $(ROOT)/rtl/*/*.v $(ROOT)/rtl/*/*.sv $(ROOT)/rtl/cray/cray-1x/*.v)
 	mkdir -p $(BUILD)/core && cd $(ROOT) && python3 tools/py/qip2vc.py > sim/build/core.files && verilator -f sim/core.vc --Mdir $(BUILD)/core -o Vemu
 
 # The Ampex terminal against the model's
