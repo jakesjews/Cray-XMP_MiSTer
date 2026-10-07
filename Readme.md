@@ -23,7 +23,7 @@ write a program in its text editor, assemble it and run it.
 
 ## Starting COS
 
-1. Wait for `ENTER DATE [MM/DD/YY]` and type a date, such as `10/05/89`.
+1. Wait for `ENTER DATE [MM/DD/YY]` and type a date, such as `10/05/89`. **The year must be 80 to 99.**
 2. Type a time, such as `09:30:00`.
 3. Type `START COS_117 DEADSTART` and wait for `START COMPLETE`.
 4. Type `STATION`, then press **F2** to see the station.
@@ -37,7 +37,7 @@ write a program in its text editor, assemble it and run it.
 9. Type `STMSG,I` again until the list ends with `STARTUP COMPLETE`.
 10. Type `CLASS,ALL,ON`, then `LIMIT,5`, so that jobs can run.
 
-**Commands are in capital letters.** Caps Lock is on when the core starts.
+Commands are in capital letters. Caps Lock is on when the core starts.
 
 ## Running a job
 

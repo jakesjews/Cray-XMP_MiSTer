@@ -287,6 +287,12 @@ started: `Concentrator ordinal 3  VAX interface select error. Command
 aborted.`), the error log channel, the block multiplexer channels, the clock
 on the expander (the operator types date and time), and writing to tape.
 
+The kernel takes a date only with a year from 80 to 99 and asks again
+otherwise (tried on the system model: 79, 00 and 26 are refused, 80 and 99
+taken). That is one reason the MiSTer's clock is not passed on to the
+machine; the other is that the kernel's driver for the expander's clock is
+switched off in this software, as it was on the machine it came from.
+
 Device times are not those of the real devices. The disks answer as fast as
 the SD card does; the software was found to work with all devices from
 instant to several times slower than real ones.
@@ -524,8 +530,9 @@ The I/O Subsystem and the core:
   HDMI picture show both fonts, the four aspect ratios (the two custom ones
   at 16:10 and 1:1), the three integer scales, and the 8x8 font doubled with
   scanlines. With HQ2x a line comes out 1,024 pixels wide where 1,280 are
-  expected, with the text whole; that has not been looked into. The picture
-  with direct video was not checked by a measurement.
+  expected, with the text whole; that has not been looked into. With direct
+  video a RetroTINK 4K reports the 8x16 font's picture as 1872x524p
+  (1280x384) at 58.80 MHz, 31.41 kHz and 59.94 Hz.
 
 ## Resources
 
