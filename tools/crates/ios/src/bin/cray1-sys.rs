@@ -16,7 +16,8 @@
 //!
 //!   ```text
 //!   wait CONSOLE TEXT    until CONSOLE shows TEXT (and, if it did already, has changed)
-//!   wait printer TEXT    until the printer has printed TEXT
+//!   wait printer TEXT    until the printer has printed TEXT, behind what the
+//!                        wait printer before this one found
 //!   type CONSOLE TEXT    type TEXT and RETURN
 //!   run MS               let MS milliseconds pass
 //!   screen CONSOLE       print CONSOLE as a screen
@@ -303,6 +304,9 @@ struct Runner {
     replay_steps: Option<u64>,
     /// How much of the kernel console has been copied out.
     shown: usize,
+    /// How much of the printout, as `printable` gives it, the waits for the
+    /// printer have found their texts in.
+    heard: usize,
     quiet: bool,
 }
 
@@ -391,7 +395,17 @@ impl Runner {
                 // it was there already the screen has to have changed
                 "wait" if name == "printer" => {
                     let mut left = wait * 1000;
-                    while !printable(self.system.printed()).contains(text) {
+                    // the printout is looked at again only when it has grown
+                    let mut length = usize::MAX;
+                    loop {
+                        if self.system.printed().len() != length {
+                            length = self.system.printed().len();
+                            let printed = printable(self.system.printed());
+                            if let Some(at) = printed[self.heard..].find(text) {
+                                self.heard += at + text.len();
+                                break;
+                            }
+                        }
                         if left == 0 {
                             return Err(fail(format!(
                                 "the printer did not print `{}` in {} s",
@@ -497,6 +511,7 @@ fn main() -> ExitCode {
         system,
         replay_steps: o.replay.as_ref().map(|r| r.2),
         shown: 0,
+        heard: 0,
         quiet: o.quiet,
     };
     let mut status = 0;
