@@ -300,8 +300,10 @@ Subsystem's software spreads a track of the group over the three drives, 54
 sectors to a head. A request that COS lets run past sector 17 comes back
 with other sectors than the ones it addressed at the next head, and a
 dataset that lands on the group ends in `BLOCK NUMBER ERROR`. The first
-dataset of an interactive session does land there. The group is switched
-off, as the later copy of that file in cray-sim has it.
+dataset of an interactive session does land there. The cray-sim simulator
+gives the same error with the same disks, with the same blocks handed to
+COS. The group is switched off, as the later copy of that file in cray-sim
+has it.
 
 ### Starting
 
