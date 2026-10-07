@@ -4,7 +4,8 @@ This core is a CRAY X-MP supercomputer running the Cray Operating System,
 COS 1.17. You start the machine the way its operators did: answer the
 questions on the operator's console, dead start COS, log on at the station
 and submit batch jobs. You can also work with COS directly at the station:
-write a program in its text editor, assemble it and run it.
+write a program in its text editor, assemble it and run it. If the OS every asks
+for a year make sure it is before 2000.
 
 ## What you need
 
