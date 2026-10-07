@@ -18,7 +18,8 @@
                                    what the serial port carries, as it is
   hil.py peek WORD [COUNT] | poke WORD HEX... | fill WORD COUNT HEX
   hil.py dump FILE WORD COUNT      copy a memory range to a local file
-  hil.py shot OUT.png              take a screenshot (needs direct video off)
+  hil.py shot OUT.png [--scaled]   take a screenshot (needs direct video off); --scaled is
+                                   the picture as it is put on the screen
   hil.py direct-video on|off       per-core direct video override in MiSTer.ini
   hil.py sh COMMAND                run a shell command on the MiSTer
 
@@ -155,7 +156,7 @@ def cmd_session(args):
 
 def cmd_shot(args):
     before = ssh('ls -t /media/fat/screenshots/%s 2>/dev/null | head -1' % CORE, capture=True).decode().strip()
-    ssh('echo screenshot > /dev/MiSTer_cmd')
+    ssh('echo screenshot%s > /dev/MiSTer_cmd' % (' scaled' if '--scaled' in args else ''))
     for _ in range(20):
         time.sleep(0.5)
         newest = ssh('ls -t /media/fat/screenshots/%s 2>/dev/null | head -1' % CORE, capture=True).decode().strip()

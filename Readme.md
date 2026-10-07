@@ -54,7 +54,7 @@ The printout is also in `games/CrayXMP/printer.txt` on the SD card, after what w
 COS also takes statements one at a time and answers on the screen.
 
 1. On the station type `SUBMIT,JTOOLS` and wait for its printout (**F3**). It installs the
-   text editor, the assembler and the loader.
+   text editor, the assembler and the loader. Once is enough: they stay on the disks.
 2. On the operator's console (**F1**) type `IAIOP LOG`.
 3. On the station (**F2**) type `IAC`, then `/LOGON`.
 4. Type `ACCOUNT,AC=CRAY,APW=XYZZY,UPW=QUASAR.`
