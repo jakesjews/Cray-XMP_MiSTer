@@ -26,7 +26,9 @@ prepare_build_id() {
 
 case "$MODE" in
   clean)
-    rm -rf db incremental_db output_files *.qws *.rpt *.summary *.smsg *.done *.jdi *.pin *.sld c5_pin_model_dump.txt build_*.log
+    # a pattern that matches nothing is left out instead of stopping the script
+    setopt null_glob
+    rm -rf db incremental_db output_files *.qws *.rpt *.summary *.smsg *.done *.jdi *.pin *.sld c5_pin_model_dump.txt jtag.cdf build_*.log
     ;;
   map)
     prepare_build_id
