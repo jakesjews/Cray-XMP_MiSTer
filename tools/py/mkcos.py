@@ -10,6 +10,8 @@ biop_dk20.img to biop_dk32.img and target/cos_117/iop_kern.bin.  Written are
   OUT_DIR/games/CrayXMP/cos117.ios    the boot file: kernel and boot tape
   OUT_DIR/games/CrayXMP/exp_disk.img  the disk of the Peripheral Expander, with
                                       the striped group of drives switched off
+                                      and the programs of software/cos-tools
+                                      added
   OUT_DIR/games/CrayXMP/drives.img    the nine drives, one after another
   OUT_DIR/games/CrayXMP/printer.txt   takes what the printer prints: 8 MB of
                                       empty lines, which the core fills from
@@ -28,6 +30,13 @@ next track, and a dataset that happens to land on the group ends in BLOCK
 NUMBER ERROR.  The group is switched off the way cray-sim's own later copy of
 the file has it: STRIPE-1 not available, and 29-1-22A named in its place.  The
 six other drives remain.
+
+Added to the disk are the assembler, the loader and the copy command of
+software/cos-tools, as BIN/CAL, BIN/LDR and BIN/COPYF, and a job, JTOOLS.
+SUBMIT,JTOOLS at the station saves them, and the text editor and the dataset
+lister that are on the disk already, as permanent datasets and enters them as
+commands, so that a later job or session can say CAL or TEDI without fetching
+anything.
 """
 import os
 import shutil
@@ -68,6 +77,30 @@ def stripe_off(disk):
     return expdisk.rewrite(disk, 'STATION/DEADSTART', new)
 
 
+TOOLS = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'software', 'cos-tools'))
+OURS = ('CAL', 'LDR', 'COPYF')      # of software/cos-tools
+THEIRS = ('TEDI', 'AUDIT')          # on the disk as it comes
+
+
+def add_tools(disk):
+    """Put the programs of software/cos-tools on an expander disk, and the job that installs them; the names added."""
+    added = []
+    for name in OURS:
+        path = 'BIN/' + name
+        if not expdisk.find(disk, path):
+            expdisk.put(disk, path, open(os.path.join(TOOLS, name), 'rb').read(), '01/01/89', '01:01:01')
+            added.append(path)
+    job = ['JOB,JN=JTOOLS,T=60.', 'ACCOUNT,AC=CRAY,APW=XYZZY,UPW=QUASAR.']
+    for name in OURS + THEIRS:
+        job += ['FETCH,DN=%s,MF=AP,TEXT=BIN/%s.' % (name, name), 'SAVE,DN=%s,EXO=ON.' % name,
+                'RELEASE,DN=%s.' % name, 'ACCESS,DN=%s,ENTER.' % name]
+    if not expdisk.find(disk, 'STATION/JTOOLS'):
+        text = ('\n'.join(job) + '\n').encode('ascii')
+        expdisk.put(disk, 'STATION/JTOOLS', expdisk.from_text(text), '01/01/89', '01:01:01')
+        added.append('STATION/JTOOLS')
+    return added
+
+
 def main(argv):
     if len(argv) != 2:
         sys.exit(__doc__)
@@ -95,8 +128,11 @@ def main(argv):
 
     disk = bytearray(open(os.path.join(system, 'exp_disk.img'), 'rb').read())
     changed = stripe_off(disk)
+    added = add_tools(disk)
     open(os.path.join(games, 'exp_disk.img'), 'wb').write(disk)
     print('exp_disk.img' + (': STRIPE-1 switched off in DEADSTART' if changed else ''))
+    if added:
+        print('exp_disk.img: added ' + ', '.join(added))
 
     with open(os.path.join(games, 'drives.img'), 'wb') as joined:
         for n in names[3:]:

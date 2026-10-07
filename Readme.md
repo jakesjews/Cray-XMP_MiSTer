@@ -4,7 +4,8 @@ This core is a CRAY X-MP supercomputer with its I/O Subsystem, and it runs the
 Cray Operating System, COS 1.17. You start the machine the way its operators
 did: answer the I/O Subsystem at the operator's console, dead start COS, log
 on at the station and submit batch jobs. What the jobs print goes to a text
-file on the SD card.
+file on the SD card. You can also work with COS directly at the station:
+write a program in its text editor, assemble it and run it.
 
 ## What you need
 
@@ -53,14 +54,40 @@ printing goes behind what is already there.
 
 COS also takes statements one at a time, with the answers on the screen.
 
-1. On the operator's console (**F1**) type `IAIOP LOG`.
-2. On the station (**F2**) type `IAC`, then `/LOGON`.
-3. Type `ACCOUNT,AC=CRAY,APW=XYZZY,UPW=QUASAR.` Statements end with a full stop.
-4. Fetch a program from the system's disk and run it by its name:
-   `FETCH,DN=AUDIT,MF=AP,TEXT=BIN/AUDIT.` then `AUDIT.` lists the permanent datasets.
-5. `FETCH,DN=TEDI,MF=AP,TEXT=BIN/TEDI.` then `TEDI.` is the text editor. `?` shows its
-   commands, `QUI` leaves it.
+1. On the station type `SUBMIT,JTOOLS` and wait for its printout (**F3**). It makes the
+   editor, the assembler and the loader commands of COS.
+2. On the operator's console (**F1**) type `IAIOP LOG`.
+3. On the station (**F2**) type `IAC`, then `/LOGON`.
+4. Type `ACCOUNT,AC=CRAY,APW=XYZZY,UPW=QUASAR.` Statements end with a full stop.
+5. `AUDIT.` lists the permanent datasets.
 6. `/LOGOFF` ends the session, and `/BYE` brings the station's own display back.
+
+## Writing a program
+
+The assembler takes the [Cray Assembly Language](http://www.bitsavers.org/pdf/cray/CAL/SR-2003_CAL_Assembler_Version_2_Feb86.pdf).
+
+1. In a session type `TEDI.` for the text editor, and give the text a name, such as `PROG`.
+2. Type `AL`, then the program below, then a line that is only a full stop.
+   **A line without a label starts with a space.**
+3. `END` saves the text and leaves the editor.
+4. `CAL,I=PROG,L=0.` assembles it and says how many errors it found.
+5. `LDR,AB,DN=$BLD.` links it, and `$ABD.` runs it.
+
+```
+         IDENT     HELLO
+         ENTRY     HELLO
+         START     HELLO
+HELLO    S0        4
+         S1        ='Hello from COS'Z
+         S2        O'17
+         EX
+         S0        0
+         EX
+         END
+```
+
+For a listing use `CAL,I=PROG,L=LST.` In the editor `O` opens another text, such as `LST`,
+and `T 1,30` shows its first 30 lines. `?` lists the editor's commands.
 
 ## Screens
 
@@ -81,6 +108,7 @@ Keys go to the station while it is shown, and to the operator's console otherwis
 
 - `Load a boot file from the menu to start it.`: the core was started without its files. Start **COS 1.17**, not **CrayXMP**.
 - `INVALID COMMAND`: the command was typed in small letters. Press Caps Lock.
+- `CS009 - UNKNOWN VERB` for `TEDI.` or `CAL`: `SUBMIT,JTOOLS` has not been run yet.
 - `Concentrator ordinal 3  VAX interface select error. Command aborted.` a while after `START`:
   there is no front-end computer. COS runs without one.
 
