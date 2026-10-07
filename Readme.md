@@ -101,7 +101,8 @@ Keys go to the station while it is shown, and to the operator's console otherwis
 ## Menu options
 
 - Reset starts the machine again; COS has to be dead started again.
-- Aspect ratio
+- Aspect ratio (with the custom ratios of `MiSTer.ini`), Scale and Scandoubler Fx work as in
+  other cores. The scandoubler is for the 8x8 font.
 - Text color: white, green, amber or cyan
 - Font: 8x16 (31 kHz) or 8x8 (15 kHz)
 

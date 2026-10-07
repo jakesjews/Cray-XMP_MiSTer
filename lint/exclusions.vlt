@@ -172,7 +172,6 @@ lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 
 lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 'ps2_mouse_data_in'"
 lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 'ps2_mouse'"
 lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 'ps2_mouse_ext'"
-lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 'forced_scandoubler'"
 lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 'video_rotated'"
 lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 'new_vmode'"
 lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 'status_in'"
@@ -197,9 +196,9 @@ lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 
 lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 'uart_mode'"
 lint_off -rule PINMISSING -file "CrayXMP.sv" -match "*Instance has missing pin: 'uart_speed'"
 // MiSTer provides wider controls than this core consumes: of the status word
-// only the reset, colour, font and aspect ratio bits, and of the buttons only
-// the user button.
-lint_off -rule UNUSEDSIGNAL -file "CrayXMP.sv" -match "*Bits of signal are not used: 'status'[127:123,120:15,13:5,2:1]*"
+// only the reset, colour, font, scale, scandoubler and aspect ratio bits, and
+// of the buttons only the user button.
+lint_off -rule UNUSEDSIGNAL -file "CrayXMP.sv" -match "*Bits of signal are not used: 'status'[127:123,120:15,13:10,2:1]*"
 lint_off -rule UNUSEDSIGNAL -file "CrayXMP.sv" -match "*Bits of signal are not used: 'buttons'[0]*"
 
 // CrayXMP.sv: hps_io counts 16,384 bytes of a disk request and the largest here is

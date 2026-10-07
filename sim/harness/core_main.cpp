@@ -240,7 +240,7 @@ int main(int argc, char **argv) {
     top->DDRAM_BUSY = 0;
     top->DDRAM_DOUT_READY = 0;
     double cpu_acc = 0, ios_acc = 0;
-    const double cpu_ratio = CPU_KHZ / 29400.0;  // CPU clock cycles per video clock cycle
+    const double cpu_ratio = CPU_KHZ / 58800.0;  // CPU clock cycles per video clock cycle
 
     std::string console[2];              // what the serial port carried: 0 the operator's console, 1 the station
     Shown on[2];                         // and what the bench looks for in it

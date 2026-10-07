@@ -339,8 +339,12 @@ Three clocks, and none is in step with another:
   oscillator (HR-0030). The HPS interface, which brings the disks' blocks,
   and the printer's file run on it too. It comes from a second PLL
   (`rtl/pll_ios.v`), because 80 and 105 MHz do not both divide out of one.
-- **The video clock, 29.4 MHz**, for the screens, the keyboard and the serial
-  port.
+- **The video clock, 58.8 MHz**, for the screens, the keyboard and the serial
+  port. A pixel of the 8x16 font is two of its periods (29.4 MHz, 31 kHz
+  lines) and one of the 8x8 font four (14.7 MHz, 15 kHz lines), which is
+  what the MiSTer framework's scandoubler needs. The picture goes out
+  through the framework's `video_mixer` (scandoubler with HQ2x, scanlines,
+  gamma) and `video_freak` (aspect ratio, integer scaling).
 
 The CPU and the I/O Subsystem are two cabinets with an oscillator each on the
 real machine, and they meet here as they do there, through signals that do
@@ -513,10 +517,20 @@ The I/O Subsystem and the core:
   session at the station it fetched the dataset lister and the text editor
   from the expander disk and ran them; with the striped group switched off
   the first program fetched runs, which it did not before.
+- The build with the framework's video modules was run the same way: start-up
+  on fresh disks without clearing the memories by hand, the batch job, the
+  job that installs the tools, and after a reset a second start on the same
+  disks, where the installed commands were still there. Screenshots of the
+  HDMI picture show both fonts, the four aspect ratios (the two custom ones
+  at 16:10 and 1:1), the three integer scales, and the 8x8 font doubled with
+  scanlines. With HQ2x a line comes out 1,024 pixels wide where 1,280 are
+  expected, with the text whole; that has not been looked into. The picture
+  with direct video was not checked by a measurement.
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: 27,018 ALMs (64%), 503 of 553 memory blocks,
+Quartus 17.0 for the DE10-Nano: 28,318 ALMs (68%), 528 of 553 memory blocks,
 37 DSP blocks, 4 of 6 PLLs. The Local Memories of the three I/O Processors
-take 384 of the memory blocks. Timing is met with the CPU at 105 MHz, with
-0.15 ns to spare, the I/O Subsystem at 80 MHz and the video side at 29.4 MHz.
+take 384 of the memory blocks, the line buffers of the framework's
+scandoubler 26. Timing is met with the CPU at 105 MHz, with 0.36 ns to spare,
+the I/O Subsystem at 80 MHz and the video side at 58.8 MHz.

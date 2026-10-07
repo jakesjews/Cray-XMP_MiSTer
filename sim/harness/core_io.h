@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-static const int UART_DIV = 255;        // 29.4 MHz / 115200
+static const int UART_DIV = 510;        // 58.8 MHz / 115200
 
 struct UartMonitor {                     // decodes the core's TXD
     int state = 0, cnt = 0, bits = 0, sh = 0;
@@ -62,14 +62,15 @@ struct VideoCapture {
     VideoCapture() : cur(W * H * 3, 0), last(W * H * 3, 0) {}
     void step(bool hs, bool vs, bool de, uint8_t r, uint8_t g, uint8_t b) {
         tick++;
-        if (prev_hs && !hs) { if (last_hs_tick >= 0) hs_period = tick - last_hs_tick; last_hs_tick = tick; lines++; }
+        // the sync pulses are high, as the framework's video_mixer gives them
+        if (!prev_hs && hs) { if (last_hs_tick >= 0) hs_period = tick - last_hs_tick; last_hs_tick = tick; lines++; }
         prev_hs = hs;
         if (de) {
             if (x < W && y < H) { uint8_t *p = &cur[(y * W + x) * 3]; p[0] = r; p[1] = g; p[2] = b; }
             x++;
         } else if (prev_de) { y++; x = 0; }
         prev_de = de;
-        if (prev_vs && !vs) {                                   // start of vertical sync
+        if (!prev_vs && vs) {                                   // start of vertical sync
             if (y > 0) { last = cur; last_h = y; frames++; }
             last_lines = lines; lines = 0;
             y = 0; x = 0;

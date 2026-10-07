@@ -34,12 +34,7 @@ module emu #(
 	assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 	assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
 
-	assign VGA_SL         = 0;
 	assign VGA_F1         = 0;
-	// The 936x524 raster is not a standard VGA mode, so the analog output goes
-	// through the scaler.  With direct video the scaler must not be forced, or HDMI
-	// would carry the scaler's output instead of the core's own timing.
-	assign VGA_SCALER     = ~direct_video;
 	assign VGA_DISABLE    = 0;
 	assign HDMI_FREEZE    = 0;
 	assign HDMI_BLACKOUT  = 0;
@@ -54,11 +49,6 @@ module emu #(
 	assign BUTTONS   = 0;
 
 	//////////////////////////////////////////////////////////////////
-
-	wire [1:0] ar = status[122:121];
-
-	assign VIDEO_ARX = (ar == 2'd0) ? 13'd4 : {11'd0, ar - 2'd1};
-	assign VIDEO_ARY = (ar == 2'd0) ? 13'd3 : 13'd0;
 
 	// The boot file (tools/py/mkboot.py) holds the kernel of the I/O Subsystem and
 	// its boot tape.  The load address makes the MiSTer write it straight into
@@ -77,6 +67,8 @@ module emu #(
 		"S2,TXT,Printer file;",
 		"-;",
 		"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+		"O[6:5],Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
+		"O[9:7],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 		"O[4:3],Text color,White,Green,Amber,Cyan;",
 		"O[14],Font,8x16 (31kHz),8x8 (15kHz);",
 		"-;",
@@ -92,14 +84,15 @@ module emu #(
 	///////////////////////   CLOCKS   ///////////////////////////////
 
 	// clk_sys is the video clock and runs the screens, the keyboard and the
-	// serial port.  clk_cpu is the CPU's, with the port to DDR3: 105 MHz, the
+	// serial port: 58.8 MHz, two clocks to a pixel of the 8x16 font and four to
+	// one of the 8x8 font.  clk_cpu is the CPU's, with the port to DDR3: 105 MHz, the
 	// X-MP's 9.5 ns.  clk_ios is the I/O Subsystem's, with the HPS interface,
 	// which brings the disks' sectors: 80 MHz, the 12.5 ns of its own oscillator,
 	// from a second PLL.  No two of the three are in step.  What passes between
 	// the CPU and the I/O Subsystem goes through rtl/xmp_bridge.v inside the
 	// machine; what passes between either and the video clock goes through
 	// rtl/mister/cdc.v.
-	localparam CLK_HZ = 29400000;
+	localparam CLK_HZ = 58800000;
 	localparam IOS_HZ = 80000000;
 
 	wire clk_sys, clk_cpu, clk_ios;
@@ -120,6 +113,8 @@ module emu #(
 	///////////////////////   HPS   //////////////////////////////////
 
 	wire         direct_video;
+	wire         forced_scandoubler;
+	wire [ 21:0] gamma_bus;
 	wire [  1:0] buttons;
 	wire [127:0] status;
 	wire [ 10:0] ps2_key;
@@ -145,9 +140,10 @@ module emu #(
 		.clk_sys  (clk_ios),
 		.HPS_BUS  (HPS_BUS),
 		.EXT_BUS  (),
-		.gamma_bus(),
+		.gamma_bus(gamma_bus),
 
-		.direct_video(direct_video),
+		.direct_video      (direct_video),
+		.forced_scandoubler(forced_scandoubler),
 
 		.buttons        (buttons),
 		.status         (status),
@@ -659,12 +655,14 @@ module emu #(
 
 	wire font_8x8 = status[14];
 
-	// 29.4 MHz pixels for the 8x16 font (31 kHz), 14.7 MHz for the 8x8 font (15 kHz)
+	// 29.4 MHz pixels for the 8x16 font (31 kHz lines), 14.7 MHz for the 8x8
+	// font (15 kHz lines).  The video clock is four times the slower of the
+	// two, which is what the framework's scandoubler needs.
 	reg ce_pix;
 	always @(posedge clk_sys) begin
-		reg div;
-		div    <= ~div;
-		ce_pix <= ~font_8x8 | div;
+		reg [1:0] div;
+		div    <= div + 2'd1;
+		ce_pix <= font_8x8 ? (div == 2'd0) : ~div[0];
 	end
 
 	wire HBlank, VBlank, HSync, VSync, video;
@@ -688,13 +686,6 @@ module emu #(
 		.video (video)
 	);
 
-	assign CLK_VIDEO = clk_sys;
-	assign CE_PIXEL  = ce_pix;
-
-	assign VGA_DE = ~(HBlank | VBlank);
-	assign VGA_HS = HSync;
-	assign VGA_VS = VSync;
-
 	reg [23:0] rgb;
 	always @(*) begin
 		case (status[4:3])
@@ -705,8 +696,71 @@ module emu #(
 		endcase
 	end
 
-	assign VGA_R = video ? rgb[23:16] : 8'd0;
-	assign VGA_G = video ? rgb[15:8] : 8'd0;
-	assign VGA_B = video ? rgb[7:0] : 8'd0;
+	// The picture goes out through the framework's video_mixer, which has the
+	// scandoubler with its effects and the gamma table, and video_freak, which
+	// sets the aspect ratio and the integer scales.
+	//
+	// Only the 15 kHz raster of the 8x8 font can be doubled.  It is a standard
+	// one, so the analog output may carry it as it is or doubled.  The 524
+	// lines of the 8x16 font are not a standard VGA mode: there the analog
+	// output goes through the scaler, except with direct video, where HDMI has
+	// to carry the core's own timing.
+	wire [2:0] fx = status[9:7];
+	wire [1:0] lines = (fx > 3'd1) ? fx[1:0] - 2'd1 : 2'd0;  // CRT 25%, 50%, 75%
+	wire [1:0] ar = status[122:121];
+
+	reg doubled;
+	always @(posedge clk_sys) doubled <= font_8x8 && (forced_scandoubler || (fx != 3'd0));
+
+	assign CLK_VIDEO  = clk_sys;
+	assign VGA_SL     = lines;
+	assign VGA_SCALER = ~direct_video & ~font_8x8;
+
+	wire mixer_de;
+
+	video_freak video_freak (
+		.CLK_VIDEO  (CLK_VIDEO),
+		.CE_PIXEL   (CE_PIXEL),
+		.VGA_VS     (VGA_VS),
+		.HDMI_WIDTH (HDMI_WIDTH),
+		.HDMI_HEIGHT(HDMI_HEIGHT),
+		.VGA_DE     (VGA_DE),
+		.VIDEO_ARX  (VIDEO_ARX),
+		.VIDEO_ARY  (VIDEO_ARY),
+		.VGA_DE_IN  (mixer_de),
+		.ARX        ((ar == 2'd0) ? 12'd4 : {10'd0, ar - 2'd1}),
+		.ARY        ((ar == 2'd0) ? 12'd3 : 12'd0),
+		.CROP_SIZE  (12'd0),
+		.CROP_OFF   (5'd0),
+		.SCALE      ({1'b0, status[6:5]})
+	);
+
+	// the terminal's sync pulses are low; the framework wants them high
+	video_mixer #(
+		.LINE_LENGTH(640),
+		.GAMMA      (1)
+	) video_mixer (
+		.CLK_VIDEO  (CLK_VIDEO),
+		.CE_PIXEL   (CE_PIXEL),
+		.ce_pix     (ce_pix),
+		.scandoubler(doubled),
+		.hq2x       (fx == 3'd1),
+		.gamma_bus  (gamma_bus),
+		.R          (video ? rgb[23:16] : 8'd0),
+		.G          (video ? rgb[15:8] : 8'd0),
+		.B          (video ? rgb[7:0] : 8'd0),
+		.HSync      (~HSync),
+		.VSync      (~VSync),
+		.HBlank     (HBlank),
+		.VBlank     (VBlank),
+		.HDMI_FREEZE(HDMI_FREEZE),
+		.freeze_sync(),
+		.VGA_R      (VGA_R),
+		.VGA_G      (VGA_G),
+		.VGA_B      (VGA_B),
+		.VGA_VS     (VGA_VS),
+		.VGA_HS     (VGA_HS),
+		.VGA_DE     (mixer_de)
+	);
 
 endmodule

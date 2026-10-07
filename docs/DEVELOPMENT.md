@@ -132,7 +132,8 @@ sim/build/core/Vemu BOOTFILE --disk 0=exp_disk.img --until 'ENTER DATE'
   the test bench. `--quick` leaves out the tests of memory and most of the
   BIOP's test of its drives.
 - `sim/build/core/Vemu` is the core as the MiSTer runs it (`CrayXMP.sv`), with
-  stand-ins for `hps_io`, the PLL and DDR3. It loads a boot file into memory
+  stand-ins for `hps_io`, the PLL, DDR3 and the framework's `video_mixer` and
+  `video_freak`, which pass the picture through. It loads a boot file into memory
   that is otherwise full of junk, serves the image slots, types on the serial
   port (`--type`) or on the keyboard (`--press`, with `{f1}` to `{f3}`), reads
   the serial port and the video, presses the menu's reset, and at the end

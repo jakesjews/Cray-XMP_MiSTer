@@ -14,6 +14,11 @@ lint/exclusions.vlt
 // Lint-only PLL boundary.
 lint/pll.sv
 
+// Framework modules that the video output uses and that are not in a file of
+// their own name.
+sys/hq2x.sv
+sys/math.sv
+
 // Verilog/SystemVerilog sources from files.qip; keep this list in sync.
 rtl/xmp_machine.v
 rtl/xmp_bridge.v
