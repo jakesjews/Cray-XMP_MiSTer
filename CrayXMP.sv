@@ -18,7 +18,11 @@
 
 // CRAY X-MP with its I/O Subsystem: the machine COS 1.17 runs on.
 
-module emu (
+module emu #(
+	// words of memory that are zeroed when the core has been loaded: central
+	// memory and Buffer Memory.  The simulation of the core clears fewer.
+	parameter [24:0] CLEAR = 25'h0800000
+) (
 	`include "sys/emu_ports.vh"
 );
 
@@ -288,7 +292,8 @@ module emu (
 	// Memory; the machine starts when that is done.
 	xmp_boot #(
 		.FILE  (25'h0800000),
-		.BUFFER({BUFFER, 22'd0})
+		.BUFFER({BUFFER, 22'd0}),
+		.CLEAR (CLEAR)
 	) boot (
 		.clk  (clk_cpu),
 		.reset(reset_cpu),

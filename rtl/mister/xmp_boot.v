@@ -19,10 +19,18 @@
 // of Buffer Memory, from where the MIOP loads it when it is dead started: the
 // running system changes Buffer Memory, and the file stays as it was, so the
 // machine can be started again without loading the file again.
+//
+// The first time after the core has been loaded, central memory and Buffer
+// Memory are filled with zeros before that, as if the machine had just been
+// switched on.  DDR3 keeps what an earlier run left in it, and COS takes up
+// its system log from what it finds in memory: with other disks than that
+// run's it then stops during start-up (SM-0043, changing systems: "a field
+// engineer must clear memory").  A reset leaves the memories as they are.
 
 module xmp_boot #(
 	parameter [24:0] FILE   = 25'h0800000,  // where the file is in memory, in words
-	parameter [24:0] BUFFER = 25'h0400000   // where Buffer Memory is
+	parameter [24:0] BUFFER = 25'h0400000,  // where Buffer Memory is
+	parameter [24:0] CLEAR  = 25'h0800000   // words from 0 that are zeroed after the core is loaded
 ) (
 	input wire clk,
 	input wire reset,
@@ -53,9 +61,12 @@ module xmp_boot #(
 	localparam B_GET   = 3'd3;  // a word of the file
 	localparam B_PUT   = 3'd4;  // into Buffer Memory, if it is of the kernel
 	localparam B_STOP  = 3'd5;
+	localparam B_CLEAR = 3'd6;  // zeros into the memories below the file
 
-	reg [2:0] b;
-	reg       gap;  // the clock after an acknowledge, with no request
+	reg [ 2:0] b;
+	reg        gap;  // the clock after an acknowledge, with no request
+	reg        fresh = 1'b1;  // the core has just been loaded: the memories hold whatever was there
+	reg [23:0] c;
 	reg [21:0] n, words;
 	reg [63:0] sum, want;
 
@@ -105,7 +116,15 @@ module xmp_boot #(
 					want <= i_rdata;
 					sum  <= 64'd0;
 					n    <= 22'd0;
-					b    <= B_GET;
+					c    <= 24'd0;
+					b    <= (fresh && (CLEAR != 25'd0)) ? B_CLEAR : B_GET;
+				end
+				B_CLEAR: begin
+					c <= c + 24'd1;
+					if ({1'b0, c} + 25'd1 == CLEAR) begin
+						fresh <= 1'b0;
+						b     <= B_GET;
+					end
 				end
 				B_GET: begin
 					sum     <= {sum[62:0], sum[63]} + i_rdata;
@@ -134,6 +153,12 @@ module xmp_boot #(
 					o_req  <= 1'b1;
 					o_we   <= 1'b1;
 					o_addr <= BUFFER + {3'd0, n};
+				end
+				B_CLEAR: begin
+					o_req   <= 1'b1;
+					o_we    <= 1'b1;
+					o_addr  <= {1'b0, c};
+					o_wdata <= 64'd0;
 				end
 				default: ;
 			endcase

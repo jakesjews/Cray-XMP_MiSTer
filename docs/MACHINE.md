@@ -423,6 +423,15 @@ channel into central memory, the Buffer Memory channels, the tape drive and
 the copy of the kernel; they take turns. The Local Memories of the I/O
 Processors are block memory in the FPGA.
 
+DDR3 keeps its contents when a core is loaded, so central memory and Buffer
+Memory are filled with zeros the first time after the core has been loaded,
+as after switching the machine on (`rtl/mister/xmp_boot.v`). COS takes its
+system log up from what it finds in memory, and what a run on other disks
+left there makes it stop during start-up with `CRAY HALT`; its operations
+manual (SM-0043, changing systems) has a field engineer clear memory for
+that case. A reset from the menu leaves the memories as they are, as a
+restart of the real machine does.
+
 In the CPU, instruction buffers fill with 16-word bursts. A vector load
 stepping by 1 to 7 words also reads whole lines in bursts when three or more
 of its elements lie in a line, and picks its elements out as they arrive. A

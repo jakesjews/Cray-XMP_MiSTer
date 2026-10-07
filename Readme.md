@@ -109,6 +109,8 @@ Keys go to the station while it is shown, and to the operator's console otherwis
 - `Load a boot file from the menu to start it.`: the core was started without its files. Start **COS 1.17**, not **CrayXMP**.
 - `INVALID COMMAND`: the command was typed in small letters. Press Caps Lock.
 - `CS009 - UNKNOWN VERB` for `TEDI.` or `CAL`: `SUBMIT,JTOOLS` has not been run yet.
+- `CRAY HALT` during start-up after the disk images were replaced: start **COS 1.17** from the
+  menu again instead of using Reset.
 - `Concentrator ordinal 3  VAX interface select error. Command aborted.` a while after `START`:
   there is no front-end computer. COS runs without one.
 
