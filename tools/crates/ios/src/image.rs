@@ -3,7 +3,7 @@
 //! written to it.
 //!
 //! The formats are those of the cray-sim project's ready-to-run system
-//! (`research/notes/ios-devices-spec.md`, parts 8.6, 10.2 and 10.3): they
+//! (`docs/spec/ios-devices-spec.md`, parts 8.6, 10.2 and 10.3): they
 //! are what the surviving COS 1.17 system exists in.
 
 use std::collections::HashMap;
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn image_saved_with_what_was_written() {
-        let dir = std::env::temp_dir().join(format!("cray1-image-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("cray-xmp-image-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let (from, to) = (dir.join("from.img"), dir.join("to.img"));
         std::fs::write(&from, [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]).unwrap();

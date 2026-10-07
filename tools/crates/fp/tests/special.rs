@@ -1,7 +1,7 @@
 //! One test per special case that the manuals list. Page references: "HRM" is the CRAY-1
 //! Hardware Reference Manual 2240004 rev C, "XMP" is HR-0097B.
 
-use cray1_fp::{
+use cray_xmp_fp::{
     fadd, fmul, frecip, fsub, pack, recip_seed, recip_table_word, unpack, FpResult, MulKind,
     Profile, EXP_BIAS, SIGN_BIT,
 };
@@ -52,7 +52,7 @@ fn add_normalises_an_integer_with_exponent_40060() {
     assert_eq!(fadd(0, w(0o40060, 42)), ok(w(0o40006, 42 << 42)));
     assert_eq!(fadd(w(0o40060, ONES), 0), ok(w(0o40060, ONES)));
     assert_eq!(
-        cray1_fp::to_f64(fadd(0, pack(true, 0o40060, 1_000_000)).value),
+        cray_xmp_fp::to_f64(fadd(0, pack(true, 0o40060, 1_000_000)).value),
         -1.0e6
     );
 }
@@ -487,11 +487,11 @@ fn reciprocal_iteration_of_an_exact_reciprocal_is_wrong() {
     // "2 - 1.0 * 1.0" comes out as 3.0.
     let one = w(0o40001, HALF);
     let r = fmul(one, one, MulKind::TwoMinus, Profile::Xmp);
-    assert_eq!(cray1_fp::to_f64(r.value), 3.0);
+    assert_eq!(cray_xmp_fp::to_f64(r.value), 3.0);
     // With the approximation from the reciprocal unit it works.
     let approx = frecip(one, Profile::Xmp).value;
     let c = fmul(approx, one, MulKind::TwoMinus, Profile::Xmp).value;
-    assert!((cray1_fp::to_f64(c) - 1.0).abs() < 1.0e-9);
+    assert!((cray_xmp_fp::to_f64(c) - 1.0).abs() < 1.0e-9);
 }
 
 #[test]
@@ -574,12 +574,12 @@ fn reciprocal_does_not_test_bit_47() {
     let unnorm = w(0o40001, 0x4000_0000_0000);
     let r = frecip(unnorm, Profile::Xmp);
     assert!(!r.range_error);
-    assert!(cray1_fp::is_normalized(r.value));
+    assert!(cray_xmp_fp::is_normalized(r.value));
     assert_ne!(
         r.value,
         frecip(w(0o40001, 0xC000_0000_0000), Profile::Xmp).value
     );
-    assert!((cray1_fp::to_f64(r.value) * 0.5 - 1.0).abs() > 0.1);
+    assert!((cray_xmp_fp::to_f64(r.value) * 0.5 - 1.0).abs() > 0.1);
 }
 
 #[test]

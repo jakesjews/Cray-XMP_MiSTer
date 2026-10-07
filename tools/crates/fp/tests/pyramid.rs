@@ -2,11 +2,11 @@
 //! reconstructed from figure 3-5, consistent with the table on HRM page 3-24 in columns 55
 //! to 59, but not uniquely determined, and therefore not used by `fmul`.
 
-use cray1_fp::cray1_pyramid::{
+use cray_xmp_fp::cray1_pyramid::{
     max_truncation, toy6, Staircase, MANUAL_MAX_TRUNCATION, ROW_CUT_FIGURE,
 };
-use cray1_fp::vectors::SplitMix64;
-use cray1_fp::{fmul, pack, unpack, MulKind, Profile, EXP_BIAS};
+use cray_xmp_fp::vectors::SplitMix64;
+use cray_xmp_fp::{fmul, pack, unpack, MulKind, Profile, EXP_BIAS};
 
 #[test]
 fn worked_example_case_1() {
@@ -156,9 +156,9 @@ fn reference_products_are_xmp_results_not_staircase_results() {
     let path =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fp/xmp_ref.vec");
     let (mut total, mut same, mut one_higher) = (0, 0, 0);
-    for v in cray1_fp::read_vector_file(path).unwrap() {
+    for v in cray_xmp_fp::read_vector_file(path).unwrap() {
         let (a, b, r) = (unpack(v.a), unpack(v.b), unpack(v.result));
-        if v.op != cray1_fp::Op::Mul || a.exp == 0 || b.exp == 0 {
+        if v.op != cray_xmp_fp::Op::Mul || a.exp == 0 || b.exp == 0 {
             continue;
         }
         total += 1;

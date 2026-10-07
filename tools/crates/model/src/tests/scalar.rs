@@ -1,7 +1,7 @@
 //! A and S register instructions, 020 to 077 except the block transfers.
 
 use super::*;
-use cray1_fp::{fadd, fmul, frecip, from_f64, fsub, MulKind, Profile};
+use cray_xmp_fp::{fadd, fmul, frecip, from_f64, fsub, MulKind, Profile};
 
 #[test]
 fn special_register_values() {

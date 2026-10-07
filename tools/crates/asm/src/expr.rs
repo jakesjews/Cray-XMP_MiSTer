@@ -3,7 +3,7 @@
 //! attribute prefixes.
 
 use crate::Attr;
-use cray1_isa::is_symbol_char;
+use cray_xmp_isa::is_symbol_char;
 
 /// The value of an expression or symbol.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

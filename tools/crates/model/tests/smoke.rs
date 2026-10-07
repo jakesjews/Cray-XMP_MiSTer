@@ -1,6 +1,6 @@
-//! The CAL smoke tests of `tests/smoke`, assembled with `cray1-asm` and run
+//! The CAL smoke tests of `tests/smoke`, assembled with `cray-xmp-asm` and run
 //! on the model under every runtime they list, and tests of the runtimes
-//! themselves and of the `cray1-run` binary.
+//! themselves and of the `cray-xmp-run` binary.
 //!
 //! A smoke test is written against `rt_direct.cal`.  Its `* RUNTIMES:` line
 //! lists the start-up conventions it can run under:
@@ -12,7 +12,7 @@
 //! * `reloc`: `rt_exch.cal` and `TUSER 1000`: a user program relocated to
 //!   word 20000.
 
-use cray1_model::{report, Machine, RunResult};
+use cray_xmp_model::{report, Machine, RunResult};
 use std::path::{Path, PathBuf};
 
 const STATUS_WORD: u32 = 0o100;
@@ -65,7 +65,7 @@ fn assemble(name: &str, source: &str) -> Vec<u8> {
             .map(|text| (path.display().to_string(), text))
             .map_err(|e| e.to_string())
     };
-    let assembly = cray1_asm::assemble(name, source, &mut include);
+    let assembly = cray_xmp_asm::assemble(name, source, &mut include);
     let messages: Vec<String> = assembly.diagnostics.iter().map(|d| d.to_string()).collect();
     assert!(
         messages.is_empty(),
@@ -251,9 +251,9 @@ fn smoke_vector() {
 #[test]
 fn smoke_float() {
     pass("float", ALL);
-    // the quotient the test expects is the divide sequence of cray1-fp
-    let f = |v: f64| cray1_fp::from_f64(v).unwrap();
-    let quotient = cray1_fp::fdiv(f(6.0), f(3.0), cray1_fp::Profile::Cray1);
+    // the quotient the test expects is the divide sequence of cray-xmp-fp
+    let f = |v: f64| cray_xmp_fp::from_f64(v).unwrap();
+    let quotient = cray_xmp_fp::fdiv(f(6.0), f(3.0), cray_xmp_fp::Profile::Cray1);
     assert_eq!(
         (quotient.value, quotient.range_error),
         (0x4002_8000_0000_0000, false)
@@ -442,19 +442,19 @@ fn console_macros() {
     }
 }
 
-// ---- the cray1-run binary
+// ---- the cray-xmp-run binary
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("cray1-run-tests");
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("cray-xmp-run-tests");
     std::fs::create_dir_all(&dir).unwrap();
     dir.join(name)
 }
 
-fn cray1_run(args: &[&str]) -> std::process::Output {
-    std::process::Command::new(env!("CARGO_BIN_EXE_cray1-run"))
+fn cray_xmp_run(args: &[&str]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_cray-xmp-run"))
         .args(args)
         .output()
-        .expect("cray1-run starts")
+        .expect("cray-xmp-run starts")
 }
 
 #[test]
@@ -462,7 +462,7 @@ fn binary_runs_an_image() {
     let image = scratch("hello.img");
     std::fs::write(&image, assemble("hello", &smoke_source("hello"))).unwrap();
     let (state, trace) = (scratch("hello.state"), scratch("hello.trace"));
-    let out = cray1_run(&[
+    let out = cray_xmp_run(&[
         image.to_str().unwrap(),
         "--input",
         "hi\\n",
@@ -474,7 +474,11 @@ fn binary_runs_an_image() {
     assert_eq!(out.status.code(), Some(0));
     assert_eq!(out.stdout, b"HELLO, CRAY-1\n0000000000000001234567\nhi\n");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.starts_with("cray1-run: exit 0 after "), "{}", stderr);
+    assert!(
+        stderr.starts_with("cray-xmp-run: exit 0 after "),
+        "{}",
+        stderr
+    );
 
     let state = std::fs::read_to_string(&state).unwrap();
     let console: String = b"HELLO, CRAY-1\n0000000000000001234567\nhi\n"
@@ -518,7 +522,7 @@ fn binary_runs_an_image() {
     assert_eq!(*lines.last().unwrap(), "E 0");
 
     // --quiet: no console copy, no summary
-    let out = cray1_run(&[image.to_str().unwrap(), "--quiet"]);
+    let out = cray_xmp_run(&[image.to_str().unwrap(), "--quiet"]);
     assert_eq!(
         (out.status.code(), out.stdout.len(), out.stderr.len()),
         (Some(0), 0, 0)
@@ -531,7 +535,7 @@ fn binary_exit_statuses() {
     let source = "         INCLUDE \"rt_direct.cal\"\n         TBEGIN\n         TFAIL   D'42\n         TEND\n         END\n";
     let image = scratch("fail.img");
     std::fs::write(&image, assemble("fail", source)).unwrap();
-    let out = cray1_run(&[image.to_str().unwrap()]);
+    let out = cray_xmp_run(&[image.to_str().unwrap()]);
     assert_eq!(out.status.code(), Some(42));
     // codes above 255 saturate
     let source =
@@ -539,7 +543,7 @@ fn binary_exit_statuses() {
     let image = scratch("noverdict.img");
     std::fs::write(&image, assemble("noverdict", source)).unwrap();
     let state = scratch("noverdict.state");
-    let out = cray1_run(&[image.to_str().unwrap(), "--state", state.to_str().unwrap()]);
+    let out = cray_xmp_run(&[image.to_str().unwrap(), "--state", state.to_str().unwrap()]);
     assert_eq!(out.status.code(), Some(255));
     assert!(std::fs::read_to_string(&state)
         .unwrap()
@@ -549,7 +553,7 @@ fn binary_exit_statuses() {
     let image = scratch("loop.img");
     std::fs::write(&image, assemble("loop", source)).unwrap();
     let state = scratch("loop.state");
-    let out = cray1_run(&[
+    let out = cray_xmp_run(&[
         image.to_str().unwrap(),
         "--max",
         "1000",
@@ -565,21 +569,21 @@ fn binary_exit_statuses() {
     let source = "         INCLUDE \"rt_direct.cal\"\n         TBEGIN\n         A0      B5\n         JAZ     T$END\n         TEND\n         END\n";
     let image = scratch("undef.img");
     std::fs::write(&image, assemble("undef", source)).unwrap();
-    let out = cray1_run(&[image.to_str().unwrap(), "--quiet"]);
+    let out = cray_xmp_run(&[image.to_str().unwrap(), "--quiet"]);
     assert_eq!(out.status.code(), Some(3));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.starts_with(
-            "cray1-run: undefined value used: A0 (branch condition) at P=00001001 (010000 "
+            "cray-xmp-run: undefined value used: A0 (branch condition) at P=00001001 (010000 "
         ),
         "{}",
         stderr
     );
     // usage and file errors
-    assert_eq!(cray1_run(&[]).status.code(), Some(64));
-    assert_eq!(cray1_run(&["--bogus", "x"]).status.code(), Some(64));
+    assert_eq!(cray_xmp_run(&[]).status.code(), Some(64));
+    assert_eq!(cray_xmp_run(&["--bogus", "x"]).status.code(), Some(64));
     assert_eq!(
-        cray1_run(&[scratch("missing.img").to_str().unwrap()])
+        cray_xmp_run(&[scratch("missing.img").to_str().unwrap()])
             .status
             .code(),
         Some(66)
@@ -612,10 +616,10 @@ fn xmp_tests() {
                 .map(|text| (path.display().to_string(), text))
                 .map_err(|e| e.to_string())
         };
-        let assembly = cray1_asm::assemble(&name, &source, &mut include);
+        let assembly = cray_xmp_asm::assemble(&name, &source, &mut include);
         let messages: Vec<String> = assembly.diagnostics.iter().map(|d| d.to_string()).collect();
         assert!(messages.is_empty(), "{}:\n{}", name, messages.join("\n"));
-        assert_eq!(assembly.machine, cray1_isa::Cpu::Xmp, "{}", name);
+        assert_eq!(assembly.machine, cray_xmp_isa::Cpu::Xmp, "{}", name);
         let mut machine = Machine::for_cpu(assembly.machine);
         machine.load_image(&assembly.image()).unwrap();
         // chan.cal has each output channel cabled to its input channel

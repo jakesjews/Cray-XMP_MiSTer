@@ -1,7 +1,7 @@
 * float: floating point add and subtract (062, 063), multiply (064-066),
 * the constants and conversions of 071, and the four-instruction divide of
 * HRM page 3-28 (070, 067, 064, 064).
-* The expected words are those of the reference arithmetic (cray1-fp).
+* The expected words are those of the reference arithmetic (cray-xmp-fp).
 * RUNTIMES: direct exch user reloc
          INCLUDE "rt_direct.cal"
          TBEGIN

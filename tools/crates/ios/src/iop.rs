@@ -4,7 +4,7 @@
 //!
 //! Page numbers `[HW n-m]` are printed pages of HR-0030 rev B, the I/O
 //! Subsystem Model B Hardware Reference Manual.  "Spec" is
-//! `research/notes/iop-cpu-spec.md` in the core's repository; its part 11
+//! `docs/spec/iop-cpu-spec.md` in the core's repository; its part 11
 //! lists the questions the manual leaves open, cited here as "spec Q1" and
 //! so on.
 

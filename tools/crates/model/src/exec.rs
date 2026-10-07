@@ -5,11 +5,11 @@
 
 use crate::event::Event;
 use crate::machine::{flag, mode, mode1, ErrorKind, Machine, TestError, A_MASK, P_MASK};
-use cray1_fp::{fadd, fmul, frecip, fsub, FpResult, MulKind, Profile};
-use cray1_isa::{Cpu, Decoded, Op};
+use cray_xmp_fp::{fadd, fmul, frecip, fsub, FpResult, MulKind, Profile};
+use cray_xmp_isa::{Cpu, Decoded, Op};
 
 /// The floating point arithmetic used everywhere (a project decision: it
-/// currently equals the X-MP arithmetic, see `cray1-fp`).
+/// currently equals the X-MP arithmetic, see `cray-xmp-fp`).
 pub const FP_PROFILE: Profile = Profile::Cray1;
 
 /// 071i3x: 0.75 * 2**48, "0.6 x 2**60 (octal)" on page 4-44.

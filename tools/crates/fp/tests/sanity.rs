@@ -1,8 +1,8 @@
 //! Mathematical sanity checks that depend on neither reference: results are compared with
 //! exact integer or rational arithmetic.
 
-use cray1_fp::vectors::{corner_operands, SplitMix64};
-use cray1_fp::{
+use cray_xmp_fp::vectors::{corner_operands, SplitMix64};
+use cray_xmp_fp::{
     fadd, fdiv, fmul, frecip, fsub, pack, unpack, MulKind, Op, Profile, EXP_BIAS, NORM_BIT,
     SIGN_BIT,
 };

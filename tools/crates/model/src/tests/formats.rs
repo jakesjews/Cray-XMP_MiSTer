@@ -1,4 +1,4 @@
-//! The trace and state text formats of `cray1-run`.
+//! The trace and state text formats of `cray-xmp-run`.
 
 use super::*;
 use crate::report::{state_text, trace_line};

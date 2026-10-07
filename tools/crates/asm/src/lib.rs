@@ -1,7 +1,7 @@
 //! A two-pass assembler for a subset of CAL, the Cray Assembly Language,
 //! producing raw memory images for the Cray-1.
 //!
-//! Instruction syntax comes from the table in `cray1-isa` (Appendix D of the
+//! Instruction syntax comes from the table in `cray-xmp-isa` (Appendix D of the
 //! CRAY-1 Hardware Reference Manual); this crate adds source handling,
 //! expressions, symbols, directives, macros and the output files.
 //!
@@ -79,7 +79,7 @@
 //!                                under MACHINE XMP); zero parcels fill the
 //!                                rest of the current word
 //!          MACHINE CRAY1 | XMP   the machine whose instructions follow; XMP
-//!                                adds the X-MP forms (see `cray1 isa`)
+//!                                adds the X-MP forms (see `cray-xmp isa`)
 //! sym      VWD     D'16/exp,...  raw parcels in the code stream; widths 16,
 //!                                32, 48 or 64 bits
 //!          INCLUDE "file"
@@ -116,7 +116,7 @@
 //!
 //! # Instructions
 //!
-//! Every spelling in `cray1_isa::FORMS`.  Where one spelling has several
+//! Every spelling in `cray_xmp_isa::FORMS`.  Where one spelling has several
 //! encodings the choice is the documented one:
 //!
 //! * `Ai exp`: 022 for 0 to 77 octal when the expression has no forward
@@ -232,7 +232,7 @@ pub struct Assembly {
     /// The operand of `IDENT`.
     pub ident: Option<String>,
     /// The machine the program is for: that of its last `MACHINE` line.
-    pub machine: cray1_isa::Cpu,
+    pub machine: cray_xmp_isa::Cpu,
     /// The memory image from word 0 to the highest word used.  Empty if
     /// there were errors.
     pub words: Vec<u64>,

@@ -1,14 +1,14 @@
 [package]
-name = "cray1-cli"
-description = "The cray1 command: assembler, disassembler and instruction table for the Cray-1 core"
+name = "cray-xmp-cli"
+description = "The cray-xmp command: assembler, disassembler and instruction table for the CRAY X-MP core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "cray1"
+name = "cray-xmp"
 path = "src/main.rs"
 
 [dependencies]
-cray1-isa = { path = "../isa" }
-cray1-asm = { path = "../asm" }
+cray-xmp-isa = { path = "../isa" }
+cray-xmp-asm = { path = "../asm" }

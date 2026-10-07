@@ -245,7 +245,7 @@ int main(int argc, char **argv) {
     }
     for (int c : screens) printf("---- console %d\n%s----\n", c, screen(console[c]).c_str());
     if (!printed_text.empty()) {
-        // as cray1-sys shows it
+        // as cray-xmp-sys shows it
         printf("printed: ");
         for (unsigned char c : printed_text) { if (c == '\n') printf("<nl>"); else if (c >= 0x20 && c < 0x7F) putchar(c); else if (c != 0 && c != '\r') printf("<%02x>", c); }
         printf("\n");

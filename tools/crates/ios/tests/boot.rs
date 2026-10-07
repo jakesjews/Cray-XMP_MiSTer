@@ -1,12 +1,12 @@
 //! The real IOS kernel on the system model.
 //!
-//! These tests need software that is not part of this repository: the
-//! COS 1.17 system as the cray-sim project distributes it, looked for in
-//! `research/Cray 1 Disk Image from Youtube` or the directory named by the
-//! environment variable `CRAY1_SYSTEM`.  Without it they pass without
-//! doing anything.
+//! These tests need the COS 1.17 system as the cray-sim project distributes
+//! it, in the directory named by the environment variable `CRAY_XMP_SYSTEM`.
+//! Without it they pass without doing anything.  One of them also needs a
+//! boot of that system recorded on the cray-sim simulator, in the file named
+//! by `CRAY_XMP_BOOT_LOG`.
 
-use cray1_ios::{Config, Image, System, Tape, Timing, DISK_SECTOR_BYTES};
+use cray_xmp_ios::{Config, Image, System, Tape, Timing, DISK_SECTOR_BYTES};
 use std::cell::RefCell;
 use std::io::Write;
 use std::path::PathBuf;
@@ -15,15 +15,8 @@ use std::rc::Rc;
 /// Clock periods in a millisecond.
 const MILLISECOND: u64 = 80_000;
 
-fn repository() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
-}
-
 fn config() -> Option<Config> {
-    let dir = match std::env::var_os("CRAY1_SYSTEM") {
-        Some(dir) => PathBuf::from(dir),
-        None => repository().join("research/Cray 1 Disk Image from Youtube"),
-    };
+    let dir = PathBuf::from(std::env::var_os("CRAY_XMP_SYSTEM")?);
     let kernel = std::fs::read(dir.join("target/cos_117/iop_kern.bin")).ok()?;
     let tape = Tape::from_tap(&std::fs::read(dir.join("boot_tape.tap")).ok()?).ok()?;
     let disk = Image::open(&dir.join("exp_disk.img"), DISK_SECTOR_BYTES).ok()?;
@@ -73,8 +66,8 @@ fn miop_functions(log: &str) -> Vec<String> {
 /// no time.
 #[test]
 fn the_start_of_the_kernel_matches_the_recorded_boot() {
-    let recorded = repository().join("research/notes/ios-devices-experiments/fnlog_boot.txt.gz");
-    let (Some(mut config), true) = (config(), recorded.exists()) else {
+    let recorded = PathBuf::from(std::env::var_os("CRAY_XMP_BOOT_LOG").unwrap_or_default());
+    let (Some(mut config), true) = (config(), recorded.is_file()) else {
         eprintln!("skipped: the COS 1.17 system or the recorded boot is not here");
         return;
     };

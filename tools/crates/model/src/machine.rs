@@ -2,7 +2,7 @@
 //! fetch/issue loop.  Instruction semantics are in `exec.rs` and `vector.rs`.
 
 use crate::event::{Event, Observer};
-use cray1_isa::{decode_cpu, Cpu, Decoded};
+use cray_xmp_isa::{decode_cpu, Cpu, Decoded};
 use std::collections::VecDeque;
 use std::fmt;
 
@@ -97,7 +97,7 @@ pub mod flag {
     pub const DEADLOCK: u16 = 0o1000;
 }
 
-/// Why a run stopped with a test error (exit status 3 of `cray1-run`).
+/// Why a run stopped with a test error (exit status 3 of `cray-xmp-run`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     /// Control flow, an address, a shift count, VL, a block length, an I/O
@@ -143,14 +143,14 @@ impl fmt::Display for TestError {
                     " ({:06o} {:06o}  {})",
                     p0,
                     p1,
-                    cray1_isa::disassemble(&decode_cpu(self.cpu, p0, Some(p1)))
+                    cray_xmp_isa::disassemble(&decode_cpu(self.cpu, p0, Some(p1)))
                 )
             }
             Some((p0, None)) => write!(
                 f,
                 " ({:06o}  {})",
                 p0,
-                cray1_isa::disassemble(&decode_cpu(self.cpu, p0, None))
+                cray_xmp_isa::disassemble(&decode_cpu(self.cpu, p0, None))
             ),
             None => Ok(()),
         }
@@ -182,7 +182,7 @@ pub enum RunResult {
 }
 
 impl RunResult {
-    /// The process exit status `cray1-run` uses: the exit code saturated at
+    /// The process exit status `cray-xmp-run` uses: the exit code saturated at
     /// 255, 2 for no exit, 3 for a test error.
     pub fn exit_status(&self) -> u8 {
         match self {

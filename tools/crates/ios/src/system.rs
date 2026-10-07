@@ -7,7 +7,7 @@
 //! that none is more than `QUANTUM` clock periods ahead of another.
 //!
 //! Channel assignments are those of the surviving COS 1.17 system
-//! (`research/notes/ios-devices-spec.md` part 1.1, "the devices spec"):
+//! (`docs/spec/ios-devices-spec.md` part 1.1, "the devices spec"):
 //!
 //! ```text
 //! every IOP   5 Buffer Memory; 6/7, 10/11, 12/13 the other IOPs in ascending order
@@ -22,8 +22,8 @@ use crate::expander::{Clock, Expander};
 use crate::image::{Image, Tape};
 use crate::iop::{Channels, Iop};
 use crate::replay::Recorder;
-use cray1_isa::Cpu;
-use cray1_model::{Machine, StepResult};
+use cray_xmp_isa::Cpu;
+use cray_xmp_model::{Machine, StepResult};
 use std::io::Write;
 
 /// Clock periods a processor may run ahead of the others.
@@ -812,8 +812,8 @@ impl System {
     }
 
     /// Write a line for every channel function and every interrupt taken
-    /// to `log`, in the form of the recorded boot in
-    /// `research/notes/ios-devices-experiments`:
+    /// to `log`, in the form of the boot that was recorded on the cray-sim
+    /// simulator (`tests/boot.rs`):
     ///
     /// ```text
     /// F iop P channel function A value busy-done      (hex; channel and function octal)

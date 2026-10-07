@@ -1,18 +1,18 @@
 [package]
-name = "cray1-ios"
+name = "cray-xmp-ios"
 description = "Reference model of the Cray I/O Subsystem, and of a system with it"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "cray1_ios"
+name = "cray_xmp_ios"
 path = "src/lib.rs"
 
 [[bin]]
-name = "cray1-sys"
-path = "src/bin/cray1-sys.rs"
+name = "cray-xmp-sys"
+path = "src/bin/cray-xmp-sys.rs"
 
 [dependencies]
-cray1-isa = { path = "../isa" }
-cray1-model = { path = "../model" }
+cray-xmp-isa = { path = "../isa" }
+cray-xmp-model = { path = "../model" }

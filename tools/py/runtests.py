@@ -13,8 +13,8 @@
     runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
                                   floating-point operation, 10,000 random programs and
                                   2,000 for the X-MP mode; then, if the COS 1.17
-                                  software is there (CRAY1_SYSTEM, or the directory
-                                  research/Cray 1 Disk Image from Youtube), the system
+                                  software is there (in the directory the environment
+                                  variable CRAY_XMP_SYSTEM names), the system
                                   model dead starts it and runs a job, the I/O
                                   Processor follows the kernel's boot step by step,
                                   the I/O Subsystem boots it, the whole machine
@@ -37,8 +37,8 @@ DIFF = os.path.join(ROOT, 'tools/py/difftest.py')
 IOP = os.path.join(ROOT, 'tools/py/ioptest.py')
 CORE = os.path.join(ROOT, 'tools/py/coretest.py')
 FPBENCH = os.path.join(ROOT, 'sim/build/fp/Vfp_tb')
-SYS = os.path.join(ROOT, 'tools/target/release/cray1-sys')
-SYSTEM = os.environ.get('CRAY1_SYSTEM', os.path.join(ROOT, 'research/Cray 1 Disk Image from Youtube'))
+SYS = os.path.join(ROOT, 'tools/target/release/cray-xmp-sys')
+SYSTEM = os.environ.get('CRAY_XMP_SYSTEM', '')
 
 
 def smoke_variants(out):
@@ -67,7 +67,7 @@ def smoke_variants(out):
 def rtl_only():
     """Self-checking programs the reference model cannot run (clocks and interrupts from outside)."""
     print('== self-checking RTL tests', flush=True)
-    asm = os.path.join(ROOT, 'tools/target/release/cray1')
+    asm = os.path.join(ROOT, 'tools/target/release/cray-xmp')
     cpu = os.path.join(ROOT, 'sim/build/cpu/Vcray_cpu')
     good, total = 0, 0
     for cal in sorted(glob.glob(os.path.join(ROOT, 'tests/rtl_only/*.cal'))):
@@ -123,7 +123,7 @@ def main():
     else:
         vec = os.path.join(ROOT, 'build/fpvec')
         ok &= step('generate floating-point vectors',
-                   ['cargo', 'run', '--release', '--quiet', '--manifest-path', 'tools/Cargo.toml', '-p', 'cray1-fp',
+                   ['cargo', 'run', '--release', '--quiet', '--manifest-path', 'tools/Cargo.toml', '-p', 'cray-xmp-fp',
                     '--example', 'gen_vectors', '--', vec, '200000', '1'])
         for f in sorted(glob.glob(os.path.join(vec, '*.vec'))):
             ok &= step('floating point: ' + os.path.basename(f), [FPBENCH, f])

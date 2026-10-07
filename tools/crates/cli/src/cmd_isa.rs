@@ -1,7 +1,7 @@
-//! `cray1 isa`: print the instruction table.
+//! `cray-xmp isa`: print the instruction table.
 
 use crate::args::Args;
-use cray1_isa::{Form, Kind, RegRef, FORMS};
+use cray_xmp_isa::{Form, Kind, RegRef, FORMS};
 use std::process::ExitCode;
 
 pub const DETAILS: &str = "
@@ -53,8 +53,8 @@ fn flags(f: &Form) -> String {
         (f.is_monitor_only(), 'M'),
         (f.is_exit(), 'X'),
         (f.is_vector(), 'V'),
-        (f.flags() & cray1_isa::flag::OPTION != 0, 'O'),
-        (!f.on(cray1_isa::Cpu::Cray1), 'P'),
+        (f.flags() & cray_xmp_isa::flag::OPTION != 0, 'O'),
+        (!f.on(cray_xmp_isa::Cpu::Cray1), 'P'),
     ] {
         if set {
             s.push(letter);
@@ -133,7 +133,7 @@ mod tests {
             .lines()
             .filter(|l| l.len() > 8 && l.as_bytes()[2].is_ascii_digit())
             .count();
-        assert_eq!(rows, cray1_isa::FORMS.len());
+        assert_eq!(rows, cray_xmp_isa::FORMS.len());
         assert!(text.contains("+ 030i0k   Ai        Ak         1   A Int Add  -     Ak           Ai     Transmit (Ak) to Ai"));
         assert!(text.contains(
             "+ 001000   PASS                 1   -          M     -            -      Pass"

@@ -8,9 +8,9 @@
 //! Local Memory by itself.
 //!
 //! The channel's functions are from the manual.  What the devices do with
-//! their registers is not in any Cray manual in `research/`: it follows the
+//! their registers is not in any Cray manual that was found: it follows the
 //! cray-sim project's simulator, with which the IOS software is known to
-//! work, as `research/notes/ios-devices-spec.md` part 10 records it.  Two
+//! work, as `docs/spec/ios-devices-spec.md` part 10 records it.  Two
 //! status bits also follow that simulator where the manual reads otherwise:
 //! bit 9 of the status is the selected device's interrupt mask, and bit 13
 //! is the selected device's interrupt request.

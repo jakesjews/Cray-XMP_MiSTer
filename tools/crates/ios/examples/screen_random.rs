@@ -9,7 +9,7 @@
 //! A case in the file is the length of the stream (4 bytes, low byte first),
 //! the stream, the 24 lines of 80 characters, and the cursor's line and column.
 
-use cray1_ios::Screen;
+use cray_xmp_ios::Screen;
 use std::io::Write;
 
 const LINES: usize = 24;

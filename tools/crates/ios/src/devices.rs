@@ -8,7 +8,7 @@
 //! channel then stays Busy for the time the real one takes.
 //!
 //! Page numbers: `[HW n-m]` is HR-0030 rev B, `[DSK n-m]` is HR-0077, the
-//! disk systems manual.  `research/notes/ios-devices-spec.md` ("the
+//! disk systems manual.  `docs/spec/ios-devices-spec.md` ("the
 //! devices spec") condenses both.
 
 use crate::image::Image;

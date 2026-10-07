@@ -11,8 +11,8 @@
 rand runs random programs, seeds FIRST to LAST, each in two kinds (every parcel
 random; mostly register work with functions on the processor's own channels)
 and a short directed one.  kernel has the system model boot the I/O Subsystem
-kernel of the COS 1.17 software in SYSTEM (default: CRAY1_SYSTEM, or the
-directory research/Cray 1 Disk Image from Youtube) as far as its first
+kernel of the COS 1.17 software in SYSTEM (default: the directory the
+environment variable CRAY_XMP_SYSTEM names) as far as its first
 question, once for each of the three processors, and replays every step.
 
 boot runs the I/O Subsystem in hardware description (module ios: the three
@@ -65,7 +65,7 @@ from concurrent.futures import ThreadPoolExecutor
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 SIM = os.environ.get('CRAY_IOP_SIM', os.path.join(ROOT, 'sim/build/iop/Viop_cpu'))
 RANDOM = os.path.join(ROOT, 'tools/target/release/examples/iop_random')
-SYS = os.path.join(ROOT, 'tools/target/release/cray1-sys')
+SYS = os.path.join(ROOT, 'tools/target/release/cray-xmp-sys')
 BOOT = os.environ.get('CRAY_IOS_SIM', os.path.join(ROOT, 'sim/build/ios/Vios'))
 MACHINE = os.environ.get('CRAY_XMP_SIM', os.path.join(ROOT, 'sim/build/xmp/Vxmp_machine'))
 BRIDGE = os.environ.get('CRAY_BRIDGE_SIM', os.path.join(ROOT, 'sim/build/bridge/Vxmp_bridge_tb'))
@@ -238,7 +238,9 @@ def main():
         ok = bridges(int(a[1]) if len(a) > 1 else 2000)
     elif a and a[0] in ('kernel', 'boot', 'machine'):
         rest = [x for x in a[1:] if not x.startswith('--')]
-        system = rest[0] if rest else os.environ.get('CRAY1_SYSTEM', os.path.join(ROOT, 'research/Cray 1 Disk Image from Youtube'))
+        system = rest[0] if rest else os.environ.get('CRAY_XMP_SYSTEM', '')
+        if not system:
+            sys.exit('ioptest: name the directory of the COS 1.17 software, or set CRAY_XMP_SYSTEM')
         if a[0] == 'kernel':
             ok = kernel(system)
         elif a[0] == 'boot':

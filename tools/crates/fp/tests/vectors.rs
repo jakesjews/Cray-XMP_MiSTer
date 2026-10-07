@@ -2,10 +2,10 @@
 
 use std::collections::HashSet;
 
-use cray1_fp::vectors::{
+use cray_xmp_fp::vectors::{
     corner_operands, parse_line, read_vectors, write_vectors, FLAG_RANGE_ERROR,
 };
-use cray1_fp::{
+use cray_xmp_fp::{
     read_vector_file, unpack, vectors, vectors_for, write_vector_file, Op, Profile, Vector,
     NORM_BIT,
 };
@@ -106,7 +106,7 @@ fn text_format_round_trips() {
 
 #[test]
 fn vector_file_round_trips() {
-    let dir = std::env::temp_dir().join(format!("cray1-fp-vectors-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("cray-xmp-fp-vectors-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("all.vec");
     let written = write_vector_file(&path, &Op::ALL, Profile::Xmp, 300, 99).unwrap();

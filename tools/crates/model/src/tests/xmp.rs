@@ -3,7 +3,7 @@
 //! Series Model 14 mainframe reference manual CSM-0111000 ("X").
 
 use super::*;
-use cray1_isa::Cpu;
+use cray_xmp_isa::Cpu;
 
 /// The largest value of a 19-bit base or limit field.
 const FIELD_MAX: u32 = 0x7ffff;
@@ -14,7 +14,7 @@ fn xcal(source: &str) -> Vec<u16> {
         let mut fields = line.split_whitespace();
         let result = fields.next().unwrap();
         let operand = fields.next().unwrap_or("");
-        let a = cray1_isa::assemble_numeric_cpu(Cpu::Xmp, result, operand)
+        let a = cray_xmp_isa::assemble_numeric_cpu(Cpu::Xmp, result, operand)
             .unwrap_or_else(|e| panic!("`{}`: {}", line, e));
         out.extend(a.encoding.parcels());
     }
@@ -389,7 +389,7 @@ fn status_register() {
     assert_eq!(m.s(1), Some(1 << 63 | 1 << 49 | 0xffff_ffff));
     // the floating point error status sets whatever the interrupt mode is and
     // is cleared by 0021 and 0022 (X 5-15)
-    let big = cray1_fp::pack(false, 0o57777, 0x8000_0000_0000);
+    let big = cray_xmp_fp::pack(false, 0o57777, 0x8000_0000_0000);
     let mut m = xmonitor("S3 S1*FS2; S4 SR0; DFI; S5 SR0");
     m.set_s(1, Some(big));
     m.set_s(2, Some(big));

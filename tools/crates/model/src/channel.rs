@@ -28,7 +28,7 @@
 //! send a Resume or a Ready out of turn.
 
 use crate::machine::Machine;
-use cray1_isa::Cpu;
+use cray_xmp_isa::Cpu;
 
 /// Mask of a channel address: four million words.
 const ADDRESS: u32 = (1 << 22) - 1;

@@ -144,7 +144,7 @@ At the CRAY-1 setting:
   operands, for 064 to 067 and 070. The complement step of 067 follows it
   too; with it the statistics W. Kahan published from real machines in 1990
   come out, which they do not with the rule the cray-sim project guessed.
-  `research/notes/fp-multiply.md` has the evidence.
+  [spec/fp-multiply.md](spec/fp-multiply.md) has the evidence.
 - **Half-precision products** keep 29 bits, as that simulation and the
   CRAY-1 S and X-MP manuals have it. The 1980 change packet says 30.
 - **Interrupts are precise.** The exchange happens right after the instruction
@@ -187,8 +187,9 @@ belong to the X-MP.
 
 The only operating system that survives for these machines, COS 1.17, is a
 build for the X-MP. `XMP = 1` gives the CPU what that build was found to need
-beyond a CRAY-1 (the study is in `research/cos-cray1/`, the specification in
-`research/notes/machine-spec.md`). The reference is the CRAY X-MP Series
+beyond a CRAY-1 (found by running it on the cray-sim simulator with one
+feature after another taken out; the specification is
+[spec/machine-spec.md](spec/machine-spec.md)). The reference is the CRAY X-MP Series
 Model 14 mainframe reference manual, CSM-0111000. It is tested against the
 reference model, which with a model of the I/O Subsystem dead starts COS 1.17
 and runs batch jobs.

@@ -1,4 +1,4 @@
-# Host-side tools for the Cray-1 core: opcode table, assembler, floating-point
+# Host-side tools for the CRAY X-MP core: opcode table, assembler, floating-point
 # library, reference model and test generator.  Standard library only, so the
 # workspace builds offline.
 [workspace]

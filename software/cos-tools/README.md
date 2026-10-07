@@ -52,7 +52,7 @@ Licences:
 - The Amsterdam Compiler Kit: [LICENSE-ACK](LICENSE-ACK).
 - LISP F4: [LICENSE-LISPF4](LICENSE-LISPF4), copyright 1984 Mats Nordstrom and
   others; taken into COS-Tools from [Blake McBride's copy](https://github.com/blakemcbride/LISPF4).
-- [LICENSE-cray-sim](LICENSE-cray-sim) is the licence of the cray-sim project,
-  for non-commercial use. The boot tape and the expander disk that the
-  package for the SD card is made from are that project's, and its licence
-  asks to be passed on with them.
+
+The boot tape, the kernel and the expander disk that the package for the SD
+card is made from are in [software/cos-1.17](../cos-1.17/README.md), with
+their own licence.

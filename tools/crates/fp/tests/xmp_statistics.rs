@@ -12,8 +12,8 @@
 
 use std::collections::BTreeMap;
 
-use cray1_fp::vectors::SplitMix64;
-use cray1_fp::{fmul_model, pack, unpack, MulKind, MulModel, EXP_BIAS};
+use cray_xmp_fp::vectors::SplitMix64;
+use cray_xmp_fp::{fmul_model, pack, unpack, MulKind, MulModel, EXP_BIAS};
 
 struct Stats {
     mean_truncated_carries: f64,

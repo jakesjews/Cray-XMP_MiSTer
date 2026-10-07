@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use cray1_fp::{fmul, fmul_model, read_vector_file, MulKind, MulModel, Op, Profile};
+use cray_xmp_fp::{fmul, fmul_model, read_vector_file, MulKind, MulModel, Op, Profile};
 
 fn reference_file() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fp/xmp_ref.vec")
@@ -81,7 +81,7 @@ fn one_sum_vector_rules_out_other_alignment_rules() {
         0x4000_8000_0000_0001u64,
         0x3FFF_8000_0000_0004u64,
     );
-    assert_eq!(cray1_fp::fadd(a, b).value, expected);
+    assert_eq!(cray_xmp_fp::fadd(a, b).value, expected);
     let big = 0x8000_0000_0001i128;
     let small = 0xFFFF_FFFF_FFFFi128;
     // Shift left until bit `top` is set.

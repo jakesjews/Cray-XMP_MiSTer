@@ -1,7 +1,7 @@
-//! `cray1-run`: run a memory image on the CRAY-1 reference model.
+//! `cray-xmp-run`: run a memory image on the CRAY-1 reference model.
 //!
 //! ```text
-//! cray1-run IMAGE [--machine CRAY1|XMP] [--max N] [--input TEXT] [--state OUT]
+//! cray-xmp-run IMAGE [--machine CRAY1|XMP] [--max N] [--input TEXT] [--state OUT]
 //!           [--trace OUT] [--quiet]
 //! ```
 //!
@@ -124,8 +124,8 @@
 //! F, A0 to A7 and S0 to S7 as loaded.  An instruction that raises a flag
 //! shows the `F` line and then the exchange.
 
-use cray1_isa::Cpu;
-use cray1_model::{report, Event, Machine, Observer, RunResult};
+use cray_xmp_isa::Cpu;
+use cray_xmp_model::{report, Event, Machine, Observer, RunResult};
 use std::cell::Cell;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -133,7 +133,7 @@ use std::process::ExitCode;
 use std::rc::Rc;
 
 const USAGE: &str =
-    "usage: cray1-run IMAGE [--machine CRAY1|XMP] [--max N] [--input TEXT] [--state OUT] [--trace OUT] [--quiet]";
+    "usage: cray-xmp-run IMAGE [--machine CRAY1|XMP] [--max N] [--input TEXT] [--state OUT] [--trace OUT] [--quiet]";
 const STATUS_USAGE: u8 = 64;
 const STATUS_FILE: u8 = 66;
 
@@ -304,19 +304,19 @@ fn run(o: &Options) -> Result<u8, String> {
     match &result {
         RunResult::Exit(code) if !o.quiet => {
             eprintln!(
-                "cray1-run: exit {} after {} instructions",
+                "cray-xmp-run: exit {} after {} instructions",
                 code,
                 machine.instructions()
             )
         }
         RunResult::Limit if !o.quiet => {
             eprintln!(
-                "cray1-run: no exit after {} steps, P={:08o}",
+                "cray-xmp-run: no exit after {} steps, P={:08o}",
                 machine.steps(),
                 machine.p()
             )
         }
-        RunResult::Error(e) => eprintln!("cray1-run: {}", e),
+        RunResult::Error(e) => eprintln!("cray-xmp-run: {}", e),
         _ => {}
     }
     Ok(result.exit_status())
@@ -327,14 +327,14 @@ fn main() -> ExitCode {
     let options = match parse(&argv) {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("cray1-run: {}\n{}", e, USAGE);
+            eprintln!("cray-xmp-run: {}\n{}", e, USAGE);
             return ExitCode::from(STATUS_USAGE);
         }
     };
     match run(&options) {
         Ok(status) => ExitCode::from(status),
         Err(e) => {
-            eprintln!("cray1-run: {}", e);
+            eprintln!("cray-xmp-run: {}", e);
             ExitCode::from(STATUS_FILE)
         }
     }

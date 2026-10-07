@@ -3,7 +3,7 @@
 use crate::expr::{self, Val};
 use crate::source::{split_list, Line, Msg};
 use crate::{Attr, Severity};
-use cray1_isa::{is_reserved_name, is_symbol_char, Cpu, ExpUse, ExpValue};
+use cray_xmp_isa::{is_reserved_name, is_symbol_char, Cpu, ExpUse, ExpValue};
 
 /// `S1 S1&S1`, the pass instruction CAL fills unused parcels with (CAL reference manual
 /// SR-0000, "unused parcels are filled with pass instructions").
@@ -397,7 +397,7 @@ impl<'a> Engine<'a> {
                             format!(
                                 "{} length {} is out of range",
                                 result,
-                                cray1_isa::signed_octal(n)
+                                cray_xmp_isa::signed_octal(n)
                             ),
                         );
                     }
@@ -540,7 +540,7 @@ impl<'a> Engine<'a> {
                         idx,
                         format!(
                             "ORG address {} is out of range",
-                            cray1_isa::signed_octal(word)
+                            cray_xmp_isa::signed_octal(word)
                         ),
                     );
                 }
@@ -632,7 +632,7 @@ impl<'a> Engine<'a> {
                         idx,
                         format!(
                             "VWD value {} does not fit in {} bits",
-                            cray1_isa::signed_octal(value),
+                            cray_xmp_isa::signed_octal(value),
                             bits
                         ),
                     );
@@ -678,7 +678,7 @@ impl<'a> Engine<'a> {
                     forward: v.forward,
                 })
             };
-            cray1_isa::assemble_cpu(cpu, result, operand, &mut eval)
+            cray_xmp_isa::assemble_cpu(cpu, result, operand, &mut eval)
         };
         for w in warnings {
             self.warning(idx, w);

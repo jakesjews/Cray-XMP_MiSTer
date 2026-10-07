@@ -4,7 +4,7 @@
     selftest.py DIRECTORY [--cpu]
 
 The program takes the place of the I/O Subsystem kernel: DIRECTORY gets the
-files cray1-sys and sim/build/ios/Vios_core read (the program as the kernel,
+files cray-xmp-sys and sim/build/ios/Vios_core read (the program as the kernel,
 an empty tape, an empty disk).  It checks what the kernel's own start-up does
 not depend on:
 

@@ -83,7 +83,7 @@ fn exit_status_saturates() {
         kind: ErrorKind::UndefinedValue,
         p: 0,
         parcels: None,
-        cpu: cray1_isa::Cpu::Cray1,
+        cpu: cray_xmp_isa::Cpu::Cray1,
         detail: String::new(),
     };
     assert_eq!(RunResult::Error(e).exit_status(), 3);

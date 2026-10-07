@@ -9,7 +9,7 @@
 //! The second form writes the record of a short program for what random
 //! programs seldom reach.
 
-use cray1_ios::replay::{directed, random, Mix};
+use cray_xmp_ios::replay::{directed, random, Mix};
 
 fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

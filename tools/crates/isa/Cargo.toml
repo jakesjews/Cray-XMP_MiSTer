@@ -1,10 +1,10 @@
 [package]
-name = "cray1-isa"
+name = "cray-xmp-isa"
 description = "Cray-1 instruction table: encode, decode, assemble and disassemble single instructions"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "cray1_isa"
+name = "cray_xmp_isa"
 path = "src/lib.rs"

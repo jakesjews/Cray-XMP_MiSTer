@@ -2,7 +2,7 @@
 //! result register that is also an operand.
 
 use super::*;
-use cray1_fp::{fadd, fmul, frecip, from_f64, fsub, MulKind, Profile};
+use cray_xmp_fp::{fadd, fmul, frecip, from_f64, fsub, MulKind, Profile};
 
 /// Set elements 0.. of Vi.
 fn fill(m: &mut Machine, i: usize, values: &[u64]) {
@@ -448,7 +448,9 @@ fn recursive_floating_sum_of_pages_3_15_and_3_16() {
             let sum: f64 = (0..8).map(|g| (8 * g + r + 1) as f64).sum();
             assert_eq!(m.v(2, 56 + r), Some(f(sum)), "element {}", 56 + r);
         }
-        let total: f64 = (56..64).map(|e| cray1_fp::to_f64(m.v(2, e).unwrap())).sum();
+        let total: f64 = (56..64)
+            .map(|e| cray_xmp_fp::to_f64(m.v(2, e).unwrap()))
+            .sum();
         assert_eq!(total, 64.0 * 65.0 / 2.0);
         // V1 is unchanged and the results were reported in element order
         assert_eq!(

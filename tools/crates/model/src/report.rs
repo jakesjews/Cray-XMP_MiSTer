@@ -1,9 +1,9 @@
-//! The text formats of `cray1-run`: the trace (one line per event) and the
-//! end state.  Both are documented at the top of `src/bin/cray1-run.rs`.
+//! The text formats of `cray-xmp-run`: the trace (one line per event) and the
+//! end state.  Both are documented at the top of `src/bin/cray-xmp-run.rs`.
 
 use crate::event::Event;
 use crate::machine::{Machine, RunResult};
-use cray1_isa::{decode, disassemble};
+use cray_xmp_isa::{decode, disassemble};
 use std::fmt::Write;
 
 fn hex(value: Option<u64>, digits: usize) -> String {
@@ -49,7 +49,7 @@ pub fn trace_line(event: &Event) -> String {
     }
 }
 
-/// The end state of a run as text: see `src/bin/cray1-run.rs` for the
+/// The end state of a run as text: see `src/bin/cray-xmp-run.rs` for the
 /// format.  `result` is what `Machine::run` returned.
 pub fn state_text(m: &Machine, result: &RunResult) -> String {
     let mut out = String::new();

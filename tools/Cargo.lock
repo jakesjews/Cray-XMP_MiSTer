@@ -3,41 +3,41 @@
 version = 4
 
 [[package]]
-name = "cray1-asm"
+name = "cray-xmp-asm"
 version = "0.1.0"
 dependencies = [
- "cray1-isa",
+ "cray-xmp-isa",
 ]
 
 [[package]]
-name = "cray1-cli"
+name = "cray-xmp-cli"
 version = "0.1.0"
 dependencies = [
- "cray1-asm",
- "cray1-isa",
+ "cray-xmp-asm",
+ "cray-xmp-isa",
 ]
 
 [[package]]
-name = "cray1-fp"
+name = "cray-xmp-fp"
 version = "0.1.0"
 
 [[package]]
-name = "cray1-ios"
+name = "cray-xmp-ios"
 version = "0.1.0"
 dependencies = [
- "cray1-isa",
- "cray1-model",
+ "cray-xmp-isa",
+ "cray-xmp-model",
 ]
 
 [[package]]
-name = "cray1-isa"
+name = "cray-xmp-isa"
 version = "0.1.0"
 
 [[package]]
-name = "cray1-model"
+name = "cray-xmp-model"
 version = "0.1.0"
 dependencies = [
- "cray1-asm",
- "cray1-fp",
- "cray1-isa",
+ "cray-xmp-asm",
+ "cray-xmp-fp",
+ "cray-xmp-isa",
 ]

@@ -1,4 +1,4 @@
-//! The `cray1` command: host tools for the Cray-1 core.
+//! The `cray-xmp` command: host tools for the CRAY X-MP core.
 //!
 //! Each subcommand lives in its own module and is listed in `COMMANDS`.  To
 //! add one (`run`, `gen`, `fpvec`...), write a module with
@@ -19,7 +19,7 @@ struct Command {
     /// Arguments, as shown in the usage text.
     synopsis: &'static str,
     about: &'static str,
-    /// More help, shown by `cray1 NAME --help`.
+    /// More help, shown by `cray-xmp NAME --help`.
     details: &'static str,
     run: fn(&[String]) -> Result<ExitCode, String>,
 }
@@ -49,16 +49,16 @@ const COMMANDS: &[Command] = &[
 ];
 
 fn usage() -> String {
-    let mut text = String::from("Host tools for the Cray-1 core.\n\nUsage:\n");
+    let mut text = String::from("Host tools for the CRAY X-MP core.\n\nUsage:\n");
     for c in COMMANDS {
-        text.push_str(format!("  cray1 {} {}", c.name, c.synopsis).trim_end());
+        text.push_str(format!("  cray-xmp {} {}", c.name, c.synopsis).trim_end());
         text.push('\n');
     }
     text.push_str("\nCommands:\n");
     for c in COMMANDS {
         text.push_str(&format!("  {:<6}{}\n", c.name, c.about));
     }
-    text.push_str("\n`cray1 COMMAND --help` says more about one command.\n");
+    text.push_str("\n`cray-xmp COMMAND --help` says more about one command.\n");
     text
 }
 
@@ -73,7 +73,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let Some(command) = COMMANDS.iter().find(|c| c.name == name) else {
-        eprintln!("cray1: unknown command `{}`\n", name);
+        eprintln!("cray-xmp: unknown command `{}`\n", name);
         eprint!("{}", usage());
         return ExitCode::from(EXIT_USAGE);
     };
@@ -81,7 +81,7 @@ fn main() -> ExitCode {
     if rest.iter().any(|a| a == "--help" || a == "-h") {
         println!(
             "Usage: {}\n\n{}",
-            format!("cray1 {} {}", command.name, command.synopsis).trim_end(),
+            format!("cray-xmp {} {}", command.name, command.synopsis).trim_end(),
             command.details.trim()
         );
         return ExitCode::SUCCESS;
@@ -89,9 +89,9 @@ fn main() -> ExitCode {
     match (command.run)(rest) {
         Ok(code) => code,
         Err(message) => {
-            eprintln!("cray1 {}: {}", command.name, message);
+            eprintln!("cray-xmp {}: {}", command.name, message);
             if message.starts_with(args::USAGE_PREFIX) {
-                eprintln!("usage: cray1 {} {}", command.name, command.synopsis);
+                eprintln!("usage: cray-xmp {} {}", command.name, command.synopsis);
                 return ExitCode::from(EXIT_USAGE);
             }
             ExitCode::FAILURE

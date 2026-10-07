@@ -29,7 +29,7 @@ pub(crate) fn cal(source: &str) -> Vec<u16> {
         let result = fields.next().unwrap();
         let operand = fields.next().unwrap_or("");
         assert!(fields.next().is_none(), "too many fields in `{}`", line);
-        let a = cray1_isa::assemble_numeric(result, operand)
+        let a = cray_xmp_isa::assemble_numeric(result, operand)
             .unwrap_or_else(|e| panic!("`{}`: {}", line, e));
         out.extend(a.encoding.parcels());
     }

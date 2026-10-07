@@ -1,8 +1,8 @@
-//! `cray1-sys`: run the I/O Subsystem software, and through it the
+//! `cray-xmp-sys`: run the I/O Subsystem software, and through it the
 //! mainframe, on the reference models.
 //!
 //! ```text
-//! cray1-sys SYSTEM [--script FILE] [--ms N] [--clock YYMMDD,HHMMSS] [--log FILE]
+//! cray-xmp-sys SYSTEM [--script FILE] [--ms N] [--clock YYMMDD,HHMMSS] [--log FILE]
 //!           [--poke PARCEL=VALUE]... [--two-iops] [--instant] [--timing NAME=N]...
 //!           [--save DIR] [--quiet]
 //! ```
@@ -52,7 +52,7 @@
 //! or the CPU model stopped, 64 for a bad command line, 66 for a file that
 //! could not be read.
 
-use cray1_ios::{
+use cray_xmp_ios::{
     Config, Image, Screen, System, Tape, Timing, DD29_SECTOR_BYTES, DISK_SECTOR_BYTES,
 };
 use std::io::Write;
@@ -62,7 +62,7 @@ use std::process::ExitCode;
 /// Clock periods of 12.5 ns in a millisecond.
 const MILLISECOND: u64 = 80_000;
 
-const USAGE: &str = "usage: cray1-sys SYSTEM [--script FILE] [--ms N] [--wait SECONDS] [--clock YYMMDD,HHMMSS] [--log FILE] [--poke PARCEL=VALUE]... [--two-iops] [--instant] [--timing NAME=N]... [--save DIR] [--quiet]";
+const USAGE: &str = "usage: cray-xmp-sys SYSTEM [--script FILE] [--ms N] [--wait SECONDS] [--clock YYMMDD,HHMMSS] [--log FILE] [--poke PARCEL=VALUE]... [--two-iops] [--instant] [--timing NAME=N]... [--save DIR] [--quiet]";
 
 struct Options {
     system: PathBuf,
@@ -319,7 +319,7 @@ impl Runner {
             .is_some_and(|steps| self.system.replay_steps() >= steps)
         {
             self.replay_steps = None;
-            eprintln!("cray1-sys: {} steps recorded", self.system.end_replay());
+            eprintln!("cray-xmp-sys: {} steps recorded", self.system.end_replay());
         }
         if !self.quiet {
             let output = self.system.console(0, 3);
@@ -334,7 +334,7 @@ impl Runner {
     fn report(&self) {
         let s = &self.system;
         eprintln!(
-            "\ncray1-sys: {:.3} s of machine time",
+            "\ncray-xmp-sys: {:.3} s of machine time",
             s.time() as f64 / 8e7
         );
         for n in 0..4 {
@@ -484,7 +484,7 @@ fn main() -> ExitCode {
     let o = match options() {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("cray1-sys: {}\n{}", e, USAGE);
+            eprintln!("cray-xmp-sys: {}\n{}", e, USAGE);
             return ExitCode::from(64);
         }
     };
@@ -496,14 +496,14 @@ fn main() -> ExitCode {
     {
         Ok(script) => script.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
         Err(e) => {
-            eprintln!("cray1-sys: {}", e);
+            eprintln!("cray-xmp-sys: {}", e);
             return ExitCode::from(66);
         }
     };
     let system = match build(&o) {
         Ok(system) => system,
         Err(e) => {
-            eprintln!("cray1-sys: {}", e);
+            eprintln!("cray-xmp-sys: {}", e);
             return ExitCode::from(66);
         }
     };
@@ -517,7 +517,7 @@ fn main() -> ExitCode {
     let mut status = 0;
     if let Some(script) = &script {
         if let Err(e) = runner.script(script, o.wait) {
-            eprintln!("\ncray1-sys: {}", e);
+            eprintln!("\ncray-xmp-sys: {}", e);
             status = 1;
         }
     }
@@ -532,7 +532,7 @@ fn main() -> ExitCode {
     }
     if let Some(dir) = &o.save {
         if let Err(e) = save(&runner.system, &o, dir) {
-            eprintln!("cray1-sys: {}", e);
+            eprintln!("cray-xmp-sys: {}", e);
             return ExitCode::from(66);
         }
     }

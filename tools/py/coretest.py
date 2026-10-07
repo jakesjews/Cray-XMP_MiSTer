@@ -29,7 +29,7 @@ printer's screen and in the printer's file, behind the five blocks an earlier
 session is made to have left there.
 
 boot loads a boot file made from the COS 1.17 software in SYSTEM (default:
-CRAY1_SYSTEM, or the directory research/Cray 1 Disk Image from Youtube),
+the directory the environment variable CRAY_XMP_SYSTEM names),
 without the kernel's tests that only take time.  The kernel has to ask for
 the date; date and time are typed on the keyboard; then the menu's reset is
 pressed and the kernel has to ask again.
@@ -149,7 +149,7 @@ def restart(system):
 def main():
     a = sys.argv[1:]
     os.makedirs(OUT, exist_ok=True)
-    system = os.environ.get('CRAY1_SYSTEM', os.path.join(ROOT, 'research/Cray 1 Disk Image from Youtube'))
+    system = os.environ.get('CRAY_XMP_SYSTEM', '')
     if a and a[0] == 'screens':
         ok = screens(int(a[1]) if len(a) > 1 else 1, int(a[2]) if len(a) > 2 else 400)
     elif a and a[0] == 'spool':
@@ -159,6 +159,8 @@ def main():
     elif a == ['printer']:
         ok = printer()
     elif a and a[0] in ('boot', 'start', 'restart'):
+        if len(a) < 2 and not system:
+            sys.exit('coretest: name the directory of the COS 1.17 software, or set CRAY_XMP_SYSTEM')
         ok = {'boot': boot, 'start': start, 'restart': restart}[a[0]](a[1] if len(a) > 1 else system)
     else:
         sys.exit(__doc__)

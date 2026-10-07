@@ -221,7 +221,7 @@ pub fn write_vector_file<P: AsRef<Path>>(
     let mut out = BufWriter::new(File::create(path)?);
     writeln!(
         out,
-        "# cray1-fp vectors: profile {profile:?}, {n} per operation, seed {seed:#x}"
+        "# cray-xmp-fp vectors: profile {profile:?}, {n} per operation, seed {seed:#x}"
     )?;
     writeln!(
         out,

@@ -1,7 +1,7 @@
 //! Write one vector file per operation.
 //!
 //! ```text
-//! cargo run -p cray1-fp --example gen_vectors -- OUT_DIR [COUNT] [SEED] [xmp|cray1]
+//! cargo run -p cray-xmp-fp --example gen_vectors -- OUT_DIR [COUNT] [SEED] [xmp|cray1]
 //! ```
 //!
 //! Writes `OUT_DIR/<op>.vec` for add, sub, mul, mulh, mulr, mul2m and recip, each with COUNT
@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use cray1_fp::{write_vector_file, Op, Profile};
+use cray_xmp_fp::{write_vector_file, Op, Profile};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

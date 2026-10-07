@@ -110,7 +110,7 @@ public:
         }
     }
 
-    // End state in the same text format as the reference model (cray1-run --state):
+    // End state in the same text format as the reference model (cray-xmp-run --state):
     //   exit <code or none>
     //   console <hex bytes>
     //   mem <octal address> <16 hex digits>     one line per word stored, ascending

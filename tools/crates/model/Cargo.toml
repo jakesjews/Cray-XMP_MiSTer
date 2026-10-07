@@ -1,14 +1,14 @@
 [package]
-name = "cray1-model"
+name = "cray-xmp-model"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
 description = "Instruction-level reference model of the CRAY-1"
 
 [dependencies]
-cray1-isa = { path = "../isa" }
-cray1-fp = { path = "../fp" }
+cray-xmp-isa = { path = "../isa" }
+cray-xmp-fp = { path = "../fp" }
 
 [dev-dependencies]
 # the smoke tests in tests/smoke are CAL sources
-cray1-asm = { path = "../asm" }
+cray-xmp-asm = { path = "../asm" }

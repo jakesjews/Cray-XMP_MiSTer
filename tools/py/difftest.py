@@ -20,8 +20,8 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
-ASM = os.path.join(ROOT, 'tools/target/release/cray1')
-MODEL = os.path.join(ROOT, 'tools/target/release/cray1-run')
+ASM = os.path.join(ROOT, 'tools/target/release/cray-xmp')
+MODEL = os.path.join(ROOT, 'tools/target/release/cray-xmp-run')
 RTL = os.environ.get('CRAY_RTL_SIM', os.path.join(ROOT, 'sim/build/cpu/Vcray_cpu'))
 RTL_XMP = os.environ.get('CRAY_RTL_SIM_XMP', os.path.join(ROOT, 'sim/build/cpu_xmp/Vcray_cpu'))
 OUT = os.path.join(ROOT, 'build/diff')

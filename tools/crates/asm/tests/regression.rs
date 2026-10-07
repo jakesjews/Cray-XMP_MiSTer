@@ -2,8 +2,8 @@
 //! cal_dv.cal, the bootloader boot.cal with the output of the old Python
 //! assembler (boot.SV.txt), and a round trip of every instruction form.
 
-use cray1_asm::{assemble_file, assemble_source, Assembly};
-use cray1_isa::Cpu;
+use cray_xmp_asm::{assemble_file, assemble_source, Assembly};
+use cray_xmp_isa::Cpu;
 use std::path::PathBuf;
 
 fn fixture(name: &str) -> PathBuf {
@@ -179,13 +179,13 @@ fn boot_matches_the_python_assembler() {
 /// The rows of the instruction table that can be reached on a machine.  On
 /// the X-MP the row for 0023xx to 0027xx is left with nothing: every one of
 /// those encodings has a meaning there.
-fn forms_of(cpu: Cpu) -> Vec<&'static cray1_isa::Form> {
-    cray1_isa::FORMS
+fn forms_of(cpu: Cpu) -> Vec<&'static cray_xmp_isa::Form> {
+    cray_xmp_isa::FORMS
         .iter()
         .filter(|f| f.on(cpu))
         .filter(|f| {
-            let e = cray1_isa::encode(f, f.example_fields());
-            cray1_isa::decode_cpu(cpu, e.parcel0, e.parcel1).op == f.op
+            let e = cray_xmp_isa::encode(f, f.example_fields());
+            cray_xmp_isa::decode_cpu(cpu, e.parcel0, e.parcel1).op == f.op
         })
         .collect()
 }
@@ -195,9 +195,9 @@ fn forms_of(cpu: Cpu) -> Vec<&'static cray1_isa::Form> {
 fn all_forms_source(cpu: Cpu) -> String {
     let mut out = String::new();
     out.push_str("* Every instruction form of the Cray-1 once: one line per row of the\n");
-    out.push_str("* instruction table (cray1 isa), in table order, with the expected parcels\n");
+    out.push_str("* instruction table (cray-xmp isa), in table order, with the expected parcels\n");
     out.push_str("* in the comment column.  Checked against the table by the regression test\n");
-    out.push_str("* in tools/crates/asm; regenerate with CRAY1_UPDATE_FIXTURES=1 cargo test.\n");
+    out.push_str("* in tools/crates/asm; regenerate with CRAY_XMP_UPDATE_FIXTURES=1 cargo test.\n");
     if cpu == Cpu::Xmp {
         out.push_str("* This file has the rows of the X-MP as well.\n");
     }
@@ -206,7 +206,7 @@ fn all_forms_source(cpu: Cpu) -> String {
         out.push_str("         MACHINE   XMP\n");
     }
     for f in forms_of(cpu) {
-        let e = cray1_isa::encode(f, f.example_fields());
+        let e = cray_xmp_isa::encode(f, f.example_fields());
         let (result, operand) = match f.example() {
             Some(x) => x,
             None => ("VWD".to_string(), format!("D'16/O'{:06o}", e.parcel0)),
@@ -231,7 +231,7 @@ fn every_instruction_form_round_trips() {
 fn forms_round_trip(name: &str, cpu: Cpu) {
     let path = fixture(name);
     let source = all_forms_source(cpu);
-    if std::env::var_os("CRAY1_UPDATE_FIXTURES").is_some() {
+    if std::env::var_os("CRAY_XMP_UPDATE_FIXTURES").is_some() {
         std::fs::write(&path, &source).unwrap();
     }
     let on_disk = std::fs::read_to_string(&path).unwrap_or_default();
@@ -273,8 +273,8 @@ fn forms_round_trip(name: &str, cpu: Cpu) {
     }
     for f in forms {
         let p0 = a.parcel(addr);
-        let len = cray1_isa::length_cpu(cpu, p0) as u64;
-        let d = cray1_isa::decode_cpu(cpu, p0, (len == 2).then(|| a.parcel(addr + 1)));
+        let len = cray_xmp_isa::length_cpu(cpu, p0) as u64;
+        let d = cray_xmp_isa::decode_cpu(cpu, p0, (len == 2).then(|| a.parcel(addr + 1)));
         assert_eq!(d.op, f.op, "parcel {:o}: {}", addr, f.pattern);
         assert!(
             f.matches(d.parcel0, Some(d.m)),
@@ -284,7 +284,7 @@ fn forms_round_trip(name: &str, cpu: Cpu) {
         );
         straddles += (len == 2 && addr % 4 == 3) as u32;
         straddles_moved += (len == 2 && addr % 4 == 2) as u32;
-        text.push_str(&format!("         {}\n", cray1_isa::disassemble(&d)));
+        text.push_str(&format!("         {}\n", cray_xmp_isa::disassemble(&d)));
         addr += len;
     }
     assert_eq!(addr, total);

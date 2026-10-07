@@ -1,7 +1,7 @@
 //! Source lines: splitting into fields, INCLUDE, and macro expansion.
 
 use crate::Severity;
-use cray1_isa::{is_symbol_char, quoted_mask};
+use cray_xmp_isa::{is_symbol_char, quoted_mask};
 use std::collections::HashMap;
 use std::rc::Rc;
 

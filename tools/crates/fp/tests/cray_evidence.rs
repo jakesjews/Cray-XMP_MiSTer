@@ -7,11 +7,11 @@
 //! * W. Kahan, "How Cray's arithmetic hurts scientific computation", Cray User Group, June
 //!   1990: two operand triples and statistics of X/X from the CRAYs of that time.
 //!
-//! How they were found and compared is in `research/notes/fp-multiply.md` of the core's
+//! How they were found and compared is in `docs/spec/fp-multiply.md` of the core's
 //! repository.
 
-use cray1_fp::vectors::SplitMix64;
-use cray1_fp::{fmul, frecip, fsub, pack, to_f64, MulKind, Profile};
+use cray_xmp_fp::vectors::SplitMix64;
+use cray_xmp_fp::{fmul, frecip, fsub, pack, to_f64, MulKind, Profile};
 
 const P: Profile = Profile::Cray1;
 

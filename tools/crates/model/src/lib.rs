@@ -7,7 +7,7 @@
 //! differs it is followed and cited as "rev F" with its own page numbers.
 //! That is the programmable clock, the vector population instructions and
 //! the meaning of F register bits 31 and 32.  Decoding comes from
-//! `cray1-isa`, floating point arithmetic from `cray1-fp`
+//! `cray-xmp-isa`, floating point arithmetic from `cray-xmp-fp`
 //! (`Profile::Cray1`).
 //!
 //! # The machine
@@ -46,7 +46,7 @@
 //! mode::*, flag::*                                   bits of M and F
 //! ```
 //!
-//! The binary `cray1-run` (see `src/bin/cray1-run.rs` for the file formats)
+//! The binary `cray-xmp-run` (see `src/bin/cray-xmp-run.rs` for the file formats)
 //! runs an image and writes the end state and a trace.
 //!
 //! A step is the dead start, one instruction (with the exchange it causes,
@@ -153,7 +153,7 @@
 //! `Machine::for_cpu(Cpu::Xmp)` is the same machine with what a
 //! one-processor CRAY X-MP has that the operating system COS needs.  The
 //! authority is the CRAY X-MP Series Model 14 mainframe reference manual
-//! CSM-0111000 ("X"); `research/notes/machine-spec.md` in the core's
+//! CSM-0111000 ("X"); `docs/spec/machine-spec.md` in the core's
 //! repository has the comparison and what COS was seen to use.
 //!
 //! * Four million words of memory; the I/O page is their top 16 words.

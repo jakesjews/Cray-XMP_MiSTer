@@ -1,4 +1,4 @@
-//! `cray1 asm`: assemble a CAL source file.
+//! `cray-xmp asm`: assemble a CAL source file.
 
 use crate::args::Args;
 use std::path::{Path, PathBuf};
@@ -27,7 +27,7 @@ pub fn run(argv: &[String]) -> Result<ExitCode, String> {
     let args = Args::parse(argv, &["-o", "-l", "-s", "-I"])?;
     let source = PathBuf::from(args.one_positional("the source file")?);
     let include_dirs: Vec<PathBuf> = args.values("-I").into_iter().map(PathBuf::from).collect();
-    let assembly = cray1_asm::assemble_file(&source, &include_dirs)?;
+    let assembly = cray_xmp_asm::assemble_file(&source, &include_dirs)?;
 
     for d in &assembly.diagnostics {
         eprintln!("{}", d);
@@ -40,7 +40,7 @@ pub fn run(argv: &[String]) -> Result<ExitCode, String> {
         let errors = assembly
             .diagnostics
             .iter()
-            .filter(|d| d.severity == cray1_asm::Severity::Error)
+            .filter(|d| d.severity == cray_xmp_asm::Severity::Error)
             .count();
         eprintln!("{}: {} errors, no image written", source.display(), errors);
         return Ok(ExitCode::from(1));

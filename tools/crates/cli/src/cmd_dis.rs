@@ -1,7 +1,7 @@
-//! `cray1 dis`: disassemble a memory image.
+//! `cray-xmp dis`: disassemble a memory image.
 
 use crate::args::Args;
-use cray1_isa::Cpu;
+use cray_xmp_isa::Cpu;
 use std::process::ExitCode;
 
 pub const DETAILS: &str = "
@@ -64,9 +64,9 @@ pub fn disassemble_cpu(cpu: Cpu, words: &[u64], start: u64, end: u64) -> String 
             }
         }
         let p0 = parcel(words, addr).unwrap_or(0);
-        let two = cray1_isa::length_cpu(cpu, p0) == 2;
+        let two = cray_xmp_isa::length_cpu(cpu, p0) == 2;
         let p1 = if two { parcel(words, addr + 1) } else { None };
-        let d = cray1_isa::decode_cpu(cpu, p0, p1);
+        let d = cray_xmp_isa::decode_cpu(cpu, p0, p1);
         let spelled = if d.form.on(Cpu::Cray1) {
             Cpu::Cray1
         } else {
@@ -84,9 +84,9 @@ pub fn disassemble_cpu(cpu: Cpu, words: &[u64], start: u64, end: u64) -> String 
         if two && addr % 4 == 3 && p1.is_some() {
             notes.push("straddles words");
         }
-        let (result, operand) = cray1_isa::disassemble_fields(&d);
+        let (result, operand) = cray_xmp_isa::disassemble_fields(&d);
         // does the text spell these very parcels, or only their canonical form?
-        let exact = match cray1_isa::assemble_numeric_cpu(spelled, &result, &operand) {
+        let exact = match cray_xmp_isa::assemble_numeric_cpu(spelled, &result, &operand) {
             Ok(a) => a.encoding.parcel0 == p0 && a.encoding.parcel1 == p1,
             Err(_) => d.is_canonical(),
         };
@@ -120,7 +120,7 @@ pub fn run(argv: &[String]) -> Result<ExitCode, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {}", path, e))?;
     if bytes.len() % 8 != 0 {
         eprintln!(
-            "cray1 dis: {}: {} bytes is not a whole number of words; the last {} bytes are ignored",
+            "cray-xmp dis: {}: {} bytes is not a whole number of words; the last {} bytes are ignored",
             path,
             bytes.len(),
             bytes.len() % 8

@@ -2,7 +2,7 @@
 //! branches.
 
 use super::*;
-use cray1_fp::{pack, unpack};
+use cray_xmp_fp::{pack, unpack};
 
 #[test]
 fn exchange_package_layout() {
@@ -581,7 +581,7 @@ fn floating_point_error_flag() {
     // a vector instruction: every element is done, then the interrupt
     let mut m = user(&cal("EFI; V3 V1*FV2; A1 5"), 0, LA_MAX);
     m.set_vl(Some(3));
-    let one = cray1_fp::from_f64(1.0).unwrap();
+    let one = cray_xmp_fp::from_f64(1.0).unwrap();
     for (e, x) in [one, big, one].into_iter().enumerate() {
         m.set_v(1, e, Some(x));
         m.set_v(2, e, Some(x));

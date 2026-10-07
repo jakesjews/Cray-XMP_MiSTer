@@ -85,7 +85,7 @@
 //!
 //! Confirmed by Cray's own simulation of the units in that diagnostic (subroutines SMLT and
 //! SRP, transcribed and compared outside this crate on millions of operands; see
-//! `research/notes/fp-multiply.md` in the core's repository):
+//! `docs/spec/fp-multiply.md` in the core's repository):
 //!
 //! * 064, 065, 066 and 067 bit for bit, value and range flag, including the pyramid cut
 //!   after `2^-56`, the constant 9, the round bits, the 29-bit half-precision result and the

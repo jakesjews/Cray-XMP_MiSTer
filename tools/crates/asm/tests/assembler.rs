@@ -1,7 +1,7 @@
 //! Behaviour of the assembler proper: source layout, expressions, address
 //! attributes, directives, macros, includes, diagnostics and output files.
 
-use cray1_asm::{assemble, assemble_source, Assembly, Severity};
+use cray_xmp_asm::{assemble, assemble_source, Assembly, Severity};
 
 fn ok(source: &str) -> Assembly {
     let a = assemble_source(source);

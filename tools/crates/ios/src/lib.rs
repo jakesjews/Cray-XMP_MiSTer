@@ -4,15 +4,15 @@
 //! * `Iop` is one I/O Processor, at instruction level (below).
 //! * `System` is up to four of them with their channels, Buffer Memory,
 //!   the Peripheral Expander with its tape and disk, the DD-29 disk drives,
-//!   the consoles, and the mainframe (`cray1_model::Machine` with the X-MP
+//!   the consoles, and the mainframe (`cray_xmp_model::Machine` with the X-MP
 //!   features) on the MIOP's channel pair and on the BIOP's 100 Mbyte
-//!   channel.  The program `cray1-sys` runs one from the files of the
+//!   channel.  The program `cray-xmp-sys` runs one from the files of the
 //!   software and a script of what the operator types.
 //!
 //! Authority: HR-0030 rev B, the I/O Subsystem Model B Hardware Reference
 //! Manual of May 1986; `[HW n-m]` in this crate is its printed page n-m.
-//! `research/notes/iop-cpu-spec.md` ("the spec") and
-//! `research/notes/ios-devices-spec.md` ("the devices spec") in the core's
+//! `docs/spec/iop-cpu-spec.md` ("the spec") and
+//! `docs/spec/ios-devices-spec.md` ("the devices spec") in the core's
 //! repository condense it, compare it with the cray-sim simulator and list
 //! what the COS 1.17 IOS software needs.  Where cray-sim and the manual
 //! differ the manual is followed, except for the register protocols of the

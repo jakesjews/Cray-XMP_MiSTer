@@ -1,7 +1,7 @@
 * Every instruction form of the Cray-1 once: one line per row of the
-* instruction table (cray1 isa), in table order, with the expected parcels
+* instruction table (cray-xmp isa), in table order, with the expected parcels
 * in the comment column.  Checked against the table by the regression test
-* in tools/crates/asm; regenerate with CRAY1_UPDATE_FIXTURES=1 cargo test.
+* in tools/crates/asm; regenerate with CRAY_XMP_UPDATE_FIXTURES=1 cargo test.
 * This file has the rows of the X-MP as well.
          IDENT     ALLFORMS
          MACHINE   XMP

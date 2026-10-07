@@ -16,8 +16,8 @@
 
 use crate::exec::{and_values, double_shift_left, double_shift_right, FP_PROFILE};
 use crate::machine::{vl_count, Machine, TestError, A_MASK};
-use cray1_fp::{fadd, fmul, frecip, fsub, FpResult, MulKind};
-use cray1_isa::{Cpu, Decoded, Op};
+use cray_xmp_fp::{fadd, fmul, frecip, fsub, FpResult, MulKind};
+use cray_xmp_isa::{Cpu, Decoded, Op};
 
 /// Functional unit times in clock periods (HRM section 3).
 pub mod unit_time {

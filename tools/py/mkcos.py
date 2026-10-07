@@ -3,11 +3,12 @@
 COS installed on one disk drive, with the programs of software/cos-tools as
 its commands.
 
-  mkcos.py SYSTEM_DIR OUT_DIR [--zip FILE] [--no-check]
+  mkcos.py OUT_DIR [--zip FILE] [--no-check]
 
-SYSTEM_DIR holds boot_tape.tap, exp_disk.img and target/cos_117/iop_kern.bin
-of the COS 1.17 system as the cray-sim project has it.  The system model does
-the work (tools/target/release/cray1-sys; `make tools` builds it).  Written are
+It starts from COS 1.17 as it was recovered, in software/cos-1.17: the kernel
+of the I/O Subsystem, its boot tape and the expander disk.  The system model
+does the work (tools/target/release/cray-xmp-sys; `make tools` builds it).
+Written are
 
   OUT_DIR/games/Cray-XMP/cos117.ios    the boot file: kernel and boot tape
   OUT_DIR/games/Cray-XMP/exp_disk.img  the disk of the Peripheral Expander
@@ -50,6 +51,7 @@ common.
 The other files of the expander disk are as they were.  Three jobs are added
 to it as examples: JCAL, JFTN and JLISP.
 """
+import gzip
 import os
 import shutil
 import subprocess
@@ -62,7 +64,8 @@ import expdisk  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 TOOLS = os.path.join(ROOT, 'software', 'cos-tools')
-MODEL = os.path.join(ROOT, 'tools', 'target', 'release', 'cray1-sys')
+SYSTEM = os.path.join(ROOT, 'software', 'cos-1.17')
+MODEL = os.path.join(ROOT, 'tools', 'target', 'release', 'cray-xmp-sys')
 CORE = 'Cray-XMP'
 DRIVE_BYTES = 823 * 10 * 18 * 4096      # cylinders, head groups, sectors, bytes
 PRINTER_BYTES = 8 << 20
@@ -301,13 +304,11 @@ def main(argv):
             check = False
         else:
             args.append(a)
-    if len(args) != 2:
+    if len(args) != 1:
         sys.exit(__doc__)
-    system, out = args[0], os.path.abspath(args[1])
+    out = os.path.abspath(args[0])
+    # as the model wants them laid out
     names = ['boot_tape.tap', 'exp_disk.img', os.path.join('target', 'cos_117', 'iop_kern.bin')]
-    missing = [n for n in names if not os.path.isfile(os.path.join(system, n))]
-    if missing:
-        sys.exit('mkcos: %s does not have %s' % (system, ', '.join(missing)))
     if not os.path.isfile(MODEL):
         sys.exit('mkcos: no %s; run `make tools`' % MODEL)
     games = os.path.join(out, 'games', CORE)
@@ -318,9 +319,9 @@ def main(argv):
     for directory in (games, computer, licenses, os.path.join(work, 'target', 'cos_117')):
         os.makedirs(directory, exist_ok=True)
 
-    kernel = open(os.path.join(system, names[2]), 'rb').read()
-    tape = open(os.path.join(system, names[0]), 'rb').read()
-    stock = open(os.path.join(system, names[1]), 'rb').read()
+    kernel = open(os.path.join(SYSTEM, 'iop_kern.bin'), 'rb').read()
+    tape = open(os.path.join(SYSTEM, 'boot_tape.tap'), 'rb').read()
+    stock = gzip.open(os.path.join(SYSTEM, 'exp_disk.img.gz'), 'rb').read()
     try:
         open(os.path.join(games, 'cos117.ios'), 'wb').write(boot_file(kernel, tape))
     except ValueError as e:
@@ -368,9 +369,10 @@ def main(argv):
     print('printer.txt')
     open(os.path.join(computer, 'COS 1.17.mgl'), 'w').write(MGL)
     print('COS 1.17.mgl')
-    for name in sorted(os.listdir(TOOLS)):
-        if name.startswith('LICENSE') or name == 'NOTICE':
-            shutil.copyfile(os.path.join(TOOLS, name), os.path.join(licenses, name + '.txt'))
+    for directory in (TOOLS, SYSTEM):
+        for name in sorted(os.listdir(directory)):
+            if name.startswith('LICENSE'):
+                shutil.copyfile(os.path.join(directory, name), os.path.join(licenses, name + '.txt'))
     shutil.rmtree(work)
 
     if zipped:

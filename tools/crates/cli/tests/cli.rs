@@ -1,13 +1,13 @@
-//! The `cray1` binary end to end.
+//! The `cray-xmp` binary end to end.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-fn cray1(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_cray1"))
+fn cray_xmp(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_cray-xmp"))
         .args(args)
         .output()
-        .expect("run cray1")
+        .expect("run cray-xmp")
 }
 
 fn stdout(o: &Output) -> String {
@@ -46,7 +46,7 @@ fn asm_writes_image_listing_and_symbols() {
         path(&dir, "boot.lst"),
         path(&dir, "boot.sym"),
     );
-    let o = cray1(&[
+    let o = cray_xmp(&[
         "asm",
         &fixture("boot.cal"),
         "-o",
@@ -82,7 +82,7 @@ fn asm_writes_image_listing_and_symbols() {
     assert!(symbols.contains("PBASE                1000 V\n"));
 
     // disassemble a slice of it
-    let o = cray1(&["dis", &img, "--start", "0o20", "--words=2"]);
+    let o = cray_xmp(&["dis", &img, "--start", "0o20", "--words=2"]);
     assert_eq!(o.status.code(), Some(0));
     assert_eq!(
         stdout(&o),
@@ -93,7 +93,7 @@ fn asm_writes_image_listing_and_symbols() {
 0000021c  120210 000002  S2        2000002,0
 "
     );
-    let all = stdout(&cray1(&["dis", &img]));
+    let all = stdout(&cray_xmp(&["dis", &img]));
     assert!(all.contains("0000001   15 zero words\n"));
     assert!(all.contains("0000022d  040100 000034  S1        34               ; straddles words\n"));
     assert!(all.ends_with("0000040a  006000 000100  J         100\n0000040c  000000         ERR\n0000040d  000000         ERR\n"));
@@ -110,7 +110,7 @@ fn asm_default_output_and_include_directory() {
     )
     .unwrap();
     std::fs::write(dir.join("prog.cal"), "         INCLUDE   \"defs.cal\"\n         INCLUDE   near.cal\n         A1        SEVEN\n         HALT\n").unwrap();
-    let o = cray1(&["asm", &path(&dir, "prog.cal"), "-I", &path(&dir, "inc")]);
+    let o = cray_xmp(&["asm", &path(&dir, "prog.cal"), "-I", &path(&dir, "inc")]);
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
     // the image lands next to the source
     assert_eq!(
@@ -119,7 +119,7 @@ fn asm_default_output_and_include_directory() {
     );
     // without -I the first include is not found
     std::fs::remove_file(dir.join("prog.img")).unwrap();
-    let o = cray1(&["asm", &path(&dir, "prog.cal")]);
+    let o = cray_xmp(&["asm", &path(&dir, "prog.cal")]);
     assert_eq!(o.status.code(), Some(1));
     assert!(
         stderr(&o).contains("prog.cal:1: error: cannot include \"defs.cal\": file not found"),
@@ -143,7 +143,7 @@ fn asm_errors_exit_1_without_an_image() {
         path(&dir, "bad.lst"),
         path(&dir, "bad.sym"),
     );
-    let o = cray1(&["asm", &src, "-o", &img, "-l", &lst, "-s", &sym]);
+    let o = cray_xmp(&["asm", &src, "-o", &img, "-l", &lst, "-s", &sym]);
     assert_eq!(o.status.code(), Some(1));
     assert_eq!(stdout(&o), "");
     let err = stderr(&o);
@@ -178,7 +178,7 @@ fn asm_warnings_exit_2_with_an_image() {
     )
     .unwrap();
     let img = path(&dir, "warn.img");
-    let o = cray1(&["asm", &src, "-o", &img]);
+    let o = cray_xmp(&["asm", &src, "-o", &img]);
     assert_eq!(o.status.code(), Some(2));
     assert!(
         stderr(&o).contains(&format!(
@@ -201,9 +201,9 @@ fn dis_notes_an_instruction_that_straddles_words() {
     )
     .unwrap();
     let img = path(&dir, "straddle.img");
-    let o = cray1(&["asm", &src, "-o", &img]);
+    let o = cray_xmp(&["asm", &src, "-o", &img]);
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
-    let text = stdout(&cray1(&["dis", &img]));
+    let text = stdout(&cray_xmp(&["dis", &img]));
     assert_eq!(text.matches("; straddles words").count(), 1, "{}", text);
 }
 
@@ -211,9 +211,9 @@ fn dis_notes_an_instruction_that_straddles_words() {
 fn dis_output_assembles_back_to_the_same_image() {
     let dir = scratch("roundtrip");
     let img = path(&dir, "all.img");
-    let o = cray1(&["asm", &fixture("all_forms.cal"), "-o", &img]);
+    let o = cray_xmp(&["asm", &fixture("all_forms.cal"), "-o", &img]);
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
-    let text = stdout(&cray1(&["dis", &img]));
+    let text = stdout(&cray_xmp(&["dis", &img]));
     assert!(
         !text.contains("ignored bits"),
         "the fixture is canonical apart from ERR exp and EX exp"
@@ -226,7 +226,7 @@ fn dis_output_assembles_back_to_the_same_image() {
     }
     let again = path(&dir, "again.cal");
     std::fs::write(&again, source).unwrap();
-    let o = cray1(&["asm", &again]);
+    let o = cray_xmp(&["asm", &again]);
     assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
     assert_eq!(
         std::fs::read(dir.join("again.img")).unwrap(),
@@ -236,26 +236,29 @@ fn dis_output_assembles_back_to_the_same_image() {
 
 #[test]
 fn isa_prints_the_table_and_bad_usage_is_reported() {
-    let o = cray1(&["isa"]);
+    let o = cray_xmp(&["isa"]);
     assert_eq!(o.status.code(), Some(0));
     let table = stdout(&o);
     assert!(table.contains("  030ijk   Ai        Aj+Ak      1   A Int Add  -     Aj,Ak        Ai     Integer sum of (Aj) and (Ak) to Ai\n"));
     assert!(table.contains("  177xjk   ,A0,Ak    Vj         1   Memory     WV"));
 
-    let o = cray1(&[]);
+    let o = cray_xmp(&[]);
     assert_eq!(o.status.code(), Some(64));
-    assert!(stderr(&o).contains("cray1 asm SRC [-o OUT.img] [-l OUT.lst] [-s OUT.sym] [-I DIR]"));
-    assert_eq!(cray1(&["frobnicate"]).status.code(), Some(64));
-    assert_eq!(cray1(&["asm"]).status.code(), Some(64));
-    assert_eq!(cray1(&["asm", "a.cal", "--bogus"]).status.code(), Some(64));
+    assert!(stderr(&o).contains("cray-xmp asm SRC [-o OUT.img] [-l OUT.lst] [-s OUT.sym] [-I DIR]"));
+    assert_eq!(cray_xmp(&["frobnicate"]).status.code(), Some(64));
+    assert_eq!(cray_xmp(&["asm"]).status.code(), Some(64));
     assert_eq!(
-        cray1(&["dis", "x.img", "--start", "abc"]).status.code(),
+        cray_xmp(&["asm", "a.cal", "--bogus"]).status.code(),
+        Some(64)
+    );
+    assert_eq!(
+        cray_xmp(&["dis", "x.img", "--start", "abc"]).status.code(),
         Some(1)
     );
     assert_eq!(
-        cray1(&["asm", "/nonexistent/file.cal"]).status.code(),
+        cray_xmp(&["asm", "/nonexistent/file.cal"]).status.code(),
         Some(1)
     );
-    assert_eq!(cray1(&["help"]).status.code(), Some(0));
-    assert!(stdout(&cray1(&["dis", "--help"])).contains("--start WORD"));
+    assert_eq!(cray_xmp(&["help"]).status.code(), Some(0));
+    assert!(stdout(&cray_xmp(&["dis", "--help"])).contains("--start WORD"));
 }

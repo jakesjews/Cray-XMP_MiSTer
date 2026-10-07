@@ -24,8 +24,12 @@ is made of and where it differs from a real one, see [MACHINE.md](MACHINE.md).
   [Template_MiSTer](https://github.com/MiSTer-devel/Template_MiSTer).
 - `sim/`: Verilator simulations. `tools/`: assembler, reference models, scripts.
 - `tests/`: test programs.
+- `software/cos-1.17/`: COS 1.17 as it was recovered: the I/O Subsystem's
+  kernel, its boot tape and the expander disk.
 - `software/cos-tools/`: the programs and libraries that are installed on the
   drive of the package for the SD card, built to run under COS.
+- `docs/spec/`: the specifications the models and the hardware description
+  were written from.
 - `releases/`: the core and that package.
 - `lint/`: Verilator file list, waivers and a PLL stub for `make lint`.
 
@@ -33,8 +37,11 @@ is made of and where it differs from a real one, see [MACHINE.md](MACHINE.md).
 
 ## Building the core
 
-Quartus 17.0 Lite builds the core. `build.sh` runs it through a CrossOver
-bottle named `Quartus` on macOS.
+Quartus Prime 17.0 Lite builds the core. On Windows or Linux open
+`Cray-XMP.qpf` in it and compile, or run `quartus_sh --flow compile Cray-XMP`;
+the result is `output_files/Cray-XMP.rbf`. On macOS `build.sh` runs Quartus
+through a CrossOver bottle named `Quartus` (the header of the script has the
+environment variables for another bottle or another place):
 
 ```sh
 ./build.sh map        # analysis and synthesis only
@@ -42,6 +49,10 @@ bottle named `Quartus` on macOS.
 ```
 
 `compile` exits with status 2 if timing is not met.
+
+Everything else needs a Rust toolchain (`cargo`), Verilator 5, Python 3.9 or
+later and GNU Make; nothing is fetched from outside the repository except
+Rust's own crates, of which the tools use none.
 
 **Do not edit `files.qip`, `Cray-XMP.qsf` or any RTL while a build runs.** Quartus
 stops with "Settings File changed outside of the Quartus Prime software" and
@@ -60,13 +71,13 @@ A Rust toolchain builds the assembler and the reference model:
 
 ```sh
 make tools
-tools/target/release/cray1 asm prog.cal -o prog.img -l prog.lst
-tools/target/release/cray1 dis prog.img
-tools/target/release/cray1 isa                 # the instruction table
-tools/target/release/cray1-run prog.img --input 'text\r' --max 1000000
+tools/target/release/cray-xmp asm prog.cal -o prog.img -l prog.lst
+tools/target/release/cray-xmp dis prog.img
+tools/target/release/cray-xmp isa                 # the instruction table
+tools/target/release/cray-xmp-run prog.img --input 'text\r' --max 1000000
 ```
 
-`cray1-run` is the reference model of the CPU: an instruction-level CRAY-1,
+`cray-xmp-run` is the reference model of the CPU: an instruction-level CRAY-1,
 and with `--machine XMP` the X-MP features, written from the hardware
 reference manuals, independent of the RTL. The programs it runs are test
 programs: they print and stop through a page of memory that only the model and
@@ -77,34 +88,35 @@ address or console output.
 
 ### The system model
 
-`cray1-sys` joins that CPU model, with the X-MP features, to a model of the
+`cray-xmp-sys` joins that CPU model, with the X-MP features, to a model of the
 I/O Subsystem: three I/O Processors with their channels, Buffer Memory, the
 Peripheral Expander with its tape, disk and printer, nine DD-29 disk drives,
 the consoles, and the two links to the mainframe. It runs the I/O Subsystem's
 own software, and through it COS 1.17. The hardware description was written
 from this model and is checked against it.
 
-`cray1-sys` takes the directory of the ready-to-run COS 1.17 system of the
+`cray-xmp-sys` takes the directory of the ready-to-run COS 1.17 system of the
 cray-sim project (the IOP kernel, the boot tape, the expander disk and the
 drive images) and never writes to it; a channel whose drive image is missing
 has no drive. `--save DIR` writes the disks that were written to into another
 directory at the end. What the operator types comes from a script:
 
 ```sh
-tools/target/release/cray1-sys DIRECTORY --script tests/sys/cos.script
+tools/target/release/cray-xmp-sys DIRECTORY --script tests/sys/cos.script
 ```
 
 `tests/sys/cos.script` gives the date, dead starts COS, logs the station on,
 answers the start-up questions and submits a batch job. The kernel console
 is copied to the terminal; a `screen` step prints a console as the 24 lines
 an operator would see. `--log FILE` writes every channel function of every
-I/O Processor. The header of `tools/crates/ios/src/bin/cray1-sys.rs` lists
+I/O Processor. The header of `tools/crates/ios/src/bin/cray-xmp-sys.rs` lists
 the script steps and the options, among them the timing of the devices.
 
-`cargo test` in `tools/` boots the kernel as far as its first question if
-the software is in `research/Cray 1 Disk Image from Youtube` or in the
-directory `CRAY1_SYSTEM` names, and compares the start of the boot with one
-recorded on the cray-sim simulator. `make test` runs the script above.
+The tests that run this software look for it in the directory the
+environment variable `CRAY_XMP_SYSTEM` names: the ready-to-run COS 1.17 of
+the cray-sim project after its install, with the nine drive images. Without
+it they are left out. `cargo test` in `tools/` then boots the kernel as far
+as its first question, and `make test` runs the script above.
 
 ## The package for the SD card
 
@@ -112,11 +124,11 @@ recorded on the cray-sim simulator. `make test` runs the script above.
 
 ```sh
 make tools
-python3 tools/py/mkcos.py DIRECTORY out --zip releases/Cray-XMP_COS-1.17.zip
+python3 tools/py/mkcos.py out --zip releases/Cray-XMP_COS-1.17.zip
 ```
 
-`DIRECTORY` needs `boot_tape.tap`, `exp_disk.img` and
-`target/cos_117/iop_kern.bin` of the cray-sim project's COS 1.17. The script
+It starts from the kernel, the boot tape and the expander disk in
+[software/cos-1.17](../software/cos-1.17/README.md). The script
 gives the model an empty drive and has COS install itself on it
 (`START COS_117 INSTALL`), starts COS again and runs one job that saves the
 programs and libraries of [software/cos-tools](../software/cos-tools/README.md)

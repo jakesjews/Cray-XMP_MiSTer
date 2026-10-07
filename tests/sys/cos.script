@@ -1,6 +1,6 @@
 # Dead start COS 1.17 through the I/O Subsystem and run a batch job.
 #
-#   tools/target/release/cray1-sys "research/Cray 1 Disk Image from Youtube" --script tests/sys/cos.script
+#   tools/target/release/cray-xmp-sys "$CRAY_XMP_SYSTEM" --script tests/sys/cos.script
 #
 # The kernel console is the operator's console of the MIOP; the station is
 # the first of its other consoles.  About 70 seconds of machine time.

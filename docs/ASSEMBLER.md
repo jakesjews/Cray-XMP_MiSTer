@@ -6,13 +6,13 @@ runs on the MiSTer: there the machine runs COS.
 
 ## The assembler
 
-`cray1 asm` assembles a subset of CAL, the Cray Assembly Language, with the
+`cray-xmp asm` assembles a subset of CAL, the Cray Assembly Language, with the
 instruction syntax of the manual's Appendix D, plus the forms of the 1982
 options: `Ai QSj`, `Vi PVj`, `Vi QVj`, `PCI Sj`, `CCI`, `ECI` and `DCI`.
 Build it with `make tools`.
 
 ```sh
-tools/target/release/cray1 asm prog.cal -o prog.img -l prog.lst
+tools/target/release/cray-xmp asm prog.cal -o prog.img -l prog.lst
 ```
 
 - A line is `LABEL  RESULT  OPERAND  comment`. A `*` in column 1 is a comment.
@@ -27,7 +27,7 @@ tools/target/release/cray1 asm prog.cal -o prog.img -l prog.lst
 - `ALIGN` goes on at the next multiple of 20 octal words, the size of an
   instruction buffer.
 - Symbols cannot be register names such as `A1`, `S3` or `B77`.
-- `cray1 isa` prints every instruction form the assembler accepts.
+- `cray-xmp isa` prints every instruction form the assembler accepts.
 
 Things that differ from Cray's CAL: no relocation or linking, no conditional
 assembly, no `LOC`. Two things to know about: an `ORG` back over earlier
@@ -41,12 +41,12 @@ as 1 as `Ak`. `(S0)` reads as 0 as `Sj` and as 2^63 as `Sk`.
 To run a program on the reference model:
 
 ```sh
-tools/target/release/cray1-run prog.img --input 'abc'
+tools/target/release/cray-xmp-run prog.img --input 'abc'
 ```
 
 ## Memory images
 
-`cray1 asm -o` writes a memory image: raw 64-bit words from word 0, most
+`cray-xmp asm -o` writes a memory image: raw 64-bit words from word 0, most
 significant byte first. Parcel 0 of a word is its top 16 bits. The reference
 model and the CPU's test bench load it and dead start: they exchange to the
 package at word 0.
