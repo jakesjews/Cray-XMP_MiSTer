@@ -6,7 +6,9 @@
 // bookkeeping for the two ways an instruction can hold the register.
 //
 // As an operand (i_rd_start) it sends elements 0, 1, 2 ... to a functional unit,
-// one per clock, starting the clock after the instruction issues.
+// one per clock.  Element 0 is sent from the clock after the instruction issues
+// and the next ones follow three clocks after that, so the register is busy for
+// (VL) + 3 clocks from issue: the X-MP's "Vj or Vk ready" (CSM-0111000 section 5).
 //
 // As a result (i_wr_start) it is reserved until i_len elements have been
 // written.  The write port itself is driven from outside, by whichever unit,
@@ -50,6 +52,7 @@ module v_regfile (
 	reg       rd_active;
 	reg [6:0] rd_n;  // operation whose address is being presented
 	reg [6:0] rd_len;
+	reg [1:0] rd_lead;  // clocks element 0 is still held
 	reg [5:0] raddr;
 
 	reg       res_busy;
@@ -70,11 +73,15 @@ module v_regfile (
 				rd_active <= 1'b1;
 				rd_n      <= 7'd0;
 				rd_len    <= i_len;
+				rd_lead   <= 2'd2;
 				raddr     <= 6'd0;
 			end else if (rd_active) begin
-				rd_n  <= rd_next;
-				raddr <= rd_next[5:0];
-				if (rd_next == rd_len) rd_active <= 1'b0;
+				if (rd_lead != 2'd0) rd_lead <= rd_lead - 2'd1;
+				else begin
+					rd_n  <= rd_next;
+					raddr <= rd_next[5:0];
+					if (rd_next == rd_len) rd_active <= 1'b0;
+				end
 			end else if (i_mem_rd) raddr <= i_mem_idx;
 			else raddr <= i_elem_idx;
 

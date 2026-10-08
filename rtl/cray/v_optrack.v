@@ -1,15 +1,17 @@
 // One vector operation on its way through a functional unit.
 //
 // A vector instruction issues in some clock t.  Its operand registers present
-// element 0 during t+1, so the operands of element n are at the unit's inputs
-// during clock t+2+n, and with a unit time of L clocks the result of element n
-// is at the unit's output during clock t+2+n+L.  This block says so: it marks
-// which clocks carry operands (o_in_*) and results (o_out_*), numbers the
-// elements, and carries the destination register beside the data.
+// element 0 from t+1 to t+3, so the operands of element n are at the unit's
+// inputs during clock t+4+n, and with a unit time of L clocks the result of
+// element n is at the unit's output during clock t+4+n+L.  This block says so:
+// it marks which clocks carry operands (o_in_*) and results (o_out_*), numbers
+// the elements, and carries the destination register beside the data.
 //
 // The unit is busy from the clock after issue until its last operand pair has
-// gone in.  A new operation can then follow straight behind the old one in the
-// pipeline, which is why the output side is a shift register and not a counter.
+// gone in: (VL) + 4 clocks from issue, the X-MP's "unit ready" (CSM-0111000
+// section 5).  A new operation can then follow straight behind the old one in
+// the pipeline, which is why the output side is a shift register and not a
+// counter.
 //
 // An operation that issues with i_short takes one clock less than L: three of
 // the four shifts do.  The first operands of an operation are at the unit at
@@ -60,6 +62,7 @@ module v_optrack #(
 	reg [2:0] dest;
 	reg       wr_v;
 	reg       short;
+	reg [1:0] lead;  // clocks before the first operands are at the unit
 
 	assign o_busy     = (state != IDLE);
 	assign o_in_valid = (state == RUN);
@@ -82,11 +85,13 @@ module v_optrack #(
 					o_instr <= i_cip;
 					o_sj    <= i_sj;
 					o_ak    <= i_ak;
+					lead    <= 2'd2;
 					if (i_start) state <= LEAD;
 				end
 				LEAD: begin
-					idx   <= 6'd0;
-					state <= RUN;
+					idx  <= 6'd0;
+					lead <= lead - 2'd1;
+					if (lead == 2'd0) state <= RUN;
 				end
 				RUN: begin
 					idx <= idx + 6'd1;

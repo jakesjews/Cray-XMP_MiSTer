@@ -5,6 +5,7 @@
 // Bit-by-bit logic on 64-bit elements for instructions 140 to 147, and the
 // element test of the vector mask instruction 175.  A pure pipeline with a unit
 // time of two clocks: one operand pair in per clock, the result two clocks later.
+// The test of 175 is out a clock before that, when the operand has been taken in.
 //
 //   i_op  0, 1   140, 141   logical product   a & b
 //         2, 3   142, 143   logical sum       a | b
@@ -47,12 +48,14 @@ module vector_logical (
 			2'd3: o_result <= vm_bit ? a : b;
 		endcase
 
-		case (test)
-			2'd0: o_test <= (a == 64'd0);
-			2'd1: o_test <= (a != 64'd0);
-			2'd2: o_test <= ~a[63];
-			2'd3: o_test <= a[63];
-		endcase
 	end
+
+	always @*
+		case (test)
+			2'd0: o_test = (a == 64'd0);
+			2'd1: o_test = (a != 64'd0);
+			2'd2: o_test = ~a[63];
+			2'd3: o_test = a[63];
+		endcase
 
 endmodule

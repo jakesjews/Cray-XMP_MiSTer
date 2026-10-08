@@ -91,8 +91,8 @@ Subsystem dead starts COS 1.17 and runs batch jobs.
 - The vector population instructions (rev F pages 4-25 and 4-70): 026ij1
   `Ai QSj`, the parity of the one bits of (Sj); 174ij1 `Vi PVj`, the
   population counts of the elements of Vj; 174ij2 `Vi QVj`, their parities.
-  The vector unit takes 6 clock periods and runs one operation at a time
-  together with the reciprocal unit.
+  The vector unit takes the 5 clock periods of the X-MP's manual and runs one
+  operation at a time together with the reciprocal unit.
 - The programmable clock (rev F pages 4-10 and 6-23): 0014j4 `PCI Sj` enters
   the interrupt interval, 0014j5 `CCI` clears the interrupt request, 0014j6
   `ECI` enables it and 0014j7 `DCI` disables it, all in monitor mode only.
@@ -177,11 +177,14 @@ channels of the CPU and channel parity.
 - **Timing.** One clock period is one cycle of the CPU's own clock: 105 MHz,
   9.52 ns against the X-MP's 9.5. An instruction that needs the result of
   another in an A or S register issues in the clock period that result
-  arrives, as on the real machine, and the scalar functional units and the
-  vector shift unit take the clock periods of the manual. So do the branches
-  while their address is in an instruction buffer: 5 clock periods taken, 2
-  not taken, 7 for 005, 2 more across two buffers, and a branch on A0 or S0
-  waits until its register has not been busy for three clock periods
+  arrives, as on the real machine, and the functional units take the clock
+  periods of the manual. After a vector instruction has issued, its operand
+  registers are free in (VL) + 3 clock periods, its unit in (VL) + 4 and its
+  result register in (VL) + 5 + the unit time, and the mask of a 175 is ready
+  in (VL) + 4, as the manual has them. So are the branches while their address
+  is in an instruction buffer: 5 clock periods taken, 2 not taken, 7 for 005,
+  2 more across two buffers, and a branch on A0 or S0 waits until its
+  register has not been busy for three clock periods
   (`tests/rtl_only/timing.cal` measures all of these). What is not the real
   machine's: memory references take longer and vary, and with them everything
   that waits for memory, such as a branch to an address that is in no buffer.

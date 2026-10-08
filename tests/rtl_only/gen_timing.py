@@ -46,14 +46,36 @@ ONE_BUFFER = [
     (11, '060 to S0, 5 CPs, 014 taken', ['S0 S4+S5'] + PASS * 5 + ['JSZ %L']),
     # "instruction 025 issued in the previous CP" holds 005
     (9, '025, then 005', ['B02 A4', 'J B02']),
-    # vector unit times, X 4-16 and 4-17: add 3 CPs, logical 2, shift 3 but 4 for 152.
-    # With one element, the result is read back by 076 the unit time and 4 CPs on.
-    (6, '141 and its element read back', ['V2 V1&V3', 'S1 V2,A2']),
-    (7, '155 and its element read back', ['V2 V1+V3', 'S1 V2,A2']),
-    (7, '150 and its element read back', ['V2 V1<A1', 'S1 V2,A2']),
-    (7, '151 and its element read back', ['V2 V1>A1', 'S1 V2,A2']),
-    (8, '152 and its element read back', ['V2 V1,V1<A1', 'S1 V2,A2']),
-    (7, '153 and its element read back', ['V2 V1,V1>A1', 'S1 V2,A2']),
+    # Vectors, X 5-73 to 5-87.  From the issue of a vector instruction its operand registers
+    # are ready after (VL) + 3 CPs, its unit after (VL) + 4 and its result register after
+    # (VL) + 5 + the unit time: logical 2, add 3, shift 3 but 4 for 152, floating add 6,
+    # multiply 7, reciprocal 14, population count 5.  The instruction that waits for one of
+    # them issues then, and the second reading is one clock period behind it.
+    (9, '141, VL 1, and its element read back', ['V2 V1&V3', 'S1 V2,A2']),
+    (10, '155, VL 1, and its element read back', ['V2 V1+V3', 'S1 V2,A2']),
+    (10, '150, VL 1, and its element read back', ['V2 V1<A1', 'S1 V2,A2']),
+    (10, '151, VL 1, and its element read back', ['V2 V1>A1', 'S1 V2,A2']),
+    (11, '152, VL 1, and its element read back', ['V2 V1,V1<A1', 'S1 V2,A2']),
+    (10, '153, VL 1, and its element read back', ['V2 V1,V1>A1', 'S1 V2,A2']),
+    (13, '171, VL 1, and its element read back', ['V2 V1+FV3', 'S1 V2,A2']),
+    (14, '161, VL 1, and its element read back', ['V2 V1*FV3', 'S1 V2,A2']),
+    (21, '174, VL 1, and its element read back', ['V2 /HV1', 'S1 V2,A2']),
+    (12, '174ij1, VL 1, and its element read back', ['V2 PV1', 'S1 V2,A2']),
+    (5, '155, VL 1, then its operand register written', ['V2 V1+V3', 'V1 V4&V4']),
+    (6, '155, VL 1, then its unit used again', ['V2 V1+V3', 'V5 V4+V6']),
+    (14, '155, VL 5, and an element read back', ['V2 V1+V3', 'S1 V2,A2'], 5),
+    (9, '155, VL 5, then its operand register written', ['V2 V1+V3', 'V1 V4&V4'], 5),
+    (10, '155, VL 5, then its unit used again', ['V2 V1+V3', 'V5 V4+V6'], 5),
+    (15, '152, VL 5, and an element read back', ['V2 V1,V1<A1', 'S1 V2,A2'], 5),
+    (16, '174ij1, VL 5, and an element read back', ['V2 PV1', 'S1 V2,A2'], 5),
+    # 175, X 5-85: the mask is ready (VL) + 4 CPs after issue, for 073 a clock period later
+    (6, '175, VL 1, then a merge', ['VM V1,Z', 'V2 V3!V4&VM']),
+    (7, '175, VL 1, then 073', ['VM V1,Z', 'S1 VM']),
+    (5, '175, VL 1, then its operand register written', ['VM V1,Z', 'V1 V4+V4']),
+    (10, '175, VL 5, then a merge', ['VM V1,Z', 'V2 V3!V4&VM'], 5),
+    (11, '175, VL 5, then 073', ['VM V1,Z', 'S1 VM'], 5),
+    # 076: Si ready in 4 CPs (X 5-63)
+    (5, '076, then its result used', ['S1 V2,A2', 'S2 S1&S1']),
 ]
 # Cases over two blocks X and Y, both in buffers: (clock periods, what, instructions, how it ends)
 #   'fall'      the sequence ends with the last parcel of X; the second reading is the first parcel of Y
@@ -93,11 +115,12 @@ def main():
            '         INCLUDE "rt_direct.cal"',
            '         TBEGIN',
            line('', 'A1', '1'), line('', 'VL', 'A1'), line('', 'A2', '0'), line('', 'A3', '3'), line('', 'J', 'C0')]
-    for n, (cps, what, seq) in enumerate(ONE_BUFFER):
+    for n, (cps, what, seq, *vl) in enumerate(ONE_BUFFER):
         src.append('* %d clock periods: %s' % (cps, what))
         src.append(line('', 'ORG', '%o' % (BASE + BLOCK * n)))
-        src += [line('C%d' % n, 'A4', 'L%d' % n), line('', 'B02', 'A4'), line('', 'A0', '0'), line('', 'S0', '0')]
-        src += [line('', 'PASS')] * 10
+        src += [line('C%d' % n, 'A4', '%d' % (vl[0] if vl else 1)), line('', 'VL', 'A4')]
+        src += [line('', 'A4', 'L%d' % n), line('', 'B02', 'A4'), line('', 'A0', '0'), line('', 'S0', '0')]
+        src += [line('', 'PASS')] * 16                 # what the block before left on its way is done
         src.append(line('', 'S6', 'RT'))
         for x in seq:
             res, *op = x.replace('%L', 'L%d' % n).split()

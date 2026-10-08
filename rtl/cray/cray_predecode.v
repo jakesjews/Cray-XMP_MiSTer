@@ -61,6 +61,7 @@ module cray_predecode (
 	assign o_pd[PD_H074]    = (op == 7'o074);
 	assign o_pd[PD_H024]    = (op == 7'o024);
 	assign o_pd[PD_H072]    = (op == 7'o072);
+	assign o_pd[PD_H073]    = (op == 7'o073);
 
 	//------------------------------------------------------------------
 	// The instruction as the A and S schedulers see it

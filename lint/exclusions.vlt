@@ -71,15 +71,14 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/scalar_shift.v" -match "*Bit
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'i_word_nxt'*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'i_debug_full'*"
 
-// Start bit 6 of the vector scheduler belongs to the vector population count,
-// an X-MP unit that is not built. The six vector unit trackers have the same
-// outputs: only the shift unit needs first and last, only the logical unit
-// the last result (for the VM test), and the logical and integer add units
-// have no use for the valid flag.
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_valid'[6,2,0]*"
+// The vector unit trackers have the same outputs.  Only the shift unit needs
+// to know the first and the last operand, and the logical unit the last (for
+// the VM test of 175); the integer add and population count units have no use
+// for the operands' valid flag, and no unit for the mark of the last result.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_valid'[6,2]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_first'[6:2,0]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_last'[6:2,0]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_out_last'[6:1]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_last'[6:2]*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'tk_out_last'*"
 
 // The I/O Processor turns its 17 bits of carry and accumulator by shifting
 // them written twice; one half of each result is the answer.

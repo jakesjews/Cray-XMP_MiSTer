@@ -389,9 +389,11 @@ module func_top (
 	assign cip_go                 = cip_vld && !x_take_int && ok_to_run && !opnd_busy && !fetch_fault;
 	assign cip_issue              = cip_vld && issue_vld;
 
-	//076 reads a V register that must not be in use; 003, 073 and the merges 146 and 147
-	//wait for a 175 to finish building the mask, and 003 for a merge to finish using it
-	wire vec_hold = (|(pd[PD_H076+:8] & vreg_busy)) || (pd[PD_HVM] && (vm_pending || vm_load)) || (pd[PD_H003] && tk_busy[0]) ||
+	//076 reads a V register that must not be in use; 073 waits for a 175 to finish
+	//building the mask, and 003 for a 175 or a merge to leave the logical unit, as
+	//another 175 or a merge does itself: the mask is ready for them (VL) + 4 clocks
+	//after a 175 has issued and for 073 a clock later (CSM-0111000 page 5-85)
+	wire vec_hold = (|(pd[PD_H076+:8] & vreg_busy)) || (pd[PD_HVM] && vm_load) || (pd[PD_H073] && vm_pending) || (pd[PD_H003] && tk_busy[0]) ||
 		(pd[PD_H072] && rtc_load) ||
 		(pd[PD_HFADD] && tk_busy[4]) || (pd[PD_HFMUL] && tk_busy[3]) || (pd[PD_HFRCP] && tk_busy[5]);
 	//The mode instructions 0021 to 0027 and the status register read 073i01 wait for
@@ -1068,6 +1070,25 @@ localparam VLOG      = 3'b000,   //vector logical
 		sw_data  <= s_j_data;
 	end
 
+	//A result is a clock on its way from its unit to the V register: with it the
+	//register is free (VL) + unit time + 5 clocks after issue, as the X-MP's is
+	//(CSM-0111000 section 5).  The population count unit, the last of the units,
+	//has that clock in itself.
+	localparam NVW = NTK - 1;
+	reg     [NVW-1:0] vw_valid;
+	reg     [    5:0] vw_idx   [0:NVW-1];
+	reg     [    2:0] vw_dest  [0:NVW-1];
+	reg     [   63:0] vw_data  [0:NVW-1];
+	integer           w;
+	always @(posedge clk)
+		for (w = 0; w < NVW; w = w + 1) begin
+			vw_valid[w] <= !rst && tk_out_valid[w] && tk_out_wr_v[w];
+			vw_idx[w]   <= tk_out_idx[w];
+			vw_dest[w]  <= tk_out_dest[w];
+			vw_data[w]  <= fu_out[w];
+		end
+	wire pop_valid = tk_out_valid[NVW] && tk_out_wr_v[NVW];
+
 	genvar gr;
 	generate
 		for (gr = 0; gr < 8; gr = gr + 1) begin : g_vreg
@@ -1087,11 +1108,16 @@ localparam VLOG      = 3'b000,   //vector logical
 					wr_idx  = vmem_wr_idx;
 					wr_data = data_from_mem_to_regs;
 				end
-				for (u = 0; u < NTK; u = u + 1)
-				if (tk_out_valid[u] && tk_out_wr_v[u] && (tk_out_dest[u] == gr)) begin
+				for (u = 0; u < NVW; u = u + 1)
+				if (vw_valid[u] && (vw_dest[u] == gr)) begin
 					wr_en   = 1'b1;
-					wr_idx  = tk_out_idx[u];
-					wr_data = fu_out[u];
+					wr_idx  = vw_idx[u];
+					wr_data = vw_data[u];
+				end
+				if (pop_valid && (tk_out_dest[NVW] == gr)) begin
+					wr_en   = 1'b1;
+					wr_idx  = tk_out_idx[NVW];
+					wr_data = fu_out[NVW];
 				end
 			end
 
@@ -1122,8 +1148,8 @@ localparam VLOG      = 3'b000,   //vector logical
 			integer c;
 			always @* begin
 				fu_wr = 1'b0;
-				for (c = 0; c < NTK; c = c + 1)
-				if (tk_out_valid[c] && tk_out_wr_v[c] && (tk_out_dest[c] == gr)) fu_wr = 1'b1;
+				for (c = 0; c < NVW; c = c + 1) if (vw_valid[c] && (vw_dest[c] == gr)) fu_wr = 1'b1;
+				if (pop_valid && (tk_out_dest[NVW] == gr)) fu_wr = 1'b1;
 			end
 			always @(posedge clk)
 				if (rst || vwrite_start[gr]) chain <= 1'b0;
@@ -1326,14 +1352,23 @@ localparam VLOG      = 3'b000,   //vector logical
 	assign vshift_busy = tk_busy[1];
 	assign vadd_busy   = tk_busy[2];
 
-	//The vector mask instruction 175 builds VM one element at a time as the tests come
-	//out of the logical unit.  Element 0 is mask bit 63; elements not tested are zero.
-	reg  vm_pending;  //a 175 has issued and its last test is not in yet
-	wire vm_test_out = tk_out_valid[0] && !tk_out_wr_v[0];
+	//The vector mask instruction 175 builds VM one element at a time.  The test of an
+	//element is made in the clock after the logical unit has taken it in, a clock
+	//before a result would leave the unit.  Element 0 is mask bit 63; elements not
+	//tested are zero.
+	reg       vm_pending;  //a 175 has issued and its last test is not in yet
+	reg       vm_test_out;  //the test of element vm_test_idx is at the unit's test output
+	reg       vm_test_last;
+	reg [5:0] vm_test_idx;
+	always @(posedge clk) begin
+		vm_test_out  <= !rst && tk_in_valid[0] && (tk_instr[0][15:9] == 7'o175);
+		vm_test_last <= tk_in_last[0];
+		vm_test_idx  <= tk_in_idx[0];
+	end
 	always @(posedge clk)
 		if (rst) vm_pending <= 1'b0;
 		else if (vfu_start[0] && (cip_instr == 7'o175)) vm_pending <= 1'b1;
-		else if (vm_test_out && tk_out_last[0]) vm_pending <= 1'b0;
+		else if (vm_test_out && vm_test_last) vm_pending <= 1'b0;
 
 	///////////////////////////////////////////////
 	//          Floating Point Units             //
@@ -1720,7 +1755,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		if (rst) vector_mask <= 64'hFFFFFFFFFFFFFFFF;
 		else if (vm_load) vector_mask <= sw_data;  //(Sj), which is 0 when j is 0, a clock after 003 issues
 		else if (vm_test_out)
-			vector_mask <= (tk_out_idx[0]==6'd0) ? {v_test_out,63'b0} : (vector_mask | ({63'b0,v_test_out} << (6'd63 - tk_out_idx[0])));
+			vector_mask <= (vm_test_idx==6'd0) ? {v_test_out,63'b0} : (vector_mask | ({63'b0,v_test_out} << (6'd63 - vm_test_idx)));
 	//Control the vector length register
 	always @(posedge clk)
 		if (rst) vector_length <= 7'b1000000;
