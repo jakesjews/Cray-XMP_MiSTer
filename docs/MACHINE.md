@@ -204,7 +204,11 @@ Not there: the 100 Mbyte channels of the CPU and channel parity.
   that waits for memory, such as a branch to an address that is in no buffer.
   A gather or a scatter is done before the instruction behind it issues,
   where the real machine lets it run on: its addresses are not known
-  beforehand, and a range error has to interrupt right behind it.
+  beforehand, and a range error has to interrupt right behind it. And one
+  result a clock period goes into the A registers and one into the S
+  registers: an instruction whose result would arrive together with that
+  of an earlier one waits a clock period, which the real machine does not
+  ask of it.
   Programs get the same results but not always in the same number of clock
   periods.
 - **Chaining.** As on the X-MP (CSM-0111000 page 4-12), a register that is
@@ -281,8 +285,15 @@ What they are made of (`rtl/ios/`):
 
 - The processor (`iop_cpu.v`): accumulator, carry, B register, 512 operand
   registers, a 16-entry exit stack, 65,536 parcels of Local Memory. Its clock
-  is the real one's 80 MHz, but an instruction takes 3 to 5 clocks where the
-  real processor issues up to one parcel a clock.
+  is the real one's 80 MHz, and an instruction takes the clock periods in
+  which the manual has its result delivered (HR-0030 section 6): one for a
+  PASS, a constant or a function that sends, two to five for the other
+  register instructions, seven to thirteen with an operand in Local Memory,
+  five for a branch inside the instruction stack and nine for one that
+  leaves it. The reference model counts the same, and the processor is
+  checked against it clock period for clock period. What is not the real
+  processor's: it can issue an instruction while those before it are still
+  under way, and its Local Memory can make a reference wait.
 - On every processor: a real-time clock that asks for an interrupt every
   millisecond, a channel to Buffer Memory, and a channel pair to each other
   processor, over which one can master clear and dead start another.

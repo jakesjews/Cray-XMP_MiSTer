@@ -7,8 +7,9 @@
 // described there): Local Memory, then for every step what the channels
 // answered and what the registers held afterwards.  The processor is given the
 // same memory and the same answers and must take the same interrupts, send the
-// same functions and end every step with the same registers; at the end its
-// memory, operand registers and exit stack must be the model's.
+// same functions and end every step with the same registers after the same
+// number of clocks; at the end its memory, operand registers and exit stack
+// must be the model's.
 // Exit status: 0 if it did, 1 at the first difference, 2 for a bad record.
 #include "Viop_cpu.h"
 #include "Viop_cpu___024root.h"
@@ -25,14 +26,14 @@ enum { INSTRUCTION, INTERRUPT, SET_MEMORY, MASTER_CLEAR, CHECK_MEMORY, CHECK_OPE
 struct Record {
     uint8_t kind, request;
     uint16_t p, parcel, channel, a_before, value, p_after, a_after, b_after;
-    uint8_t e_after, flags_after;
+    uint8_t e_after, flags_after, clocks;
 };
 
 static bool read_record(FILE *f, Record &r) {
     uint8_t b[20];
     if (fread(b, 1, sizeof b, f) != sizeof b) return false;
     auto w = [&](int n) { return (uint16_t)(b[n] | b[n + 1] << 8); };
-    r = {b[0], b[1], w(2), w(4), w(6), w(8), w(10), w(12), w(14), w(16), b[18], b[19]};
+    r = {b[0], b[1], w(2), w(4), w(6), w(8), w(10), w(12), w(14), w(16), (uint8_t)(b[18] & 15), b[19], (uint8_t)(b[18] >> 4)};
     return true;
 }
 
@@ -130,15 +131,20 @@ int main(int argc, char **argv) {
         if (ended) break;
         top->rst = 0;
         top->eval();
+        // a function goes out in the first clock of its instruction, which this is
+        // when the step has just been given its answers
+        bool strobe = top->o_strobe;
+        unsigned s_channel = top->o_channel, s_function = top->o_function, s_a = top->o_a;
         clock();
-        if (top->o_strobe) {
+        waited++;
+        if (strobe) {
             functions++;
-            if (strobed) return fail("a second function, on channel", top->o_channel, 0);
+            if (strobed) return fail("a second function, on channel", s_channel, 0);
             strobed = true;
-            if (now.kind != INSTRUCTION) return fail("a function sent, on channel", top->o_channel, 0);
-            if (top->o_channel != now.channel) return fail("the channel of the function", top->o_channel, now.channel);
-            if (top->o_function != ((now.parcel >> 9) & 017)) return fail("the function", top->o_function, (now.parcel >> 9) & 017);
-            if (top->o_a != now.a_before) return fail("the accumulator sent", top->o_a, now.a_before);
+            if (now.kind != INSTRUCTION) return fail("a function sent, on channel", s_channel, 0);
+            if (s_channel != now.channel) return fail("the channel of the function", s_channel, now.channel);
+            if (s_function != ((now.parcel >> 9) & 017)) return fail("the function", s_function, (now.parcel >> 9) & 017);
+            if (s_a != now.a_before) return fail("the accumulator sent", s_a, now.a_before);
         }
         if (top->o_step) {
             if ((bool)top->o_step_interrupt != (now.kind == INTERRUPT)) return fail("interrupt taken", top->o_step_interrupt, now.kind == INTERRUPT);
@@ -150,10 +156,11 @@ int main(int argc, char **argv) {
             if (top->o_b != now.b_after) return fail("B", top->o_b, now.b_after);
             if (top->o_e != now.e_after) return fail("E", top->o_e, now.e_after);
             if (top->o_flags != now.flags_after) return fail("the flags (held, boundary, fetch request, I delayed, I, C)", top->o_flags, now.flags_after);
+            if (waited != now.clocks) return fail("the clocks it took", waited, now.clocks);
             steps++;
             if (now.kind == INTERRUPT) interrupts++;
             running = false;
-        } else if (++waited > 32) {
+        } else if (waited > 32) {
             return fail("clocks without the end of the step", waited, 0);
         }
     }

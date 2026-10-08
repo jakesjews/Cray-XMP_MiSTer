@@ -251,8 +251,9 @@ step by step. The model runs a program and writes a record: Local Memory,
 then for every instruction or interrupt what its channels answered and what
 the registers held afterwards (`replay.rs` has the format). The simulation
 is given the same memory and the same answers, and must take the same
-interrupts, send the same functions, end every step with the same registers,
-and finish with the same memory, operand registers and exit stack.
+interrupts, send the same functions, end every step with the same registers
+after the same number of clock periods, and finish with the same memory,
+operand registers and exit stack.
 
 ```sh
 python3 tools/py/ioptest.py rand 1 200     # random programs, two kinds, and a directed one

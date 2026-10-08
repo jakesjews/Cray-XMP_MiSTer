@@ -6,8 +6,8 @@
 //! step, what this one's channels answered: the channel that asks for an
 //! interrupt, the value a function read, the flag a test found.  It must
 //! then take the same interrupts, send the same functions and end every
-//! step with the same registers.  What a device stores in Local Memory by
-//! itself is in the record too.
+//! step with the same registers, in the same number of clock periods.  What
+//! a device stores in Local Memory by itself is in the record too.
 //!
 //! The real-time clock, channel 4, is one of the channels outside the
 //! processor here: the hardware keeps it with the other channels.
@@ -30,7 +30,8 @@
 //! bytes 8-9   the accumulator before the step
 //! bytes 10-11 the value read by a function 10 to 13, or the flag found by 040 to 043
 //! bytes 12-17 P, the accumulator and B after the step
-//! byte 18     E after the step
+//! byte 18     bits 3 to 0: E after the step; bits 7 to 4: the clock periods of
+//!             the step (1 to 13)
 //! byte 19     after the step: bit 0 carry, 1 System Interrupt Enable, 2 its delayed
 //!             setting pending, 3 Program Fetch Request flag, 4 Exit Stack Boundary
 //!             flag, 5 held by Master Clear
@@ -140,7 +141,8 @@ impl Recorder {
         {
             record[2 + 2 * n..4 + 2 * n].copy_from_slice(&field.to_le_bytes());
         }
-        record[18] = iop.e();
+        debug_assert!((1..16).contains(&clock_periods));
+        record[18] = iop.e() | (clock_periods as u8) << 4;
         record[19] = iop.c() as u8
             | (iop.interrupt_enable() as u8) << 1
             | (iop.interrupt_enable_delayed() as u8) << 2
@@ -405,12 +407,13 @@ mod tests {
         let kinds: Vec<u8> = record.chunks(RECORD_BYTES).map(|r| r[0]).collect();
         let count = |kind: u8| kinds.iter().filter(|&&k| k == kind).count();
         assert_eq!(count(INSTRUCTION) + count(INTERRUPT), 500);
-        // the first step is the dead start interrupt from channel 5
+        // the first step is the dead start interrupt from channel 5: E is 1
+        // after it, and it took 9 clock periods
         let first = record
             .chunks(RECORD_BYTES)
             .find(|r| r[0] <= INTERRUPT)
             .unwrap();
-        assert_eq!((first[0], first[1], first[18]), (INTERRUPT, 5, 1));
+        assert_eq!((first[0], first[1], first[18]), (INTERRUPT, 5, 1 | 9 << 4));
         assert_eq!((count(MASTER_CLEAR), count(IDLE)), (2, 2));
         assert!(
             count(INTERRUPT) > 1,

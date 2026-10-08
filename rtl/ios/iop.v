@@ -87,8 +87,10 @@ module iop #(
 	reg  [15:0] data;  // what a function of channels 4 to 13 read
 	reg         outer;  // the last function was for a channel from 14 on
 	reg busy_now, done_now;
-	reg [5:0] request;
-
+	// The lowest numbered channel that asks for an interrupt, as its flags stand
+	// in this clock: a function is one clock, and the instruction behind it has
+	// to find what the function left.
+	reg [5:0] lowest;
 	iop_cpu cpu (
 		.clk             (clk),
 		.rst             (i_master_clear),
@@ -103,7 +105,7 @@ module iop #(
 		.i_data          (outer ? i_ch_data : data),
 		.i_busy          (busy_now),
 		.i_done          (done_now),
-		.i_request       (request),
+		.i_request       (lowest),
 		.o_step          (o_step),
 		.o_step_interrupt(),
 		.o_p             (o_p),
@@ -165,8 +167,7 @@ module iop #(
 	};
 	wire [39:4] asks = (done & enable & ~RAW_REQUEST[39:4]) | ({i_ch_ask, 8'b0} & RAW_REQUEST[39:4]);
 
-	integer       n;
-	reg     [5:0] lowest;
+	integer n;
 	always @(*) begin
 		lowest = 6'd0;
 		for (n = 39; n >= 4; n = n - 1) if (asks[n]) lowest = n[5:0];
@@ -241,7 +242,6 @@ module iop #(
 		o_link_sent  <= 3'b0;
 		o_link_taken <= 3'b0;
 		outer        <= strobe ? (number >= 6'd12) : outer;
-		request      <= lowest;
 
 		// the clock
 		part <= part_left;
