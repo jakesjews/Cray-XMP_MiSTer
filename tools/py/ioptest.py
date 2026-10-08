@@ -7,6 +7,7 @@
     ioptest.py selftest
     ioptest.py machine [SYSTEM] [--start]
     ioptest.py bridges [CASES]
+    ioptest.py disks
 
 rand runs random programs, seeds FIRST to LAST, each in two kinds (every parcel
 random; mostly register work with functions on the processor's own channels)
@@ -51,6 +52,10 @@ CPU's clock and the I/O Subsystem's (rtl/xmp_bridge.v), by themselves, with
 clocks of random periods, requests that are taken back, and resets
 (sim/harness/bridge_main.cpp says what must hold).
 
+disks runs the BIOP's disk drives by themselves (rtl/ios/ios_disks.v): what
+they read and write, and how long a seek and a sector take, fast and with the
+DD-29's own times (sim/harness/disks_main.cpp).
+
 The model writes a record of each step (tools/crates/ios/src/replay.rs) and
 the simulation of the hardware description follows it: same interrupts, same
 functions, same registers after every step, same memory at the end.
@@ -69,6 +74,7 @@ SYS = os.path.join(ROOT, 'tools/target/release/cray-xmp-sys')
 BOOT = os.environ.get('CRAY_IOS_SIM', os.path.join(ROOT, 'sim/build/ios/Vios'))
 MACHINE = os.environ.get('CRAY_XMP_SIM', os.path.join(ROOT, 'sim/build/xmp/Vxmp_machine'))
 BRIDGE = os.environ.get('CRAY_BRIDGE_SIM', os.path.join(ROOT, 'sim/build/bridge/Vxmp_bridge_tb'))
+DISKS = os.environ.get('CRAY_DISKS_SIM', os.path.join(ROOT, 'sim/build/disks/Vios_disks'))
 # the channels of the BIOP's nine drives, in order
 DRIVES = [0o20, 0o21, 0o22, 0o24, 0o25, 0o26, 0o30, 0o31, 0o32]
 OUT = os.path.join(ROOT, 'build/iop')
@@ -225,6 +231,14 @@ def bridges(cases):
     return r.returncode == 0
 
 
+def disks():
+    r = subprocess.run([DISKS], capture_output=True, text=True)
+    lines = (r.stdout + r.stderr).strip().splitlines()
+    print('\n'.join([l for l in lines if 'WRONG' in l or 'OUT OF RANGE' in l or 'should be' in l] + lines[-1:]))
+    print('1 runs, %d failed' % (r.returncode != 0))
+    return r.returncode == 0
+
+
 def main():
     a = sys.argv[1:]
     os.makedirs(OUT, exist_ok=True)
@@ -236,6 +250,8 @@ def main():
         ok = selftest()
     elif a and a[0] == 'bridges':
         ok = bridges(int(a[1]) if len(a) > 1 else 2000)
+    elif a == ['disks']:
+        ok = disks()
     elif a and a[0] in ('kernel', 'boot', 'machine'):
         rest = [x for x in a[1:] if not x.startswith('--')]
         system = rest[0] if rest else os.environ.get('CRAY_XMP_SYSTEM', '')

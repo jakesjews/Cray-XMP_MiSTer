@@ -6,7 +6,8 @@
                                   floating-point reference vectors, 300 random programs
                                   and 100 of chained vector instructions;
                                   then the I/O Processor: 400 random programs, and
-                                  the self-check of three of them together; then
+                                  the self-check of three of them together, the
+                                  disk drives' sectors and times; then
                                   the X-MP core: its terminal on 400 random screens,
                                   its message when no boot file is loaded, and the
                                   self-check on the whole core with what it prints
@@ -116,6 +117,7 @@ def main():
     ok &= step('I/O Processor: 400 random programs', [PY, IOP, 'rand', '1', '200', '-j', jobs])
     ok &= step('I/O Processors together: self-check', [PY, IOP, 'selftest'])
     ok &= step('the bridges between the two clocks, 2,000 cases', [PY, IOP, 'bridges'])
+    ok &= step('the disk drives: sectors and times', [PY, IOP, 'disks'])
     ok &= step('X-MP core: the terminal on 400 random screens', [PY, CORE, 'screens'])
     ok &= step('X-MP core: the printer\'s file, 400 of them', [PY, CORE, 'spool'])
     ok &= step('X-MP core: no boot file', [PY, CORE, 'nofile'])

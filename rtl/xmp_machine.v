@@ -27,9 +27,10 @@ module xmp_machine #(
 	parameter EXPANDER_DELAY = 82,
 	parameter DISK_SETTLE    = 200
 ) (
-	input wire clk,      // the CPU's clock; the four memory ports are in it
-	input wire clk_ios,  // the I/O Subsystem's; all other ports are in it
-	input wire rst,      // of clk
+	input wire clk,          // the CPU's clock; the four memory ports are in it
+	input wire clk_ios,      // the I/O Subsystem's; all other ports are in it
+	input wire rst,          // of clk
+	input wire i_real_disks, // of clk_ios: the disk drives take the DD-29's times
 
 	// central memory for the CPU: a word, or a burst of 16 words read
 	output wire        o_mem_req,
@@ -286,6 +287,7 @@ module xmp_machine #(
 	) subsystem (
 		.clk               (clk_ios),
 		.rst               (rst_ios),
+		.i_real_disks      (i_real_disks),
 		.o_bm_req          (bm_req),
 		.o_bm_we           (bm_we),
 		.o_bm_addr         (bm_addr),

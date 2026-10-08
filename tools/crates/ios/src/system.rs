@@ -73,6 +73,9 @@ pub struct Timing {
     pub disk_select: u32,
     pub disk_seek: u32,
     pub disk_sector: u32,
+    /// Not zero: a seek and a sector take the drive's own times instead
+    /// (15 to 80 ms; the sector when it has next passed under the heads).
+    pub disk_real: u32,
     /// The delay counter of a block multiplexer channel.
     pub multiplexer_delay: u32,
 }
@@ -94,6 +97,7 @@ impl Default for Timing {
             disk_select: 400,
             disk_seek: 16_000,
             disk_sector: 8_000,
+            disk_real: 0,
             multiplexer_delay: 8_000,
         }
     }
@@ -118,6 +122,7 @@ impl Timing {
             "disk_select" => &mut self.disk_select,
             "disk_seek" => &mut self.disk_seek,
             "disk_sector" => &mut self.disk_sector,
+            "disk_real" => &mut self.disk_real,
             "multiplexer_delay" => &mut self.multiplexer_delay,
             _ => return false,
         };
@@ -143,6 +148,7 @@ impl Timing {
             disk_select: 0,
             disk_seek: 0,
             disk_sector: 0,
+            disk_real: 0,
             multiplexer_delay: 0,
         }
     }

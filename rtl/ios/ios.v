@@ -25,6 +25,7 @@ module ios #(
 ) (
 	input wire clk,
 	input wire rst,
+	input wire i_real_disks, // the drives take the DD-29's times for seeks and sectors
 
 	// Buffer Memory
 	output wire        o_bm_req,
@@ -325,11 +326,13 @@ module ios #(
 	);
 
 	ios_disks #(
-		.DRIVES(9),
-		.SETTLE(DISK_SETTLE)
+		.DRIVES       (9),
+		.SETTLE       (DISK_SETTLE),
+		.CLOCKS_PER_MS(CLOCKS_PER_MS)
 	) drives (
 		.clk           (clk),
 		.rst           (master_clear[1]),
+		.i_real        (i_real_disks),
 		.i_strobe      (strobe[1] && (k_drive != 4'd15)),
 		.i_drive       (k_drive),
 		.i_function    (fn[7:4]),

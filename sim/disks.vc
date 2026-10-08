@@ -1,0 +1,8 @@
+// Verilator arguments for the bench of the disk drives and their times (module ios_disks).
+--cc --exe --build -j 0
+--top-module ios_disks
+-Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-DECLFILENAME
+-O3 --x-assign unique --x-initial unique
+-CFLAGS "-O2 -std=c++17"
+rtl/ios/ios_disks.v
+sim/harness/disks_main.cpp

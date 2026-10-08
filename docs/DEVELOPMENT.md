@@ -300,6 +300,12 @@ python3 tools/py/ioptest.py kernel         # the real kernel's boot on each of t
   and the I/O Subsystem's: clocks of random periods and the machine's own,
   requests that are taken back before their acknowledge, and resets in the
   middle. `sim/harness/bridge_main.cpp` says what must hold.
+- `python3 tools/py/ioptest.py disks` runs the BIOP's disk drives by
+  themselves (`rtl/ios/ios_disks.v`): what they read and write, and the
+  clocks a seek and a sector take, fast and with the DD-29's own times of
+  the menu's "Disk drives: As a DD-29". The simulations of the subsystem, the
+  machine and the core take `--real-disks` for that option, and
+  `cray-xmp-sys` takes `--timing disk_real=1`.
 
 ### The core
 

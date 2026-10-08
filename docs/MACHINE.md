@@ -207,8 +207,9 @@ Not there: the 100 Mbyte channels of the CPU and channel parity.
   beforehand, and a range error has to interrupt right behind it. And one
   result a clock period goes into the A registers and one into the S
   registers: an instruction whose result would arrive together with that
-  of an earlier one waits a clock period, which the real machine does not
-  ask of it.
+  of an earlier one waits a clock period. That is the CRAY-1's "register
+  access conflict"; the X-MP's manual has no such hold among its
+  conditions.
   Programs get the same results but not always in the same number of clock
   periods.
 - **Chaining.** As on the X-MP (CSM-0111000 page 4-12), a register that is
@@ -321,9 +322,16 @@ taken). That is one reason the MiSTer's clock is not passed on to the
 machine; the other is that the kernel's driver for the expander's clock is
 switched off in this software, as it was on the machine it came from.
 
-Device times are not those of the real devices. The disks answer as fast as
-the SD card does; the software was found to work with all devices from
-instant to several times slower than real ones.
+Device times are not those of the real devices, with one exception. The
+software was found to work with all devices from instant to several times
+slower than real ones, so a device answers as fast as it can here. The
+exception is the menu's "Disk drives: As a DD-29": a seek then takes 15 ms
+and up to 80 ms across all cylinders, the disk turns once in 16.6 ms, and a
+sector is done when it has next passed under the heads, as HR-0077 has the
+drive. A sector asked for while it passes counts as caught, the manual
+having no time for the gap before its data; so the sectors of a track
+follow each other 0.92 ms apart, and one that has just passed takes a
+revolution. With "Fast" a drive answers as fast as the SD card does.
 
 ### The system on the card
 

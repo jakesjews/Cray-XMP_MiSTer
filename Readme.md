@@ -119,6 +119,7 @@ Keys go to the station while it is shown, and to the operator's console otherwis
   other cores. The scandoubler is for the 8x8 font.
 - Text color: white, green, amber or cyan
 - Font: 8x16 (31 kHz) or 8x8 (15 kHz)
+- Disk drives: Fast, or As a DD-29 with the seek and rotation times of the real drive
 
 ## Troubleshooting
 

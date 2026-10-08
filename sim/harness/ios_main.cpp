@@ -22,6 +22,7 @@
 // TEXTs can begin with @C: for another console: 0 is the station, 3 the
 // operator's, 4 the BIOP's, 5 the XIOP's.  --screen C prints that console as
 // its 24 lines at the end.  --poke changes a parcel of the kernel (hexadecimal).
+// --real-disks gives the disk drives the DD-29's times for seeks and sectors.
 // --quick leaves out what only takes time: the kernel's test of Local Memory,
 // most of its test of Buffer Memory, and 499 of the 500 passes of the BIOP's
 // test of each disk drive (the three changes are the cray-sim project's).
@@ -60,7 +61,7 @@ int main(int argc, char **argv) {
     std::vector<std::string> files;
     std::string until;
     long ms = 20000;
-    bool quiet = false, quick = false, cpu_may_run = false, burst = false;
+    bool quiet = false, quick = false, cpu_may_run = false, burst = false, real_disks = false;
     std::vector<std::pair<unsigned, unsigned>> pokes;
     struct Typing { int console; std::string wait, keys; long delay; };
     std::vector<Typing> typing;
@@ -88,6 +89,7 @@ int main(int argc, char **argv) {
         else if (a == "--ms") ms = atol(next().c_str());
         else if (a == "--quiet") quiet = true;
         else if (a == "--quick") quick = true;
+        else if (a == "--real-disks") real_disks = true;
         else if (a == "--cpu-may-run") cpu_may_run = true;
         else if (a == "--burst") burst = true;
         else if (a == "--drive") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) drive_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
@@ -125,6 +127,7 @@ int main(int argc, char **argv) {
     // Local Memory holds something at power-up; zero is as good as anything
     for (int i = 0; i < 65536; i++) { LOCAL_MEMORY(0)[i] = 0; LOCAL_MEMORY(1)[i] = 0; LOCAL_MEMORY(2)[i] = 0; }
     CLK(0); top->rst = 1;
+    top->i_real_disks = real_disks;
     top->i_bm_ack = 0; top->i_bm_rdata = 0;
     top->i_key_valid = 0; top->i_key = 0; top->i_char_ready = 077;
     top->i_tape_ack = 0; top->i_tape_data = 0; top->i_tape_bytes = tape.size();

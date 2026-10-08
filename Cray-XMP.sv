@@ -71,6 +71,7 @@ module emu #(
 		"O[9:7],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 		"O[4:3],Text color,White,Green,Amber,Cyan;",
 		"O[14],Font,8x16 (31kHz),8x8 (15kHz);",
+		"O[15],Disk drives,Fast,As a DD-29;",
 		"-;",
 		"T[0],Reset;",
 		"R[0],Reset and close OSD;",
@@ -327,9 +328,10 @@ module emu #(
 	xmp_machine #(
 		.CLOCKS_PER_MS(IOS_HZ / 1000)
 	) machine (
-		.clk    (clk_cpu),
-		.clk_ios(clk_ios),
-		.rst    (reset_cpu | ~boot_done),
+		.clk         (clk_cpu),
+		.clk_ios     (clk_ios),
+		.rst         (reset_cpu | ~boot_done),
+		.i_real_disks(status[15]),
 
 		.o_mem_req  (mem_req),
 		.o_mem_we   (mem_we),

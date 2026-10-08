@@ -25,13 +25,26 @@
 // drive at a time; what a drive is asked while another is being served waits.
 // Every drive has an echo buffer of its own: the BIOP writes to all of them
 // before it reads any back.
+//
+// Time.  A drive answers as fast as its image does, with a short pause for a
+// seek, unless i_real asks for the DD-29's own times (HR-0077 page 2-1): a
+// seek of 15 ms and up to 80 ms across all cylinders, a revolution of 16.6 ms
+// for 18 sectors, and a sector that is read or written while it passes under
+// the heads.  Then a sector is done when it has next passed, and a seek when
+// its time is over; the image is asked at once all the same, and a sector
+// whose image is slower than the drive is done when the image is.  A sector
+// asked for while it passes counts as caught (the manual has no time for the
+// gap before its data), so the sectors of a track can follow each other at
+// the 0.92 ms each takes.  All drives turn together.
 
 module ios_disks #(
-	parameter DRIVES = 9,
-	parameter SETTLE = 200  // clocks a mode selection or a seek takes
+	parameter DRIVES        = 9,
+	parameter SETTLE        = 200,   // clocks a mode selection or a seek takes
+	parameter CLOCKS_PER_MS = 80000  // of clk, for the DD-29's own times
 ) (
 	input wire clk,
-	input wire rst,  // Master Clear of the BIOP
+	input wire rst,    // Master Clear of the BIOP
+	input wire i_real, // seeks and sectors take the DD-29's times
 
 	input  wire              i_strobe,    // one clock: a function for the drive i_drive
 	input  wire [       3:0] i_drive,
@@ -67,12 +80,33 @@ module ios_disks #(
 	reg [       3:0] head     [0:DRIVES-1];
 	reg [DRIVES-1:0] reserved;
 	reg [DRIVES-1:0] echo;
-	reg [       7:0] settle   [0:DRIVES-1];  // clocks until a selection or a seek is done
+	reg [      23:0] settle   [0:DRIVES-1];  // clocks until a selection or a seek is done
 	// a sector to move: asked for, not begun
 	reg [DRIVES-1:0] asked;
 	reg [DRIVES-1:0] ask_write, ask_zero, ask_echo;
 	reg [17:0] ask_sector[0:DRIVES-1];  // its number on the drive
 	reg [DRIVES-1:0] dropped;  // function 0 came while the sector was being moved
+
+	// ---- the DD-29's times.  A seek: 15 ms and 65 ms more across all 822
+	// cylinders; none for a seek that stays where the heads are.  The disk: 18
+	// sectors pass in 16.6 ms.
+	localparam [31:0] SEEK_BASE_32  = 15 * CLOCKS_PER_MS;
+	localparam [31:0] SEEK_STEP_32  = 65 * CLOCKS_PER_MS / 822;
+	localparam [31:0] SECTOR_32     = 166 * CLOCKS_PER_MS / (10 * 18);
+	localparam [23:0] SEEK_BASE     = SEEK_BASE_32                    [23:0];
+	localparam [13:0] SEEK_STEP     = SEEK_STEP_32                    [13:0];
+	localparam [17:0] SECTOR_CLOCKS = SECTOR_32                       [17:0];
+	wire [9:0] seek_from = cylinder[i_drive];
+	wire [9:0] seek_span = (i_a[9:0] > seek_from) ? (i_a[9:0] - seek_from) : (seek_from - i_a[9:0]);
+	wire [23:0] seek_time = SEEK_BASE + seek_span * SEEK_STEP;
+	reg [17:0] turn_clock;  // clocks into the sector under the heads
+	reg [4:0] turn_sector;  // that sector, 0 to 17
+	wire turn_end = (turn_clock == SECTOR_CLOCKS - 18'd1);
+	// a sector in real time: asked for, it is done when it has passed under the
+	// heads and the image has it
+	reg [DRIVES-1:0] awaited;  // it has not passed yet
+	reg [DRIVES-1:0] moved;  // the image has it
+	reg [4:0] want[0:DRIVES-1];  // its number on the track
 
 	wire [ 3:0] d = i_drive;
 	wire [13:0] track = {cylinder[d], 3'b0} + {2'b0, cylinder[d], 1'b0} + {10'b0, head[d]};  // 10 head groups
@@ -155,6 +189,14 @@ module ios_disks #(
 		end
 	end
 
+	// the disks turn all the time
+	always @(posedge clk) begin
+		if (turn_end) begin
+			turn_clock  <= 18'd0;
+			turn_sector <= (turn_sector >= 5'd17) ? 5'd0 : (turn_sector + 5'd1);
+		end else turn_clock <= (turn_clock >= SECTOR_CLOCKS) ? 18'd0 : (turn_clock + 18'd1);
+	end
+
 	integer n;
 	always @(posedge clk) begin
 		o_data <= 16'd0;
@@ -170,17 +212,30 @@ module ios_disks #(
 			o_dma_req <= 1'b0;
 			o_sd_rd   <= {DRIVES{1'b0}};
 			o_sd_wr   <= {DRIVES{1'b0}};
+			awaited   <= {DRIVES{1'b0}};
+			moved     <= {DRIVES{1'b0}};
 			for (n = 0; n < DRIVES; n = n + 1) begin
 				lma[n]      <= 16'd0;
 				response[n] <= 16'd0;
-				settle[n]   <= 8'd0;
+				settle[n]   <= 24'd0;
 			end
 		end else begin
 			// ---- a selection or a seek comes to its end
 			for (n = 0; n < DRIVES; n = n + 1)
-			if (settle[n] != 8'd0) begin
-				settle[n] <= settle[n] - 8'd1;
-				if (settle[n] == 8'd1) begin
+			if (settle[n] != 24'd0) begin
+				settle[n] <= settle[n] - 24'd1;
+				if (settle[n] == 24'd1) begin
+					o_busy[n] <= 1'b0;
+					o_done[n] <= 1'b1;
+				end
+			end
+
+			// ---- a sector in the DD-29's time: it passes, and it is done when the
+			// image has it as well
+			for (n = 0; n < DRIVES; n = n + 1) begin
+				if (awaited[n] && turn_end && (turn_sector == want[n])) awaited[n] <= 1'b0;
+				if (moved[n] && !awaited[n]) begin
+					moved[n]  <= 1'b0;
 					o_busy[n] <= 1'b0;
 					o_done[n] <= 1'b1;
 				end
@@ -268,10 +323,14 @@ module ios_disks #(
 				end
 				M_SENT: if (!i_sd_ack[cur]) m <= M_END;
 
+				// an echo is of the controller and takes no time of the disk's
 				M_END: begin
 					if (!dropped[cur]) begin
-						o_busy[cur] <= 1'b0;
-						o_done[cur] <= 1'b1;
+						if (i_real && !m_echo) moved[cur] <= 1'b1;
+						else begin
+							o_busy[cur] <= 1'b0;
+							o_done[cur] <= 1'b1;
+						end
 					end
 					dropped[cur] <= 1'b0;
 					m            <= M_IDLE;
@@ -284,10 +343,12 @@ module ios_disks #(
 			if (i_strobe && (d < DRIVES))
 				case (i_function)
 					4'o00: begin
-						o_busy[d] <= 1'b0;
-						o_done[d] <= 1'b0;
-						settle[d] <= 8'd0;
-						asked[d]  <= 1'b0;
+						o_busy[d]  <= 1'b0;
+						o_done[d]  <= 1'b0;
+						settle[d]  <= 24'd0;
+						asked[d]   <= 1'b0;
+						awaited[d] <= 1'b0;
+						moved[d]   <= 1'b0;
 						// its sector is being moved, or begins to be in this clock
 						if (((m != M_IDLE) && (m != M_END) && (cur == d)) || ((m == M_IDLE) && any && (pick == d)))
 							dropped[d] <= 1'b1;
@@ -317,12 +378,15 @@ module ios_disks #(
 						endcase
 						o_busy[d] <= 1'b1;
 						o_done[d] <= 1'b0;
-						settle[d] <= SETTLE[7:0];
+						settle[d] <= SETTLE[23:0];
 					end
 					4'o02, 4'o03: begin
 						o_busy[d]     <= 1'b1;
 						o_done[d]     <= 1'b0;
 						asked[d]      <= 1'b1;
+						awaited[d]    <= i_real && !echo[d];
+						moved[d]      <= 1'b0;
+						want[d]       <= (i_a[4:0] > 5'd17) ? 5'd0 : i_a[4:0];
 						ask_write[d]  <= (i_function == 4'o03);
 						ask_zero[d]   <= (i_function == 4'o03) && (i_a[7:5] != 3'd0) && !echo[d];
 						ask_echo[d]   <= echo[d];
@@ -339,7 +403,7 @@ module ios_disks #(
 						response[d] <= {1'b0, i_a[9:0], 5'b0};
 						o_busy[d]   <= 1'b1;
 						o_done[d]   <= 1'b0;
-						settle[d]   <= SETTLE[7:0];
+						settle[d]   <= (i_real && (seek_span != 10'd0)) ? seek_time : SETTLE[23:0];
 					end
 					4'o10:   o_data <= lma[d];
 					4'o11:   o_data <= response[d];

@@ -2,7 +2,7 @@
 ROOT  := $(abspath ..)
 BUILD := $(ROOT)/sim/build
 
-.PHONY: core ampex spool cpu fp iop ios xmp bridge clean
+.PHONY: core ampex spool cpu fp iop ios xmp bridge disks clean
 
 # Core-level simulation of the CRAY X-MP core
 core: $(BUILD)/core/Vemu
@@ -44,6 +44,11 @@ $(BUILD)/ios/Vios: $(ROOT)/sim/ios.vc $(wildcard $(ROOT)/sim/harness/ios_*) $(wi
 xmp: $(BUILD)/xmp/Vxmp_machine
 $(BUILD)/xmp/Vxmp_machine: $(ROOT)/sim/xmp.vc $(wildcard $(ROOT)/sim/harness/ios_*) $(ROOT)/rtl/xmp_machine.v $(ROOT)/rtl/xmp_bridge.v $(wildcard $(ROOT)/rtl/ios/*.v $(ROOT)/rtl/cray/*.v $(ROOT)/rtl/cray/cray-1x/*.v $(ROOT)/rtl/cray/cray-1x/*.vh)
 	mkdir -p $(BUILD)/xmp && cd $(ROOT) && verilator -f sim/xmp.vc --Mdir $(BUILD)/xmp -o Vxmp_machine
+
+# The disk drives by themselves: their sectors and their times
+disks: $(BUILD)/disks/Vios_disks
+$(BUILD)/disks/Vios_disks: $(ROOT)/sim/disks.vc $(ROOT)/sim/harness/disks_main.cpp $(ROOT)/sim/harness/ios_media.h $(ROOT)/rtl/ios/ios_disks.v
+	mkdir -p $(BUILD)/disks && cd $(ROOT) && verilator -f sim/disks.vc --Mdir $(BUILD)/disks -o Vios_disks
 
 # The bridges between the CPU's clock and the I/O Subsystem's against what they promise
 bridge: $(BUILD)/bridge/Vxmp_bridge_tb

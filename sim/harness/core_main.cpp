@@ -33,7 +33,7 @@
 // the menu's reset at that time, --reset-on when the operator's console has
 // shown TEXT.  --screen C prints a console's 24 lines at the end, and
 // --screen 2 the printer's screen as the core holds it; --frame writes the
-// last video frame.
+// last video frame.  --real-disks chooses the menu's "Disk drives: As a DD-29".
 //
 // At the end the two screens in the core are compared with what the serial
 // port carried.  The CPU must not run before the operator has typed START:
@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
     int printed_blocks = 0;
     std::string printer_out, until_printed;
     bool printer_screen = false;
-    bool quiet = false, burst = false;
+    bool quiet = false, burst = false, real_disks = false;
     uint32_t seed = 1;
     int until_console = 0, disk_wait = 200;
     struct Typing { int console; bool pressed; std::string wait, keys; long delay; };
@@ -180,6 +180,7 @@ int main(int argc, char **argv) {
         else if (a == "--seed") seed = (uint32_t)atol(next().c_str());
         else if (a == "--quiet") quiet = true;
         else if (a == "--burst") burst = true;
+        else if (a == "--real-disks") real_disks = true;
         else if (a == "--disk") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) disk_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a == "--drive") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) drive_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a[0] == '-') { fprintf(stderr, "unknown option %s\n", a.c_str()); return 2; }
@@ -238,6 +239,7 @@ int main(int argc, char **argv) {
     top->RESET = 1;
     top->UART_RXD = 1;
     top->DDRAM_BUSY = 0;
+    if (real_disks) r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u << 15;
     top->DDRAM_DOUT_READY = 0;
     double cpu_acc = 0, ios_acc = 0;
     const double cpu_ratio = CPU_KHZ / 58800.0;  // CPU clock cycles per video clock cycle

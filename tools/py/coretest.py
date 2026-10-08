@@ -7,6 +7,7 @@
     coretest.py printer
     coretest.py boot [SYSTEM]
     coretest.py start [SYSTEM]
+    coretest.py start-real [SYSTEM]
     coretest.py restart [SYSTEM]
 
 screens checks the core's terminal (rtl/terminal/term_ampex.v) against the
@@ -37,6 +38,8 @@ pressed and the kernel has to ask again.
 start goes on from the date and the time: START COS_117 DEADSTART on the serial
 port, STATION when COS has been started, then F2 and LOGON on the keyboard.
 The run ends when the station shows the banner of COS.  About four minutes.
+start-real does the same with the menu's "Disk drives: As a DD-29", where
+seeks and sectors take the drive's times; it takes longer.
 
 restart starts COS the same way and presses the menu's reset when the kernel
 reports START COMPLETE, with the CPU running.  The kernel has to come up again
@@ -130,12 +133,14 @@ def boot(system):
     return report(r, ['I/O SUBSYSTEM DEAD START', '10/05/89  01:02:03', 'the text was shown'])
 
 
-def start(system):
+def start(system, real_disks=False):
+    """COS is started and the station logs on; with real_disks the drives take the DD-29's times."""
     cmd = [boot_file(system), '--disk', '0=' + os.path.join(system, 'exp_disk.img')]
     for n, channel in enumerate(DRIVES):
         cmd += ['--drive', '%d=%s' % (n, os.path.join(system, 'biop_dk%o.img' % channel))]
     cmd += DATE + ['--type', '10/05/89  01:02:03=START COS_117 DEADSTART\\r', '--type', 'START COMPLETE=STATION\\r',
-                   '--press', '@0:CRAY STATION={f2}LOGON\\r', '--until', '@0:COS 1.17', '--ms', '9000', '--screen', '0']
+                   '--press', '@0:CRAY STATION={f2}LOGON\\r', '--until', '@0:COS 1.17', '--screen', '0']
+    cmd += ['--real-disks', '--ms', '30000'] if real_disks else ['--ms', '9000']
     return report(run(cmd), ['MFINIT: COMPLETE', 'CPU <-> MIOP LINKAGE COMPLETE', 'START COMPLETE', '>LOGON', 'the text was shown'])
 
 
@@ -158,10 +163,11 @@ def main():
         ok = nofile()
     elif a == ['printer']:
         ok = printer()
-    elif a and a[0] in ('boot', 'start', 'restart'):
+    elif a and a[0] in ('boot', 'start', 'restart', 'start-real'):
         if len(a) < 2 and not system:
             sys.exit('coretest: name the directory of the COS 1.17 software, or set CRAY_XMP_SYSTEM')
-        ok = {'boot': boot, 'start': start, 'restart': restart}[a[0]](a[1] if len(a) > 1 else system)
+        kinds = {'boot': boot, 'start': start, 'restart': restart, 'start-real': lambda s: start(s, True)}
+        ok = kinds[a[0]](a[1] if len(a) > 1 else system)
     else:
         sys.exit(__doc__)
     sys.exit(0 if ok else 1)

@@ -187,6 +187,12 @@ const DD29_HEADS: u64 = 10;
 const DD29_SECTORS: u64 = 18;
 /// Parcels the two buffers of the controller hold [DSK 2-12].
 const DD29_BUFFER: u16 = 512;
+/// The drive's own times in clock periods of 12.5 ns [DSK 2-1]: a seek of
+/// 15 ms and up to 80 ms across all 822 cylinders, and the 18 sectors of a
+/// track in a revolution of 16.6 ms.
+const DD29_SEEK_BASE: u64 = 15 * 80_000;
+const DD29_SEEK_STEP: u64 = 65 * 80_000 / 822;
+const DD29_SECTOR_TIME: u64 = 166 * 80_000 / (10 * DD29_SECTORS);
 
 /// A DD-29 disk drive on its channel of a DCU-4 controller [DSK 2-1 to
 /// 2-20].  There are no faults: Busy never stays set with Done, and the
@@ -317,7 +323,21 @@ impl Dd29 {
                         }
                     }
                     self.local = self.local.wrapping_add(DD29_SECTOR_PARCELS);
-                    flags.start(now, timing.disk_sector);
+                    // in the drive's own time the sector is done when it has
+                    // next passed under the heads, also when it was passing
+                    // already; all drives turn together
+                    let delay = if timing.disk_real != 0 {
+                        let want = match (a & 0o37) as u64 {
+                            sector if sector < DD29_SECTORS => sector,
+                            _ => 0,
+                        };
+                        let turn = DD29_SECTOR_TIME * DD29_SECTORS;
+                        let passed = ((want + 1) * DD29_SECTOR_TIME + turn - now % turn) % turn;
+                        (if passed == 0 { turn } else { passed }) as u32
+                    } else {
+                        timing.disk_sector
+                    };
+                    flags.start(now, delay);
                 }
             }
             // reserve the unit and select a head group; Busy and Done do
@@ -329,9 +349,15 @@ impl Dd29 {
             // seek; the first sector identifier read on arrival is the
             // cylinder shifted left 5 with zeros below [DSK 2-22]
             5 => {
+                let span = (a & 0o1777).abs_diff(self.cylinder) as u64;
                 self.cylinder = a & 0o1777;
                 self.status = self.cylinder << 5;
-                flags.start(now, timing.disk_seek);
+                let delay = if timing.disk_real != 0 && span != 0 {
+                    (DD29_SEEK_BASE + span * DD29_SEEK_STEP) as u32
+                } else {
+                    timing.disk_seek
+                };
+                flags.start(now, delay);
             }
             0o10 => return Some(self.local),
             0o11 => return Some(self.status),
@@ -683,6 +709,47 @@ mod tests {
         disk.function(&mut flags, &mut mem, 0, &timing, 0o14, 0x2000);
         disk.function(&mut flags, &mut mem, 0, &timing, 2, 16);
         assert_eq!(mem[0x2000..0x2800], [0; 2048]);
+    }
+
+    #[test]
+    fn disk_times_of_the_drive() {
+        // with disk_real a seek takes 15 ms and 65 ms more across all
+        // cylinders, and a sector is done when it has next passed under the
+        // heads
+        let mut timing = Timing::default();
+        assert!(timing.set("disk_real", 1));
+        let (mut disk, mut flags) = (Dd29::new(Image::empty(DD29_SECTOR_BYTES)), Flags::default());
+        let mut mem = vec![0u16; 1 << 16];
+        let ms = 80_000u64;
+        disk.function(&mut flags, &mut mem, 0, &timing, 1, 0o1000);
+        flags.settle(flags.until.unwrap());
+        // across the whole disk: 80 ms, less what the division drops
+        disk.function(&mut flags, &mut mem, 1000, &timing, 5, 822);
+        let whole = flags.until.unwrap() - 1000;
+        assert!(whole <= 80 * ms && whole > 80 * ms - 822);
+        flags.settle(flags.until.unwrap());
+        // one cylinder: 15 ms and a 822nd of 65 ms; none: the short pause
+        disk.function(&mut flags, &mut mem, 0, &timing, 5, 821);
+        assert_eq!(flags.until, Some(15 * ms + 65 * ms / 822));
+        flags.settle(flags.until.unwrap());
+        disk.function(&mut flags, &mut mem, 0, &timing, 5, 821);
+        assert_eq!(flags.until, Some(timing.disk_seek as u64));
+        flags.settle(flags.until.unwrap());
+        // sector 3 has passed four sector times into a revolution; asked for
+        // while it passes, it is still caught, so sector 4 can follow it
+        let sector = 166 * ms / 180;
+        disk.function(&mut flags, &mut mem, 0, &timing, 2, 3);
+        assert_eq!(flags.until, Some(4 * sector));
+        flags.settle(flags.until.unwrap());
+        disk.function(&mut flags, &mut mem, 4 * sector - 1, &timing, 2, 3);
+        assert_eq!(flags.until, Some(4 * sector));
+        flags.settle(flags.until.unwrap());
+        disk.function(&mut flags, &mut mem, 4 * sector, &timing, 2, 4);
+        assert_eq!(flags.until, Some(5 * sector));
+        flags.settle(flags.until.unwrap());
+        // when it has just passed: the next revolution
+        disk.function(&mut flags, &mut mem, 4 * sector, &timing, 2, 3);
+        assert_eq!(flags.until, Some((18 + 4) * sector));
     }
 
     #[test]

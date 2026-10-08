@@ -192,7 +192,7 @@ lint_off -rule PINMISSING -file "Cray-XMP.sv" -match "*Instance has missing pin:
 // MiSTer provides wider controls than this core consumes: of the status word
 // only the reset, colour, font, scale, scandoubler and aspect ratio bits, and
 // of the buttons only the user button.
-lint_off -rule UNUSEDSIGNAL -file "Cray-XMP.sv" -match "*Bits of signal are not used: 'status'[127:123,120:15,13:10,2:1]*"
+lint_off -rule UNUSEDSIGNAL -file "Cray-XMP.sv" -match "*Bits of signal are not used: 'status'[127:123,120:16,13:10,2:1]*"
 lint_off -rule UNUSEDSIGNAL -file "Cray-XMP.sv" -match "*Bits of signal are not used: 'buttons'[0]*"
 
 // Cray-XMP.sv: hps_io counts 16,384 bytes of a disk request and the largest here is
