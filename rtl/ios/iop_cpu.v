@@ -86,17 +86,17 @@ module iop_cpu (
 	reg        bound;  // channel 2: Exit Stack Boundary flag
 	reg        pxs_en;
 
-	reg [15:0] ir;  // the instruction of the step under way
+	reg [15:0] ir  /* verilator public_flat_rw */;  // the instruction of the step under way
 	reg [ 3:0] ph;  // its clock: 0 is the first
 	reg [ 3:0] left;  // clocks still to come, this one included, from the second on
 	reg        intr;  // it is an interrupt
 	reg [15:0] ea;  // address of the operand in memory
 	reg [15:0] wd;  // what an instruction stores there
 
-	reg [15:0] xs    [ 0:15]  /* verilator public_flat_rw */;
+	reg [15:0] xs                                   [ 0:15]  /* verilator public_flat_rw */;
 	(* ramstyle = "no_rw_check" *)
-	reg [15:0] or_mem[0:511]  /* verilator public_flat_rw */;
-	reg [15:0] or_q;
+	reg [15:0] or_mem                               [0:511]  /* verilator public_flat_rw */;
+	reg [15:0] or_q  /* verilator public_flat_rw */;
 
 	assign o_a     = a;
 	assign o_p     = p;

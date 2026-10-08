@@ -88,7 +88,17 @@ int main(int argc, char **argv) {
             Record r;
             if (!read_record(f, r)) { printf("the record ends without its end\n"); return 2; }
             switch (r.kind) {
-            case SET_MEMORY: mem[r.p] = r.parcel; break;
+            case SET_MEMORY:
+                mem[r.p] = r.parcel;
+                // A device stored this by itself, in the model at once.  The processor has
+                // read its next instruction and the parcel behind it by now: they are given
+                // what the device stored, and the operand register is read again.
+                if (steps > 0 && r.p == top->o_p) {
+                    in->iop_cpu__DOT__ir = r.parcel;
+                    in->iop_cpu__DOT__or_q = in->iop_cpu__DOT__or_mem[(r.parcel >> 12) == 006 ? (in->iop_cpu__DOT__b & 0777) : (r.parcel & 0777)];
+                }
+                if (steps > 0 && r.p == (uint16_t)(top->o_p + 1)) top->i_mem_rdata = r.parcel;
+                break;
             case SET_OPERAND: in->iop_cpu__DOT__or_mem[r.p & 511] = r.parcel; break;
             case SET_REGISTERS: in->iop_cpu__DOT__a = r.p; in->iop_cpu__DOT__b = r.parcel & 0777; in->iop_cpu__DOT__c = r.parcel >> 15; break;
             case MASTER_CLEAR: top->rst = 1; clock(); clock(); break;
