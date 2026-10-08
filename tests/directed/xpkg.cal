@@ -184,8 +184,8 @@ KIN      CON     (UA-UBASE*4)*T$P2_24+1234560+X'7FF0000000000000
 * ... and the one that comes back: P one parcel on, the normal exit flag
 KEXP     CON     (UA-UBASE*4+1)*T$P2_24+1234560
          CON     UIBA*T$P2_29+15*T$P2_24+1234561
-         CON     X'75A5A*T$P2_29+36*T$P2_24+1234562
-         CON     UPKG/20*T$P2_40+125*T$P2_33+1*T$P2_24+1234563
+         CON     X'75A5A*T$P2_29+36*T$P2_24+1234562+X'8000000000000000
+         CON     UPKG/20*T$P2_40+125*T$P2_33+1*T$P2_24+1234563+X'8000000000000000
          CON     X'12345*T$P2_29+1*T$P2_28+2*T$P2_24+1234564
          CON     X'6ABCD*T$P2_29+1234565
          CON     1234566

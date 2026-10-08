@@ -110,9 +110,16 @@ Subsystem dead starts COS 1.17 and runs batch jobs.
 - **The exchange package** has the X-MP layout: a 24-bit P, an instruction
   base and limit and a data base and limit of 19 bits each in units of 32
   words, the mode bits of words 1 and 2, the flags, the program state bit and
-  the cluster number. The processor number, the memory error fields and the
-  VNU, ESVL and EAM bits are stored as zero. Dead start, normal and error
-  exits use it.
+  the cluster number. VNU, vector not used, is cleared by the first 076, 077
+  or 140 to 177 a program issues, and ESVL says whether the second vector
+  logical unit may be used. The processor number, the memory error fields
+  and the EAM bit are stored as zero. Dead start, normal and error exits use
+  it.
+- **The second vector logical unit** (CSM-0111000 page 4-18), which not every
+  X-MP had. With ESVL set, a 140 to 145 goes to it when it is free and to the
+  full unit otherwise; the merges and 175 have the full unit only. Its unit
+  time is 4 clock periods, and it is busy when the floating-point multiply
+  unit is and the other way round. Whether COS sets the bit is its matter.
 - **Fields.** Instructions are fetched through the instruction pair, operands
   through the data pair. An address is valid when it plus 32 times the base
   is below 32 times the limit and below four million. Only the low 22 bits of
@@ -169,8 +176,8 @@ Subsystem dead starts COS 1.17 and runs batch jobs.
   sets the I/O interrupt flag outside monitor mode. The first pair, 10 and
   11, leads to the MIOP of the I/O Subsystem; the other three lead nowhere.
 
-Not there: the second vector logical unit, gather and scatter, the 100 Mbyte
-channels of the CPU and channel parity.
+Not there: gather and scatter, the 100 Mbyte channels of the CPU and channel
+parity.
 
 ## Differences from a real X-MP
 

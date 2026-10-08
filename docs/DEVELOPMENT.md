@@ -218,11 +218,13 @@ time, and a second random seed. All five must agree with the model.
   of what the X-MP added: `xpkg.cal` for the exchange package and the two
   fields, `shared.cal` for the shared registers, semaphores and status
   register, `channels.cal` for the 6 Mbyte channels, `vlah.cal` for the VL
-  register and the 24-bit constant, `imm.cal` for interrupt monitor mode.
+  register and the 24-bit constant, `imm.cal` for interrupt monitor mode,
+  `vnu.cal` for the VNU and ESVL bits of the package.
 - `tests/rtl_only/` holds programs that check themselves, for what the model
   cannot predict: the real-time clock, the programmable clock and its
   interrupt, the console interrupt, and how many clock periods instructions
-  take (`timing.cal`, written by `gen_timing.py`). They run on the RTL
+  take (`timing.cal`, and `timing_esvl.cal` with the second vector logical
+  unit enabled, both written by `gen_timing.py`). They run on the RTL
   alone. A line `* NOSTEP` keeps a program out of the run that holds issue
   to one instruction at a time. A line
   `* SIM: arguments` in such a program gives the simulator more arguments;

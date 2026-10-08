@@ -54,9 +54,10 @@ localparam PD_V_I = PD_A_SCONF + 8;  // 8  V register written
 localparam PD_V_J = PD_V_I + 8;  // 8  V registers read
 localparam PD_V_K = PD_V_J + 8;  // 8
 localparam PD_V_FU = PD_V_K + 8;  // 8  unit used
+localparam PD_SVL = PD_V_FU + 8;  // 1  140 to 145: the second vector logical unit can do it
 
 // for the branch unit
-localparam PD_BR_005 = PD_V_FU + 8;  // 1
+localparam PD_BR_005 = PD_SVL + 1;  // 1
 localparam PD_BR_A0 = PD_BR_005 + 1;  // 1  010 to 013
 localparam PD_BR_S0 = PD_BR_A0 + 1;  // 1  014 to 017
 localparam PD_BR_JMP = PD_BR_S0 + 1;  // 1  006, 007

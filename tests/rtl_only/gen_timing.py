@@ -3,6 +3,10 @@
 numbers of the X-MP's manual (CSM-0111000 section 5).
 
     python3 tests/rtl_only/gen_timing.py > tests/rtl_only/timing.cal
+    python3 tests/rtl_only/gen_timing.py esvl > tests/rtl_only/timing_esvl.cal
+
+The second is the cases of the second vector logical unit: a program whose
+exchange package has the ESVL bit set.
 
 A case is a short sequence of instructions between two readings of the
 real-time clock, which counts clock periods.  Its time is the difference of
@@ -11,6 +15,8 @@ runs from instruction buffers that are filled before the first reading, so
 the times do not depend on how fast memory is.  The reference model has no
 clock periods; the program checks itself.
 """
+import sys
+
 PASS = ['PASS']
 # (clock periods, what, instructions).  %L is the label of the second reading.
 ONE_BUFFER = [
@@ -121,6 +127,27 @@ TWO_BUFFERS = [
     (4, '011 across two buffers, not taken', ['JAN %L'], 'straddle'),
     (7, '010 across two buffers, taken', ['JAZ %L'], 'straddle'),
 ]
+# With the second vector logical unit enabled (X 4-18): 140 to 145 go to it when it and
+# the floating point multiply unit, which share a busy signal, are free, and to the full
+# unit otherwise.  Its unit time is 4 CPs, so a result register is ready (VL) + 9 CPs
+# after issue.  The merges and 175 have the full unit only.
+ESVL = [
+    (11, '141 in the second unit, VL 1, and its element read back', ['V2 V1&V3', 'S1 V2,A2']),
+    (15, '141 in the second unit, VL 5, and an element read back', ['V2 V1&V3', 'S1 V2,A2'], 5),
+    (9, '147 in the full unit, VL 1, and its element read back', ['V2 V3!V4&VM', 'S1 V2,A2']),
+    # two at once: the second unit, then the full one
+    (14, 'two 141, VL 5, and an element of the second read back', ['V2 V1&V3', 'V5 V4&V6', 'S1 V5,A2'], 5),
+    # a third waits for the unit that is free first: the second, (VL) + 4 CPs after the first issued
+    (24, 'three 141, VL 5, and an element of the third read back', ['V2 V1&V3', 'V5 V4&V6', 'V7 V0&V0', 'S1 V7,A2'], 5),
+    # the multiply unit is busy while the second logical unit is, for vectors and scalars
+    (27, '141 in the second unit, VL 5, then 161', ['V2 V1&V3', 'V5 V4*FV6', 'S1 V5,A2'], 5),
+    (17, '141 in the second unit, VL 5, then 064', ['V2 V1&V3', 'S1 S2*FS3', 'S4 S1&S1'], 5),
+    # and a 141 behind a multiply goes to the full unit
+    (14, '161, VL 5, then 141 in the full unit', ['V5 V4*FV6', 'V2 V1&V3', 'S1 V2,A2'], 5),
+    # chained to an add; and a 175 chained to it, which the full unit alone could not be
+    (23, '155, VL 5, a 141 in the second unit chained to it', ['V2 V1+V3', 'V4 V2&V5', 'S1 V4,A2'], 5),
+    (20, '141 in the second unit, VL 5, a 175 chained to it, then 073', ['V2 V1&V3', 'VM V2,Z', 'S1 VM'], 5),
+]
 FIRST = {'A1': 0o020100, 'J': 0o006000, 'JAN': 0o011000, 'JAZ': 0o010000}   # first parcels, for 'straddle'
 BASE, OUT = 0o400, 0o6000
 BLOCK = 0o40                      # words in an instruction buffer
@@ -135,13 +162,21 @@ def line(label, result, operand=''):
 
 
 def main():
+    global ONE_BUFFER, TWO_BUFFERS
+    esvl = sys.argv[1:] == ['esvl']
+    if esvl:
+        ONE_BUFFER, TWO_BUFFERS = ESVL, []
     count = len(ONE_BUFFER) + len(TWO_BUFFERS)
-    src = ['* timing: clock periods of instructions against the X-MP manual.',
+    src = ['* timing%s: clock periods of instructions against the X-MP manual%s.'
+           % (('_esvl', ', with the second vector logical unit enabled') if esvl else ('', '')),
            '* Written by gen_timing.py; see there.  %d cases; a wrong one fails check 2' % count,
            '* and leaves its number in word %o and its clock periods in word %o.' % (OUT + 0o400, OUT + 0o401),
            '* NOSTEP: issue held to one instruction at a time changes every time measured here.',
-           '         INCLUDE "rt_direct.cal"',
-           '         TBEGIN',
+           '         INCLUDE "rt_direct.cal"']
+    if esvl:
+        # the bit at the left end of word 3 of the package the dead start loads
+        src += [line('', 'ORG', '3'), line('', 'CON', '1000000000000000000000')]
+    src += ['         TBEGIN',
            line('', 'A1', '1'), line('', 'VL', 'A1'), line('', 'A2', '0'), line('', 'A3', '3'), line('', 'J', 'C0')]
     for n, (cps, what, seq, *vl) in enumerate(ONE_BUFFER):
         src.append('* %d clock periods: %s' % (cps, what))
@@ -154,7 +189,7 @@ def main():
             res, *op = x.replace('%L', 'L%d' % n).split()
             src.append(line('', res, ' '.join(op)))
         src += [line('L%d' % n, 'S7', 'RT'), line('', 'S7', 'S7-S6'), line('', '%o,0' % (OUT + n), 'S7'),
-                line('', 'J', 'C%d' % (n + 1) if n + 1 < len(ONE_BUFFER) else 'P0')]
+                line('', 'J', 'C%d' % (n + 1) if n + 1 < len(ONE_BUFFER) else 'P0' if TWO_BUFFERS else 'FIN')]
     pbase = BASE + BLOCK * (len(ONE_BUFFER) + 2)
     for n, (cps, what, seq, end) in enumerate(TWO_BUFFERS):
         x, y = pbase + 2 * BLOCK * n, pbase + 2 * BLOCK * n + BLOCK

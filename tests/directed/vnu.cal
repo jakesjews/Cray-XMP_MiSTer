@@ -1,0 +1,179 @@
+* vnu: the two bits at the left end of words 2 and 3 of the exchange package
+* (CSM-0111000 page 3-10).  VNU, vector not used, comes back set from a
+* program that issued no 076, 077 or 140 to 177, and clear from one that did;
+* once clear it stays clear.  ESVL, enable second vector logical, comes back
+* as it went: it chooses the unit for 140 to 145 and changes no result, which
+* the programs with it set show on logical instructions among multiplies.
+         INCLUDE "rt_direct.cal"
+         INCLUDE "rt_user.cal"
+UPKG     =       3000
+VDATA    =       4000
+VOUT     =       5000
+*
+* take a word of the next program's package (U$W1 to U$W5) from %W.
+* Clobbers S1.
+         MACRO   SETW %DST,%W
+         S1      %W,0
+         %DST,0  S1
+         ENDM
+* the bit at the left end of word %N of the package that came back, in S2
+         MACRO   LEFT %N
+         S2      UPKG+%N,0
+         S2      S2>D'63
+         ENDM
+*
+         TBEGIN
+* ---- no vector instruction: VNU stays as it went
+         SETW    U$W2,KW2V
+         UGO     KPNONE
+         LEFT    2
+         CHKS    S2,1,2
+         SETW    U$W2,KW2
+         UGO     KPNONE
+         LEFT    2
+         CHKS    S2,0,3
+* ---- each kind of vector instruction clears it
+         SETW    U$W2,KW2V
+         UGO     KP076
+         LEFT    2
+         CHKS    S2,0,4
+         UGO     KP077
+         LEFT    2
+         CHKS    S2,0,5
+         UGO     KP140
+         LEFT    2
+         CHKS    S2,0,6
+         UGO     KP176
+         LEFT    2
+         CHKS    S2,0,7
+         UGO     KP177
+         LEFT    2
+         CHKS    S2,0,10
+         UGO     KP175
+         LEFT    2
+         CHKS    S2,0,11
+* 075, 100 and 137 are no vector instructions
+         UGO     KPNEAR
+         LEFT    2
+         CHKS    S2,1,12
+* the rest of word 2 is as before
+         S2      UPKG+2,0
+         S3      KW2V,0
+         S2      S2\S3
+         S2      S2>D'24
+         CHKS    S2,0,13
+* ---- ESVL comes back as it went, with VNU or without
+         SETW    U$W3,KW3E
+         UGO     KPNONE
+         LEFT    3
+         CHKS    S2,1,14
+         LEFT    2
+         CHKS    S2,1,15
+         SETW    U$W2,KW2
+         UGO     KPLOG
+         LEFT    3
+         CHKS    S2,1,16
+         LEFT    2
+         CHKS    S2,0,17
+* logical instructions and multiplies, one behind the other, with the bit:
+* V5 = (V1 & 7) \ (V1 ! 100), and V0 = V5 ! ((V1 ! 100) & V5) is the same
+         A1      VOUT
+         S1      0,A1
+         CHKS    S1,100,20
+         S1      7,A1
+         CHKS    S1,110,21
+         S1      10,A1
+         CHKS    S1,100,22
+         S1      17,A1
+         CHKS    S1,110,23
+* and the same results without it
+         SETW    U$W3,KW3
+         UGO     KPLOG
+         LEFT    3
+         CHKS    S2,0,24
+         A1      VOUT
+         S1      0,A1
+         CHKS    S1,100,25
+         S1      17,A1
+         CHKS    S1,110,26
+         TPASS
+         TEND
+*
+* ---- the user programs
+UPNONE   A1      5
+         A1      A1+A1
+         S1      S1+S2
+         EX
+UP076    S1      V1,A0
+         EX
+UP077    V1,A0   S1
+         EX
+UP140    V1      S1&V2
+         EX
+UP176    A0      VDATA
+         A1      1
+         V1      ,A0,A1
+         EX
+UP177    A0      VDATA+100
+         A1      1
+         ,A0,A1  V2
+         EX
+UP175    VM      V1,Z
+         EX
+UPNEAR   A1      5
+         T01     S1
+         A1      VDATA,0
+         VDATA+100,0 S1
+         EX
+* V1 = 1, 2, ... 10; V2 = V1 * 2.0 (half a pass through the multiplier),
+* V3 = V1 & 7, V4 = V1 ! 100, V5 = V3 \ V4, V6 = V4 & V5: the logical units
+* and the multiplier wanted at once
+UPLOG    A1      10
+         VL      A1
+         A0      VDATA
+         A2      1
+         V1      ,A0,A2
+         S1      KTWO,0
+         S2      7
+         S3      100
+         V2      S1*FV1
+         V3      S2&V1
+         V4      S3!V1
+         V7      S1*FV2
+         V5      V3\V4
+         V6      V4&V5
+         V0      V5!V6
+         A0      VOUT
+         ,A0,A2  V5
+         A0      VOUT+10
+         ,A0,A2  V0
+         EX
+*
+KPNONE   CON     UPNONE*T$P2_24
+KP076    CON     UP076*T$P2_24
+KP077    CON     UP077*T$P2_24
+KP140    CON     UP140*T$P2_24
+KP176    CON     UP176*T$P2_24
+KP177    CON     UP177*T$P2_24
+KP175    CON     UP175*T$P2_24
+KPNEAR   CON     UPNEAR*T$P2_24
+KPLOG    CON     UPLOG*T$P2_24
+KZERO    CON     0
+KLEFT    =       1000000000000000000000
+KW2      CON     T$LAMAX*T$P2_29+U$A2
+KW2V     CON     KLEFT+T$LAMAX*T$P2_29+U$A2
+KW3      CON     UPKG/20*T$P2_40
+KW3E     CON     KLEFT+UPKG/20*T$P2_40
+KTWO     CON     0400024000000000000000
+         UDATA
+         ORG     VDATA
+         CON     1
+         CON     2
+         CON     3
+         CON     4
+         CON     5
+         CON     6
+         CON     7
+         CON     10
+         BSSZ    170
+         END

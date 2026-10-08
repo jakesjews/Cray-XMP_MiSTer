@@ -21,19 +21,20 @@ fn exchange_package_layout() {
     let kept = [
         p << 24 | a(0),
         iba << 29 | m1 << 24 | a(1),
-        ila << 29 | modes << 24 | a(2),
-        xa << 40 | vl << 33 | a(3),
+        1 << 63 | ila << 29 | modes << 24 | a(2),
+        1 << 63 | xa << 40 | vl << 33 | a(3),
         dba << 29 | 1 << 28 | cln << 24 | a(4),
         dla << 29 | a(5),
         a(6),
         a(7),
     ];
-    // PN, E and S; R, CS, B, WS and the unused bit 38; VNU; ESVL; EAM
+    // PN, E and S; R, CS, B, WS and the unused bit 38; EAM.  VNU and ESVL,
+    // the left ends of words 2 and 3, are kept: the program is an exit alone.
     let dropped = [
         0x7ff << 52,
         0xfff << 52 | 0o22 << 24,
-        1 << 63,
-        1 << 63,
+        0,
+        0,
         1 << 63,
         0,
         0,

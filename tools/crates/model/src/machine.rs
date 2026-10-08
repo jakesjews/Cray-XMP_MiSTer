@@ -266,6 +266,12 @@ pub struct Machine {
     pub(crate) sb: [[Option<u32>; 8]; 3],
     pub(crate) st: [[Option<u64>; 8]; 3],
     pub(crate) sm: [[Option<bool>; 32]; 3],
+    /// Vector not used: bit 0 of word 2 of the package, cleared by the
+    /// first 076, 077 or 140 to 177 (CSM-0111000 page 3-10).
+    pub(crate) vnu: bool,
+    /// Enable second vector logical: bit 0 of word 3.  It says which of
+    /// two units may do 140 to 145 and changes no result.
+    pub(crate) esvl: bool,
     /// The exchange asked for is that of a waiting test and set.
     pub(crate) waiting_semaphore: bool,
     /// The result register of the vector instruction being executed,
@@ -354,6 +360,8 @@ impl Machine {
             sb: [[None; 8]; 3],
             st: [[None; 8]; 3],
             sm: [[None; 32]; 3],
+            vnu: false,
+            esvl: false,
             waiting_semaphore: false,
             v_before: [None; 64],
             mem: Memory::new(memory_words),
@@ -970,8 +978,9 @@ impl Machine {
     /// The layout is that of CSM-0111000 figure 3-3: P in bits 16 to 39 of
     /// word 0; IBA, ILA, DBA and DLA in bits 16 to 34 of words 1, 2, 4 and
     /// 5; modes in bits 35 to 39 of words 1 and 2; XA, VL and the flags in
-    /// word 3, the deadlock flag in its bit 15; PS and CLN in word 4.  PN,
-    /// the error fields, VNU, ESVL and EAM are stored as zero.
+    /// word 3, the deadlock flag in its bit 15; PS and CLN in word 4; VNU
+    /// and ESVL in bit 0 of words 2 and 3.  PN, the error fields and EAM
+    /// are stored as zero.
     pub fn exchange_package(&self) -> [Option<u64>; 16] {
         let a = |i: usize| self.a[i].map(|v| v as u64);
         let mut w = [None; 16];
@@ -985,10 +994,13 @@ impl Machine {
             (Some(a1), Some(m1)) => Some((self.ba as u64) << 29 | ((m1 | ws) as u64) << 24 | a1),
             _ => None,
         };
-        w[2] = a(2).map(|a2| (self.la as u64) << 29 | (self.m as u64) << 24 | a2);
+        w[2] = a(2).map(|a2| {
+            (self.vnu as u64) << 63 | (self.la as u64) << 29 | (self.m as u64) << 24 | a2
+        });
         w[3] = match (self.vl, a(3)) {
             (Some(vl), Some(a3)) => Some(
-                ((self.f >> 9) as u64) << 48
+                (self.esvl as u64) << 63
+                    | ((self.f >> 9) as u64) << 48
                     | (self.xa as u64) << 40
                     | (vl as u64) << 33
                     | ((self.f & 0o777) as u64) << 24
@@ -1048,6 +1060,8 @@ impl Machine {
         self.fps = Some(m1 & mode1::FP_STATUS != 0);
         self.ps = control[4] >> 28 & 1 != 0;
         self.cln = (control[4] >> 24) as u8 & 3;
+        self.vnu = control[2] >> 63 != 0;
+        self.esvl = control[3] >> 63 != 0;
         self.emit(Event::P(self.p));
         self.emit(Event::Ba(self.ba));
         self.emit(Event::La(self.la));

@@ -32,14 +32,14 @@ module v_scheduler (
 	input wire [7:0] i_vi;  //the V register it writes
 	input wire [7:0] i_vj;  //the V registers it reads
 	input wire [7:0] i_vk;
-	input wire [7:0] i_fu;  //the unit it uses
+	input wire [8:0] i_fu;  //the unit it uses
 	output wire [7:0] o_vwrite_start;
 	output wire [7:0] o_vread_start;
-	output wire [7:0] o_vfu_start;
+	output wire [8:0] o_vfu_start;
 	output wire o_v_issue;
 	input wire [7:0] i_vreg_busy;  //reserved as an operand or as a result
 	input wire [7:0] i_vreg_reading;  //reserved as an operand
-	input wire [7:0] i_vfu_busy;
+	input wire [8:0] i_vfu_busy;
 
 	wire issue_vld;  //it's okay to issue the instruction
 
@@ -61,6 +61,6 @@ module v_scheduler (
 	//Let's figure out the actual 'vwrite_start', 'vread_start' and 'vfu_start' signals
 	assign o_vwrite_start = {8{issue_vld}} & i_vi;
 	assign o_vread_start  = {8{issue_vld}} & (i_vj | i_vk);
-	assign o_vfu_start    = {8{issue_vld}} & i_fu;
+	assign o_vfu_start    = {9{issue_vld}} & i_fu;
 
 endmodule

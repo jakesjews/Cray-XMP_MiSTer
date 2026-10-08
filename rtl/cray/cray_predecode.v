@@ -264,6 +264,7 @@ module cray_predecode (
 	assign o_pd[PD_V_J+:8]  = vj_en ? (8'd1 << j) : 8'd0;
 	assign o_pd[PD_V_K+:8]  = vk_en ? (8'd1 << k) : 8'd0;
 	assign o_pd[PD_V_FU+:8] = 8'd1 << fu;
+	assign o_pd[PD_SVL]     = (op[6:3] == 4'b1100) && (op[2:0] < 3'd6);
 
 	//------------------------------------------------------------------
 	// Branch unit

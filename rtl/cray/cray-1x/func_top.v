@@ -343,7 +343,7 @@ module func_top (
 	//V-type scheduler signals
 	wire [       7:0] vwrite_start;
 	wire [       7:0] vread_start;
-	wire [       7:0] vfu_start;
+	wire [       8:0] vfu_start;
 	wire [       7:0] vreg_busy;
 	wire [       7:0] vreg_reading;
 	wire [       7:0] vreg_result;
@@ -352,7 +352,7 @@ module func_top (
 	wire [       7:0] vreg_filling;
 	wire [   7*8-1:0] vreg_filled;
 	wire [       7:0] vreg_step;
-	wire [       7:0] vfu_busy;
+	wire [       8:0] vfu_busy;
 	wire [(64*8-1):0] v_rd_data;
 	wire              v_issue;
 	wire              v_type;
@@ -400,7 +400,7 @@ module func_top (
 	//after a 175 has issued and for 073 a clock later (CSM-0111000 page 5-85)
 	wire vec_hold = (|(pd[PD_H076+:8] & vreg_busy)) || (pd[PD_HVM] && vm_load) || (pd[PD_H073] && vm_pending) || (pd[PD_H003] && tk_busy[0]) ||
 		(pd[PD_H072] && rtc_load) ||
-		(pd[PD_HFADD] && tk_busy[4]) || (pd[PD_HFMUL] && tk_busy[3]) || (pd[PD_HFRCP] && tk_busy[5]);
+		(pd[PD_HFADD] && tk_busy[4]) || (pd[PD_HFMUL] && fp_mul_busy) || (pd[PD_HFRCP] && tk_busy[5]);
 	//The mode instructions 0021 to 0027 and the status register read 073i01 wait for
 	//every result on its way and for memory: a floating point error belongs to the
 	//modes that held when its instruction issued, and to the status read behind it.
@@ -528,15 +528,18 @@ module func_top (
 	//   word 4  DBA [47:29]  PS [28]  CLN [25:24]                     A4
 	//   word 5  DLA [47:29]                                           A5
 	//   words 6-7  A6, A7,  words 8-15  S0-S7
-	// The processor number, the memory error fields, VNU, ESVL and EAM are stored as 0.
+	// VNU and ESVL are bit 63 of words 2 and 3.  The processor number, the memory
+	// error fields and EAM are stored as 0.
 	reg [63:0] x_word;
 	always @* begin
 		case (x_cnt)
 			4'b0000: x_word = {16'b0, p_save, a_ex_data};
 			4'b0001: x_word = {16'b0, instr_base_addr[23:5], mode_ws, mode_fps, mode_bdm, 1'b0, mode_imm, a_ex_data};
 			4'b0010:
-			x_word = {16'b0, instr_limit_addr[23:5], mode_ior, mode_icm, mode_ifp, mode_ium, mode_mm, a_ex_data};
-			4'b0011: x_word = {15'b0, flag_dl, xa, vector_length, flags[8:0], a_ex_data};
+			x_word = {
+				mode_vnu, 15'b0, instr_limit_addr[23:5], mode_ior, mode_icm, mode_ifp, mode_ium, mode_mm, a_ex_data
+			};
+			4'b0011: x_word = {mode_esvl, 14'b0, flag_dl, xa, vector_length, flags[8:0], a_ex_data};
 			4'b0100: x_word = {16'b0, data_base_addr[23:5], program_state, 2'b0, cln, a_ex_data};
 			4'b0101: x_word = {16'b0, data_limit_addr[23:5], 5'b0, a_ex_data};
 			4'b0110: x_word = {40'b0, a_ex_data};
@@ -614,6 +617,19 @@ module func_top (
 				3'd6:    mode_bdm <= 1'b1;
 				default: ;
 			endcase
+
+	//Vector not used: set by the package, cleared by the first 076, 077 or 140 to 177
+	//that issues, so the system can tell that the V registers of a program need not
+	//be kept (CSM-0111000 page 3-10).  Enable second vector logical: the package says
+	//whether 140 to 145 may use the second unit.
+	reg mode_vnu, mode_esvl;
+	always @(posedge clk)
+		if (rst) begin
+			mode_vnu  <= 1'b0;
+			mode_esvl <= 1'b0;
+		end else if (x_load && (x_cnt == 4'b0010)) mode_vnu <= x_data[63];
+		else if (x_load && (x_cnt == 4'b0011)) mode_esvl <= x_data[63];
+		else if (cip_issue && (pd[PD_VTYPE] || (cip[15:10] == 6'o37))) mode_vnu <= 1'b0;
 
 	//The status bits of word 1.  FPS: a floating point error has occurred, whatever
 	//the interrupt mode; cleared by 0021 and 0022.  WS: the exchange found a test and
@@ -926,7 +942,7 @@ module func_top (
 		.i_vi          (pd[PD_V_I+:8]),
 		.i_vj          (pd[PD_V_J+:8]),
 		.i_vk          (pd[PD_V_K+:8]),
-		.i_fu          (pd[PD_V_FU+:8]),
+		.i_fu          (v_fu),
 		.o_vwrite_start(vwrite_start),
 		.o_vread_start (vread_start),
 		.o_vfu_start   (vfu_start),
@@ -958,9 +974,17 @@ localparam VLOG      = 3'b000,   //vector logical
 	assign vfu_busy[5] = fp_ra_busy | vpop_busy;
 	assign vfu_busy[6] = fp_ra_busy | vpop_busy;
 	assign vfu_busy[7] = mem_busy;
-	assign mem_idle    = !mem_busy;
-	assign v_type      = pd[PD_VTYPE];
-	assign mem_type    = pd[PD_MTYPE];
+	assign vfu_busy[8] = fp_mul_busy;
+	//The second vector logical unit (CSM-0111000 page 4-18).  It is in the floating
+	//point multiply unit, with which it shares the way in and the way out: one is
+	//busy when the other is.  A 140 to 145 goes there when the package enables it
+	//(ESVL) and it is free, and to the full unit otherwise; the merges and 175 can
+	//only use the full unit.
+	wire       svl_take = pd[PD_SVL] && mode_esvl && !fp_mul_busy;
+	wire [8:0] v_fu = svl_take ? 9'b1_0000_0000 : {1'b0, pd[PD_V_FU+:8]};
+	assign mem_idle = !mem_busy;
+	assign v_type   = pd[PD_VTYPE];
+	assign mem_type = pd[PD_MTYPE];
 
 	//check if it's free to issue
 
@@ -1005,8 +1029,9 @@ localparam VLOG      = 3'b000,   //vector logical
 	wire [6:0] vl_count = (vector_length[5:0] == 6'd0) ? 7'd64 : {1'b0, vector_length[5:0]};
 
 	//units with a tracker: 0 logical, 1 shift, 2 integer add, 3 FP multiply, 4 FP add,
-	//5 reciprocal, 6 population count
-	localparam NTK = 7;
+	//5 reciprocal, 6 second logical, 7 population count
+	localparam NTK    = 8;
+	localparam TK_SVL = 6, TK_POP = 7;
 	wire [NTK-1:0] tk_busy;
 	wire [   15:0] tk_instr     [0:NTK-1];
 	wire [   63:0] tk_sj        [0:NTK-1];
@@ -1028,51 +1053,52 @@ localparam VLOG      = 3'b000,   //vector logical
 	wire [NTK-1:0] tk_out_wr_v;
 	wire [   63:0] fu_out       [0:NTK-1];
 
-	assign fu_out[0] = v_log_out;
-	assign fu_out[1] = v_shft_out;
-	assign fu_out[2] = v_add_out;
-	assign fu_out[3] = f_mul_out;
-	assign fu_out[4] = f_add_out;
-	assign fu_out[5] = f_ra_out;
-	assign fu_out[6] = v_pop_out;
+	assign fu_out[0]      = v_log_out;
+	assign fu_out[1]      = v_shft_out;
+	assign fu_out[2]      = v_add_out;
+	assign fu_out[3]      = f_mul_out;
+	assign fu_out[4]      = f_add_out;
+	assign fu_out[5]      = f_ra_out;
+	assign fu_out[TK_SVL] = v_log2_out;
+	assign fu_out[TK_POP] = v_pop_out;
 
 	genvar gu;
 	generate
 		for (gu = 0; gu < NTK; gu = gu + 1) begin : g_track
 			v_optrack #(
-				.L((gu == 0) ? 2 : (gu == 1) ? 4 : (gu == 2) ? 3 : (gu == 3) ? 7 : (gu == 4) ? 6 : (gu == 5) ? 14 : 6)
+				.L((gu == 0) ? 2 : (gu == 1) ? 4 : (gu == 2) ? 3 : (gu == 3) ? 7 : (gu == 4) ? 6 : (gu == 5) ? 14 : (gu == TK_SVL) ? 4 : 6)
 			) track (
-				.clk        (clk),
-				.rst        (rst),
-				.i_start    (vfu_start[gu]),
-				.i_len      (vl_count),
-				.i_cip      (cip),
-				.i_sj       (s_j_data),
-				.i_ak       (a_k_data),
-				.i_wr_v     (|pd[PD_V_I+:8]),
-				.i_short    ((gu == 1) && (cip[10:9] != 2'd2)),  //the shifts but 152
-				.i_vj       (pd[PD_V_J+:8]),
-				.i_vk       (pd[PD_V_K+:8]),
-				.i_result   (vreg_result),
-				.o_busy     (tk_busy[gu]),
-				.o_instr    (tk_instr[gu]),
-				.o_sj       (tk_sj[gu]),
-				.o_ak       (tk_ak[gu]),
-				.o_ask      (tk_ask[gu]),
-				.o_ask_last (tk_ask_last[gu]),
-				.o_chain_j  (tk_chain_j[gu]),
-				.o_chain_k  (tk_chain_k[gu]),
-				.i_ok       (tk_ok[gu]),
-				.o_step     (tk_step[gu]),
-				.o_in_valid (tk_in_valid[gu]),
-				.o_in_idx   (tk_in_idx[gu]),
-				.o_in_first (tk_in_first[gu]),
-				.o_in_last  (tk_in_last[gu]),
+				.clk(clk),
+				.rst(rst),
+				.i_start((gu == TK_SVL) ? vfu_start[8] : (gu == TK_POP) ? vfu_start[6] : vfu_start[gu]),
+				.i_len(vl_count),
+				.i_cip(cip),
+				.i_sj(s_j_data),
+				.i_ak(a_k_data),
+				.i_wr_v(|pd[PD_V_I+:8]),
+				.i_short((gu == 1) && (cip[10:9] != 2'd2)),  //the shifts but 152
+				.i_vj(pd[PD_V_J+:8]),
+				.i_vk(pd[PD_V_K+:8]),
+				.i_result(vreg_result),
+				.o_busy(tk_busy[gu]),
+				.o_instr(tk_instr[gu]),
+				.o_sj(tk_sj[gu]),
+				.o_ak(tk_ak[gu]),
+				.o_ask(tk_ask[gu]),
+				.o_ask_last(tk_ask_last[gu]),
+				.o_chain_j(tk_chain_j[gu]),
+				.o_chain_k(tk_chain_k[gu]),
+				.i_ok(tk_ok[gu]),
+				.o_step(tk_step[gu]),
+				.o_in_valid(tk_in_valid[gu]),
+				.o_in_idx(tk_in_idx[gu]),
+				.o_in_first(tk_in_first[gu]),
+				.o_in_last(tk_in_last[gu]),
 				.o_out_valid(tk_out_valid[gu]),
-				.o_out_idx  (tk_out_idx[gu]),
-				.o_out_last (tk_out_last[gu]),
-				.o_out_dest (tk_out_dest[gu]),
-				.o_out_wr_v (tk_out_wr_v[gu])
+				.o_out_idx(tk_out_idx[gu]),
+				.o_out_last(tk_out_last[gu]),
+				.o_out_dest(tk_out_dest[gu]),
+				.o_out_wr_v(tk_out_wr_v[gu])
 			);
 
 			//Is the element the operation asks for in its operand registers?  One that
@@ -1090,7 +1116,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		end
 	endgenerate
 
-	assign vreg_step = tk_step[0] | tk_step[1] | tk_step[2] | tk_step[3] | tk_step[4] | tk_step[5] | tk_step[6];
+	assign vreg_step = tk_step[0] | tk_step[1] | tk_step[2] | tk_step[3] | tk_step[4] | tk_step[5] | tk_step[6] | tk_step[7];
 
 	//a vector load (176) writes one element per word read; a vector store (177) reads
 	//the element the memory unit is about to write
@@ -1351,6 +1377,26 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_test  (v_test_out)
 	);
 
+	//Second Vector Logical unit (140-145 with ESVL).  Its unit time is four clocks,
+	//two more than the full unit's (CSM-0111000 page 4-19).
+	wire [63:0] v_log2_raw;
+	wire        v_log2_test;
+	reg [63:0] v_log2_q, v_log2_out;
+	vector_logical vlog2 (
+		.clk     (clk),
+		.i_op    (tk_instr[TK_SVL][11:9]),
+		.i_test  (2'b0),
+		.i_a     (tk_instr[TK_SVL][9] ? vreg_sel(v_rd_data, tk_instr[TK_SVL][5:3]) : tk_sj[TK_SVL]),
+		.i_b     (vreg_sel(v_rd_data, tk_instr[TK_SVL][2:0])),
+		.i_vm_bit(1'b0),
+		.o_result(v_log2_raw),
+		.o_test  (v_log2_test)
+	);
+	always @(posedge clk) begin
+		v_log2_q   <= v_log2_raw;
+		v_log2_out <= v_log2_q;
+	end
+
 	//Vector Shift unit (150-153)
 	vector_shift vshift (
 		.clk     (clk),
@@ -1376,12 +1422,12 @@ localparam VLOG      = 3'b000,   //vector logical
 	wire [63:0] v_pop_out;
 	vector_pop vpop (
 		.clk     (clk),
-		.i_parity(tk_instr[6][1]),
-		.i_d     (vreg_sel(v_rd_data, tk_instr[6][5:3])),
+		.i_parity(tk_instr[TK_POP][1]),
+		.i_d     (vreg_sel(v_rd_data, tk_instr[TK_POP][5:3])),
 		.o_result(v_pop_out)
 	);
 
-	assign vpop_busy = tk_busy[6];
+	assign vpop_busy = tk_busy[TK_POP];
 
 	assign vlog_busy   = tk_busy[0];
 	assign vshift_busy = tk_busy[1];
@@ -1451,7 +1497,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_early    (f_ra_early)
 	);
 
-	assign fp_mul_busy = tk_busy[3];
+	assign fp_mul_busy = tk_busy[3] | tk_busy[TK_SVL];
 	assign fp_add_busy = tk_busy[4];
 	assign fp_ra_busy  = tk_busy[5];
 

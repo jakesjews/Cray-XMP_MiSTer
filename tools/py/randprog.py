@@ -36,6 +36,7 @@ MASK64 = (1 << 64) - 1
 
 class Gen:
     def __init__(self, seed, n, vector=True, floating=True, memory=True):
+        self.seed = seed
         self.r = random.Random(seed)
         self.n = n
         self.vector, self.floating, self.memory = vector, floating, memory
@@ -110,7 +111,8 @@ class Gen:
         e('CON', "P.START*O'100000000")
         e('CON', '0')
         e('CON', "O'7777774100000000")           # the largest ILA, monitor mode
-        e('CON', "O'0000000030000000000000")
+        # XA; in every second program the second vector logical unit is enabled
+        e('CON', "O'%o" % (0o30000000000000 | (self.seed & 1) << 63))
         e('CON', "O'100000000")                  # DBA 0, cluster 1
         e('CON', "O'7777774000000000")           # the largest DLA
         e('BSSZ', "D'10")

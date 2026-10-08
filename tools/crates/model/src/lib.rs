@@ -128,7 +128,8 @@
 //!   raises no flag itself; a fetch outside the instruction field is the
 //!   program range error.
 //! * **Exchange package** (X figure 3-3 and table 3-1): the processor
-//!   number, the memory error fields, VNU, ESVL and EAM are stored as zero.
+//!   number, the memory error fields and EAM are stored as zero.  VNU is
+//!   kept and cleared by the first 076, 077 or 140 to 177; ESVL is kept.
 //!   A package that arrives with a flag set causes another exchange at once
 //!   outside monitor mode (page 3-36); in monitor mode only the memory error
 //!   flag does, and the flags interrupt monitor mode enables.  The other

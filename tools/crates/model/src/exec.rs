@@ -194,6 +194,10 @@ impl Machine {
         let (i, j) = (d.i as usize, d.j as usize);
         let jk = d.jk() as usize;
         let monitor = self.monitor_mode();
+        // vector not used: 076, 077 and 140 to 177 clear it
+        if matches!(d.parcel0 >> 9, 0o76 | 0o77 | 0o140..=0o177) {
+            self.vnu = false;
+        }
         match d.op {
             // ---- 000 to 004 (pages 4-7 to 4-13)
             Op::Err => self.exit_instruction(flag::ERROR_EXIT),
