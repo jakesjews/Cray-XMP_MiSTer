@@ -4,13 +4,9 @@
 //! rev C.
 
 use crate::event::Event;
-use crate::machine::{flag, mode, mode1, ErrorKind, Machine, TestError, A_MASK, P_MASK};
-use cray_xmp_fp::{fadd, fmul, frecip, fsub, FpResult, MulKind, Profile};
-use cray_xmp_isa::{Cpu, Decoded, Op};
-
-/// The floating point arithmetic used everywhere (a project decision: it
-/// currently equals the X-MP arithmetic, see `cray-xmp-fp`).
-pub const FP_PROFILE: Profile = Profile::Cray1;
+use crate::machine::{flag, mode, mode1, ErrorKind, Machine, TestError, A_MASK};
+use cray_xmp_fp::{fadd, fmul, frecip, fsub, FpResult, MulKind};
+use cray_xmp_isa::{Decoded, Op};
 
 /// 071i3x: 0.75 * 2**48, "0.6 x 2**60 (octal)" on page 4-44.
 pub const CONST_0_75_2_48: u64 = 0o40060 << 48 | 0o6 << 45;
@@ -106,7 +102,7 @@ impl Machine {
     /// if an interrupt could have been taken the run cannot go on.
     pub(crate) fn fp_result(&mut self, r: Option<FpResult>) -> Result<Option<u64>, TestError> {
         let armed = self.m & mode::FLOATING_POINT != 0 && !self.monitor_mode();
-        // X-MP: the status bit records an error whatever the modes are
+        // the status bit records an error whatever the modes are
         match r {
             Some(r) if r.range_error => self.fps = Some(true),
             None if self.fps != Some(true) => self.fps = None,
@@ -127,20 +123,17 @@ impl Machine {
         }
     }
 
-    /// Set P from a branch address.  P holds the low 22 bits; an address
-    /// with bit 2**22 or 2**23 set is a program range error (page 4-4).
-    /// The X-MP's P takes all 24 bits and the fetch finds any range error.
+    /// Set P from a branch address.  P takes all 24 bits, and the fetch
+    /// finds any range error.
     fn branch(&mut self, target: u32) {
         self.p = target & self.p_mask();
-        if self.cpu == Cpu::Cray1 && target & !P_MASK & A_MASK != 0 {
-            self.interrupt(flag::PROGRAM_RANGE);
-        }
     }
 
-    /// X-MP: 010 to 017 with the high bit of i set are not branches there
-    /// but `Ah exp`, a 24-bit constant, which this machine does not have.
+    /// 010 to 017 with the high bit of i set are not branches but `Ah exp`,
+    /// a 24-bit constant, on an X-MP with extended addressing, which this
+    /// machine is not.
     fn no_long_constant(&self, d: &Decoded) -> Result<(), TestError> {
-        if self.cpu == Cpu::Xmp && d.i & 4 != 0 {
+        if d.i & 4 != 0 {
             return Err(self.error(
                 ErrorKind::NotDefinedByManual,
                 "01hijkm with the high bit of i set (the X-MP's 24-bit constant to Ah)",
@@ -149,7 +142,7 @@ impl Machine {
         Ok(())
     }
 
-    /// X-MP: the shared registers of the current cluster; `None` in cluster
+    /// The shared registers of the current cluster; `None` in cluster
     /// 0, where "instructions regarding the shared registers become no-ops,
     /// except for the instructions returning values to Ai or Si, which
     /// return a zero value" (CSM-0111000 page 2-17).
@@ -175,10 +168,9 @@ impl Machine {
     /// 034 and 036: memory to B or T registers, circular after register 77.
     fn block_load(&mut self, d: &Decoded, t: bool) -> Result<(), TestError> {
         let (a0, count) = self.block(d)?;
-        let mut lost = false;
         for n in 0..count {
             let reg = (d.jk() as usize + n) & 0o77;
-            let value = self.transfer_read(a0.wrapping_add(n as u32) & A_MASK, &mut lost);
+            let value = self.read_data(a0.wrapping_add(n as u32) & A_MASK);
             if t {
                 self.set_t(reg, value);
             } else {
@@ -191,7 +183,6 @@ impl Machine {
     /// 035 and 037: B or T registers to memory.
     fn block_store(&mut self, d: &Decoded, t: bool) -> Result<(), TestError> {
         let (a0, count) = self.block(d)?;
-        let mut lost = false;
         for n in 0..count {
             let reg = (d.jk() as usize + n) & 0o77;
             let value = if t {
@@ -199,7 +190,7 @@ impl Machine {
             } else {
                 self.b[reg].map(|v| v as u64)
             };
-            self.transfer_write(a0.wrapping_add(n as u32) & A_MASK, value, &mut lost)?;
+            self.transfer_write(a0.wrapping_add(n as u32) & A_MASK, value)?;
         }
         Ok(())
     }
@@ -218,11 +209,10 @@ impl Machine {
         match d.op {
             // ---- 000 to 004 (pages 4-7 to 4-13)
             Op::Err => self.exit_instruction(flag::ERROR_EXIT),
-            // The CRAY-1 setting has no channels attached.  On the X-MP these
-            // work channels 10 to 17 (see `channel`); a pass outside monitor
-            // mode, with j = 0, and for any other channel number.
+            // These work channels 10 to 17 (see `channel`); a pass outside
+            // monitor mode, with j = 0, and for any other channel number.
             Op::SetCa | Op::SetCl | Op::ClearCi | Op::ChanMc => {
-                if monitor && self.cpu == Cpu::Xmp && d.j != 0 {
+                if monitor && d.j != 0 {
                     let number = self.need(self.aj(d), "Aj (channel number)")?;
                     if let Some(n) = self.channel_index(number) {
                         match d.op {
@@ -300,11 +290,11 @@ impl Machine {
                 } else {
                     self.set_m(self.m & !mode::FLOATING_POINT);
                 }
-                // X-MP: both also clear the floating point error status
+                // both also clear the floating point error status
                 self.fps = Some(false);
             }
 
-            // ---- X-MP only (CSM-0111000 pages 5-11 to 5-17, 5-32, 5-34, 5-59)
+            // ---- CSM-0111000 pages 5-11 to 5-17, 5-32, 5-34, 5-59
             Op::SetCln => {
                 if monitor {
                     self.cln = d.j & 3;
@@ -402,12 +392,6 @@ impl Machine {
                 });
                 self.set_s(i, value);
             }
-            Op::Undefined => {
-                return Err(self.error(
-                    ErrorKind::NotDefinedByManual,
-                    "instruction 0023xx to 0027xx",
-                ));
-            }
             Op::SetVm => {
                 let value = self.sj(d);
                 self.set_vm(value);
@@ -497,19 +481,14 @@ impl Machine {
                 };
                 self.set_a(i, value);
             }
-            // 033.  No channels on the CRAY-1 setting: no interrupt request,
-            // current address 0, no error.  Not privileged.
+            // 033.  Not privileged.
             Op::ChanInt => self.set_a(i, Some(self.channel_interrupting())),
             Op::ChanAddr | Op::ChanErr => {
-                let value = if self.cpu == Cpu::Xmp {
-                    let number = self.need(self.aj(d), "Aj (channel number)")?;
-                    match self.channel_index(number) {
-                        Some(n) if d.op == Op::ChanAddr => self.channels[n].ca,
-                        Some(n) => self.channels[n].error as u32,
-                        None => 0,
-                    }
-                } else {
-                    0
+                let number = self.need(self.aj(d), "Aj (channel number)")?;
+                let value = match self.channel_index(number) {
+                    Some(n) if d.op == Op::ChanAddr => self.channels[n].ca,
+                    Some(n) => self.channels[n].error as u32,
+                    None => 0,
                 };
                 self.set_a(i, Some(value));
             }
@@ -592,16 +571,16 @@ impl Machine {
                 let r = both(self.sj(d), self.sk(d)).map(|(a, b)| match d.op {
                     Op::FAddS => fadd(a, b),
                     Op::FSubS => fsub(a, b),
-                    Op::FMulS => fmul(a, b, MulKind::Full, FP_PROFILE),
-                    Op::HMulS => fmul(a, b, MulKind::HalfRounded, FP_PROFILE),
-                    Op::RMulS => fmul(a, b, MulKind::Rounded, FP_PROFILE),
-                    _ => fmul(a, b, MulKind::TwoMinus, FP_PROFILE),
+                    Op::FMulS => fmul(a, b, MulKind::Full),
+                    Op::HMulS => fmul(a, b, MulKind::HalfRounded),
+                    Op::RMulS => fmul(a, b, MulKind::Rounded),
+                    _ => fmul(a, b, MulKind::TwoMinus),
                 });
                 let value = self.fp_result(r)?;
                 self.set_s(i, value);
             }
             Op::RecipS => {
-                let r = self.sj(d).map(|a| frecip(a, FP_PROFILE));
+                let r = self.sj(d).map(|a| frecip(a));
                 let value = self.fp_result(r)?;
                 self.set_s(i, value);
             }

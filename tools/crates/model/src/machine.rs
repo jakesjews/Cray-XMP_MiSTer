@@ -2,15 +2,12 @@
 //! fetch/issue loop.  Instruction semantics are in `exec.rs` and `vector.rs`.
 
 use crate::event::{Event, Observer};
-use cray_xmp_isa::{decode_cpu, Cpu, Decoded};
+use cray_xmp_isa::{decode, Decoded};
 use std::collections::VecDeque;
 use std::fmt;
 
-/// Number of 64-bit memory words: one million words, a 20-bit word address.
-pub const MEMORY_WORDS: u32 = 1 << 20;
-/// Memory words of the X-MP (`Cpu::Xmp`): four million, a 22-bit address.
-/// Its I/O page is its top 16 words; see `Machine::io_page`.
-pub const XMP_MEMORY_WORDS: u32 = 1 << 22;
+/// Number of 64-bit memory words: four million words, a 22-bit word address.
+pub const MEMORY_WORDS: u32 = 1 << 22;
 /// First word of the invented I/O page (the top 16 words of memory).
 pub const IO_PAGE: u32 = MEMORY_WORDS - 16;
 /// Console status.  Read: bit 0 = an input character is waiting, bit 1 =
@@ -27,14 +24,12 @@ pub const TEST_EXIT: u32 = IO_PAGE + 2;
 /// A clock counter.  The model cannot predict it: a read is undefined.
 pub const CYCLES: u32 = IO_PAGE + 3;
 
-/// Mask of the 22-bit P register (a parcel address).  The X-MP's has 24 bits.
-pub const P_MASK: u32 = (1 << 22) - 1;
 /// Mask of a 24-bit A or B register.
 pub const A_MASK: u32 = (1 << 24) - 1;
 
-/// Bits of the M (mode) register, HRM page 3-35.  The register is the 4-bit
-/// field at bits 36 to 39 of word 2 of the exchange package, bit 39 (monitor
-/// mode) being the least significant.
+/// The mode bits at bits 35 to 39 of word 2 of the exchange package
+/// (CSM-0111000 table 3-1), bit 39 (monitor mode) being the least
+/// significant.
 pub mod mode {
     /// Bit 39: monitor mode.
     pub const MONITOR: u8 = 0o01;
@@ -44,13 +39,12 @@ pub mod mode {
     pub const FLOATING_POINT: u8 = 0o04;
     /// Bit 36: interrupt on correctable memory error.
     pub const CORRECTABLE_MEMORY: u8 = 0o10;
-    /// X-MP only, bit 35: interrupt on operand range error (IOR).
+    /// Bit 35: interrupt on operand range error (IOR).
     pub const OPERAND_RANGE: u8 = 0o20;
 }
 
-/// X-MP only: the mode and status bits at bits 35 to 39 of word 1 of the
-/// exchange package (CSM-0111000 page 3-12), bit 39 being the least
-/// significant.
+/// The mode and status bits at bits 35 to 39 of word 1 of the exchange
+/// package (CSM-0111000 page 3-12), bit 39 being the least significant.
 pub mod mode1 {
     /// Bit 39: interrupt monitor mode (IMM).  Stored and loaded; it has no
     /// effect in the model.
@@ -65,17 +59,15 @@ pub mod mode1 {
     pub const WAITING_SEMAPHORE: u8 = 0o20;
 }
 
-/// Bits of the F (flag) register, figure 3-8 of the manual in its 1982
-/// revision (HR-0004 rev F, page 3-38).  The register is the 9-bit field at
-/// bits 31 to 39 of word 3 of the exchange package, bit 39 (normal exit)
-/// being the least significant.  Revision C called bit 31 the console
-/// interrupt and bit 32 the real-time clock interrupt.
+/// The interrupt flags (CSM-0111000 table 3-1).  Nine are the field at bits
+/// 31 to 39 of word 3 of the exchange package, bit 39 (normal exit) being
+/// the least significant; the deadlock flag is apart from them.
 pub mod flag {
     /// Bit 39: normal exit (004).
     pub const NORMAL_EXIT: u16 = 0o001;
     /// Bit 38: error exit (000).
     pub const ERROR_EXIT: u16 = 0o002;
-    /// Bit 37: I/O interrupt.  Never raised: no channels are attached.
+    /// Bit 37: I/O interrupt, a channel's request.
     pub const IO_INTERRUPT: u16 = 0o004;
     /// Bit 36: memory error.  Never raised by the model.
     pub const MEMORY_ERROR: u16 = 0o010;
@@ -91,7 +83,7 @@ pub mod flag {
     /// Bit 31: programmable clock interrupt.  Never raised by the model: see
     /// `ErrorKind::TimeDependent`.
     pub const PROGRAMMABLE_CLOCK: u16 = 0o400;
-    /// X-MP only, bit 15 of word 3: deadlock, a test and set instruction
+    /// Bit 15 of word 3: deadlock, a test and set instruction
     /// found its semaphore set.  It is not next to the other flags in the
     /// package; in `Machine::f` it is the bit above them.
     pub const DEADLOCK: u16 = 0o1000;
@@ -122,8 +114,6 @@ pub struct TestError {
     pub p: u32,
     /// The parcels of the instruction, if they were fetched.
     pub parcels: Option<(u16, Option<u16>)>,
-    /// The machine, which decides how the parcels read.
-    pub cpu: Cpu,
     /// What was undefined or not defined.
     pub detail: String,
 }
@@ -143,14 +133,14 @@ impl fmt::Display for TestError {
                     " ({:06o} {:06o}  {})",
                     p0,
                     p1,
-                    cray_xmp_isa::disassemble(&decode_cpu(self.cpu, p0, Some(p1)))
+                    cray_xmp_isa::disassemble(&decode(p0, Some(p1)))
                 )
             }
             Some((p0, None)) => write!(
                 f,
                 " ({:06o}  {})",
                 p0,
-                cray_xmp_isa::disassemble(&decode_cpu(self.cpu, p0, None))
+                cray_xmp_isa::disassemble(&decode(p0, None))
             ),
             None => Ok(()),
         }
@@ -237,7 +227,7 @@ impl Memory {
     }
 }
 
-/// The CRAY-1 at instruction level.  See the crate documentation.
+/// The CRAY X-MP at instruction level.  See the crate documentation.
 pub struct Machine {
     pub(crate) a: [Option<u32>; 8],
     pub(crate) s: [Option<u64>; 8],
@@ -252,28 +242,26 @@ pub struct Machine {
     pub(crate) xa: u8,
     pub(crate) m: u8,
     pub(crate) f: u16,
-    pub(crate) cpu: Cpu,
-    /// X-MP: the data base and limit address registers.  On the X-MP `ba`
-    /// and `la` are the instruction pair; all four are 19-bit fields in
-    /// units of 32 words.
+    /// The data base and limit address registers.  `ba` and `la` are the
+    /// instruction pair; all four are 19-bit fields in units of 32 words.
     pub(crate) dba: u32,
     pub(crate) dla: u32,
-    /// X-MP: the BDM and IMM bits of `mode1`.
+    /// The BDM and IMM bits of `mode1`.
     pub(crate) m1: u8,
-    /// X-MP: floating point error status; `None` once an undefined operand
+    /// Floating point error status; `None` once an undefined operand
     /// has left it unknown.
     pub(crate) fps: Option<bool>,
-    /// X-MP: the program state bit of the package.
+    /// The program state bit of the package.
     pub(crate) ps: bool,
-    /// X-MP: the 2-bit cluster number.
+    /// The 2-bit cluster number.
     pub(crate) cln: u8,
-    /// X-MP: the shared registers of clusters 1 to 3.
+    /// The shared registers of clusters 1 to 3.
     pub(crate) sb: [[Option<u32>; 8]; 3],
     pub(crate) st: [[Option<u64>; 8]; 3],
     pub(crate) sm: [[Option<bool>; 32]; 3],
-    /// X-MP: the exchange asked for is that of a waiting test and set.
+    /// The exchange asked for is that of a waiting test and set.
     pub(crate) waiting_semaphore: bool,
-    /// X-MP: the result register of the vector instruction being executed,
+    /// The result register of the vector instruction being executed,
     /// as it was before the instruction.
     pub(crate) v_before: [Option<u64>; 64],
     pub(crate) mem: Memory,
@@ -301,7 +289,7 @@ pub struct Machine {
     pub(crate) mcu_request: bool,
     /// Some channel has its interrupt request set.
     pub(crate) io_request: bool,
-    /// X-MP: the 6 Mbyte channels 10 to 17 octal.
+    /// The 6 Mbyte channels 10 to 17 octal.
     pub(crate) channels: [crate::channel::Channel; 8],
     pub(crate) channel_loopback: bool,
     pub(crate) loop_waiting: [bool; 4],
@@ -335,16 +323,7 @@ impl Machine {
     /// The first `step` performs the dead start exchange with the package
     /// at address 0.
     pub fn new() -> Machine {
-        Machine::for_cpu(Cpu::Cray1)
-    }
-
-    /// `new` for the given machine.  On the X-MP the shared registers are
-    /// undefined as well.
-    pub fn for_cpu(cpu: Cpu) -> Machine {
-        let memory_words = match cpu {
-            Cpu::Cray1 => MEMORY_WORDS,
-            Cpu::Xmp => XMP_MEMORY_WORDS,
-        };
+        let memory_words = MEMORY_WORDS;
         Machine {
             a: [None; 8],
             s: [None; 8],
@@ -359,7 +338,6 @@ impl Machine {
             xa: 0,
             m: 0,
             f: 0,
-            cpu,
             dba: 0,
             dla: 0,
             m1: 0,
@@ -503,20 +481,13 @@ impl Machine {
     pub fn vm(&self) -> Option<u64> {
         self.vm
     }
-    /// The machine this is.
-    pub fn cpu(&self) -> Cpu {
-        self.cpu
-    }
     /// The number of memory words, I/O page included.
     pub fn memory_words(&self) -> u32 {
-        match self.cpu {
-            Cpu::Cray1 => MEMORY_WORDS,
-            Cpu::Xmp => XMP_MEMORY_WORDS,
-        }
+        MEMORY_WORDS
     }
-    /// First word of the I/O page: the top 16 words of memory.  `CON_STAT`,
-    /// `CON_DATA`, `TEST_EXIT` and `CYCLES` are words 0 to 3 of it (the
-    /// constants are their addresses on the CRAY-1).
+    /// First word of the I/O page: the top 16 words of memory, or the end
+    /// of memory when the machine has none.  `CON_STAT`, `CON_DATA`,
+    /// `TEST_EXIT` and `CYCLES` are words 0 to 3 of it.
     pub fn io_page(&self) -> u32 {
         if self.plain_memory {
             self.memory_words()
@@ -524,52 +495,44 @@ impl Machine {
             self.memory_words() - 16
         }
     }
-    /// Mask of the P register: 22 bits, 24 on the X-MP.
+    /// Mask of the P register: 24 bits.
     pub fn p_mask(&self) -> u32 {
-        match self.cpu {
-            Cpu::Cray1 => P_MASK,
-            Cpu::Xmp => A_MASK,
-        }
+        A_MASK
     }
-    /// The program parcel address, relative to the base address: 22 bits, 24
-    /// on the X-MP.
+    /// The program parcel address, relative to the base address: 24 bits.
     pub fn p(&self) -> u32 {
         self.p
     }
-    /// The 18-bit base address register (the base is BA * 16 words).  On
-    /// the X-MP the 19-bit instruction base address IBA, in units of 32
-    /// words.
+    /// The 19-bit instruction base address IBA, in units of 32 words.
     pub fn ba(&self) -> u32 {
         self.ba
     }
-    /// The 18-bit limit address register (the limit is LA * 16 words).  On
-    /// the X-MP the 19-bit instruction limit address ILA, in units of 32
-    /// words.
+    /// The 19-bit instruction limit address ILA, in units of 32 words.
     pub fn la(&self) -> u32 {
         self.la
     }
-    /// X-MP: the data base address DBA and data limit address DLA, 19 bits
+    /// The data base address DBA and data limit address DLA, 19 bits
     /// in units of 32 words.
     pub fn data_field(&self) -> (u32, u32) {
         (self.dba, self.dla)
     }
-    /// X-MP: the cluster number, 0 to 3.
+    /// The cluster number, 0 to 3.
     pub fn cluster(&self) -> u8 {
         self.cln
     }
-    /// X-MP: shared register SBj of cluster `cln` (1 to 3).
+    /// Shared register SBj of cluster `cln` (1 to 3).
     pub fn sb(&self, cln: usize, j: usize) -> Option<u32> {
         self.sb[cln - 1][j]
     }
-    /// X-MP: shared register STj of cluster `cln` (1 to 3).
+    /// Shared register STj of cluster `cln` (1 to 3).
     pub fn st(&self, cln: usize, j: usize) -> Option<u64> {
         self.st[cln - 1][j]
     }
-    /// X-MP: semaphore `n` (0 to 31) of cluster `cln` (1 to 3).
+    /// Semaphore `n` (0 to 31) of cluster `cln` (1 to 3).
     pub fn sm(&self, cln: usize, n: usize) -> Option<bool> {
         self.sm[cln - 1][n]
     }
-    /// X-MP: the mode and status bits of word 1 of the package, see
+    /// The mode and status bits of word 1 of the package, see
     /// `mode1`; `None` while the floating point status is unknown.  The
     /// waiting-for-semaphore bit only shows in a stored package.
     pub fn m1(&self) -> Option<u8> {
@@ -580,11 +543,11 @@ impl Machine {
     pub fn xa(&self) -> u8 {
         self.xa
     }
-    /// The 4-bit mode register, see `mode` (5 bits on the X-MP).
+    /// The five mode bits of word 2 of the package, see `mode`.
     pub fn m(&self) -> u8 {
         self.m
     }
-    /// The 9-bit flag register, see `flag` (10 bits on the X-MP).
+    /// The ten interrupt flags, see `flag`.
     pub fn f(&self) -> u16 {
         self.f
     }
@@ -786,19 +749,11 @@ impl Machine {
         self.emit(Event::Xa(value));
     }
     pub(crate) fn set_m(&mut self, value: u8) {
-        self.m = value
-            & match self.cpu {
-                Cpu::Cray1 => 0o17,
-                Cpu::Xmp => 0o37,
-            };
+        self.m = value & 0o37;
         self.emit(Event::Mode(self.m));
     }
     pub(crate) fn set_f(&mut self, value: u16) {
-        self.f = value
-            & match self.cpu {
-                Cpu::Cray1 => 0o777,
-                Cpu::Xmp => 0o1777,
-            };
+        self.f = value & 0o1777;
         self.emit(Event::Flags(self.f));
     }
     /// Store a word at an absolute address as the run would (it counts as
@@ -815,36 +770,26 @@ impl Machine {
     /// Put the machine past the dead start with the given control registers,
     /// without touching memory: for unit tests of single instructions.
     ///
-    /// On the X-MP `ba` and `la` are 19-bit values in units of 32 words and
-    /// go into both the instruction and the data pair; the cluster number
-    /// is 0.
+    /// `ba` and `la` are 19-bit values in units of 32 words and go into
+    /// both the instruction and the data pair; the cluster number is 0.
     pub fn start_at(&mut self, p: u32, ba: u32, la: u32, m: u8) {
         self.started = true;
         self.p = p & self.p_mask();
-        match self.cpu {
-            Cpu::Cray1 => {
-                self.ba = ba & 0x3ffff;
-                self.la = la & 0x3ffff;
-                self.m = m & 0o17;
-            }
-            Cpu::Xmp => {
-                self.ba = ba & 0x7ffff;
-                self.la = la & 0x7ffff;
-                self.dba = self.ba;
-                self.dla = self.la;
-                self.m = m & 0o37;
-                self.cln = 0;
-            }
-        }
+        self.ba = ba & 0x7ffff;
+        self.la = la & 0x7ffff;
+        self.dba = self.ba;
+        self.dla = self.la;
+        self.m = m & 0o37;
+        self.cln = 0;
         self.f = 0;
         self.xa = 0;
     }
-    /// X-MP, for test set-up: the data base and limit addresses.
+    /// For test set-up: the data base and limit addresses.
     pub fn set_data_field(&mut self, dba: u32, dla: u32) {
         self.dba = dba & 0x7ffff;
         self.dla = dla & 0x7ffff;
     }
-    /// X-MP, for test set-up: the cluster number.
+    /// For test set-up: the cluster number.
     pub fn set_cluster(&mut self, cln: u8) {
         self.cln = cln & 3;
     }
@@ -863,7 +808,6 @@ impl Machine {
             kind,
             p: self.cur_p,
             parcels: self.cur_parcels,
-            cpu: self.cpu,
             detail: detail.into(),
         }
     }
@@ -873,48 +817,31 @@ impl Machine {
         value.ok_or_else(|| self.error(ErrorKind::UndefinedValue, what))
     }
 
-    // ---- addressing (HRM pages 3-43, 3-44)
+    // ---- addressing (CSM-0111000 pages 3-19 to 3-21)
 
-    /// The absolute address of a word address relative to BA, or `None` if
-    /// it is outside the field.
-    ///
-    /// The field ends at (LA) * 16 - 1 (page 3-44), and nothing above the
-    /// one million words of memory can be referenced (page 4-3: either of
-    /// the two address bits above 2**20 set is a range error).  `rel` may be
-    /// any 24-bit value; the sum is not wrapped.
-    ///
-    /// On the X-MP this is the data pair (CSM-0111000 pages 3-19 to 3-21):
-    /// the low 22 bits of `rel` plus (DBA) * 32 must be below (DLA) * 32
-    /// and below the four million words of memory.
+    /// The absolute address of an operand word address, or `None` if it is
+    /// outside the data field: the low 22 bits of `rel` plus (DBA) * 32
+    /// must be below (DLA) * 32 and below the four million words of memory.
+    /// The sum is not wrapped.
     pub fn translate(&self, rel: u32) -> Option<u32> {
-        let (abs, limit) = match self.cpu {
-            Cpu::Cray1 => (rel as u64 + self.ba as u64 * 16, self.la as u64 * 16),
-            Cpu::Xmp => (
-                (rel & 0x3f_ffff) as u64 + self.dba as u64 * 32,
-                self.dla as u64 * 32,
-            ),
-        };
+        let abs = (rel & 0x3f_ffff) as u64 + self.dba as u64 * 32;
+        let limit = self.dla as u64 * 32;
         (abs < limit.min(self.memory_words() as u64)).then_some(abs as u32)
     }
 
     /// The absolute address of the instruction word `word` (P without its
-    /// two parcel bits), or `None` if it is outside the field.  On the X-MP
-    /// instructions have their own pair, IBA and ILA.
+    /// two parcel bits), or `None` if it is outside the instruction field,
+    /// which has its own pair, IBA and ILA.
     pub fn translate_fetch(&self, word: u32) -> Option<u32> {
-        match self.cpu {
-            Cpu::Cray1 => self.translate(word),
-            Cpu::Xmp => {
-                let abs = word as u64 + self.ba as u64 * 32;
-                let limit = (self.la as u64 * 32).min(self.memory_words() as u64);
-                (abs < limit).then_some(abs as u32)
-            }
-        }
+        let abs = word as u64 + self.ba as u64 * 32;
+        let limit = (self.la as u64 * 32).min(self.memory_words() as u64);
+        (abs < limit).then_some(abs as u32)
     }
 
-    /// A data reference outside the field: the operand range flag, which on
-    /// the X-MP also needs its mode bit.
+    /// A data reference outside the field: the operand range flag, if its
+    /// mode bit is set.
     pub(crate) fn operand_range_error(&mut self) {
-        if self.cpu == Cpu::Cray1 || self.m & mode::OPERAND_RANGE != 0 {
+        if self.m & mode::OPERAND_RANGE != 0 {
             self.interrupt(flag::OPERAND_RANGE);
         }
     }
@@ -976,67 +903,35 @@ impl Machine {
         Ok(())
     }
 
-    /// Read a data word at an address relative to BA.  Outside the field the
-    /// operand range flag is raised (unless in monitor mode) and the value
-    /// is undefined: the manual does not say what the register receives.
-    /// The X-MP manual does: zero.
+    /// Read a data word at an address relative to the data base address.
+    /// Outside the field the operand range flag is raised (if its mode is
+    /// on and the machine is not in monitor mode) and the value is zero: the
+    /// read "issues and completes, but a zero value is transferred", so a
+    /// block or vector transfer goes on.
     pub(crate) fn read_data(&mut self, rel: u32) -> Option<u64> {
         match self.translate(rel) {
             Some(abs) => self.read_abs(abs),
             None => {
                 self.operand_range_error();
-                (self.cpu == Cpu::Xmp).then_some(0)
+                Some(0)
             }
         }
     }
 
-    /// One word read by a block or vector transfer.  On the CRAY-1 what
-    /// follows a reference outside the field in a user program is not
-    /// specified, so from then on (`lost`) everything is undefined.  On the
-    /// X-MP such a read "issues and completes, but a zero value is
-    /// transferred" and the transfer goes on.
-    pub(crate) fn transfer_read(&mut self, rel: u32, lost: &mut bool) -> Option<u64> {
-        if *lost {
-            return None;
-        }
+    /// One word written by a block or vector transfer: outside the field
+    /// nothing is stored and the transfer goes on.
+    pub(crate) fn transfer_write(&mut self, rel: u32, value: Option<u64>) -> Result<(), TestError> {
         match self.translate(rel) {
-            Some(abs) => self.read_abs(abs),
-            None => {
-                self.operand_range_error();
-                if self.cpu == Cpu::Xmp {
-                    Some(0)
-                } else {
-                    *lost = !self.monitor_mode();
-                    None
-                }
-            }
-        }
-    }
-
-    /// One word written by a block or vector transfer; see `transfer_read`.
-    /// A store outside the field never alters memory.
-    pub(crate) fn transfer_write(
-        &mut self,
-        rel: u32,
-        value: Option<u64>,
-        lost: &mut bool,
-    ) -> Result<(), TestError> {
-        match self.translate(rel) {
-            Some(abs) => self.write_abs(abs, if *lost { None } else { value })?,
-            None => {
-                self.operand_range_error();
-                if self.cpu == Cpu::Cray1 {
-                    *lost = !self.monitor_mode();
-                }
-            }
+            Some(abs) => self.write_abs(abs, value)?,
+            None => self.operand_range_error(),
         }
         Ok(())
     }
 
-    /// Store a data word at an address relative to BA.  Outside the field
-    /// memory is not altered (HRM page 3-43) and the operand range flag is
-    /// raised unless in monitor mode.  Returns false if the store was
-    /// outside the field.
+    /// Store a data word at an address relative to the data base address.
+    /// Outside the field memory is not altered and the operand range flag
+    /// is raised as for `read_data`.  Returns false if the store was outside
+    /// the field.
     pub(crate) fn write_data(&mut self, rel: u32, value: Option<u64>) -> Result<bool, TestError> {
         match self.translate(rel) {
             Some(abs) => {
@@ -1050,66 +945,47 @@ impl Machine {
         }
     }
 
-    // ---- exchange (HRM pages 3-35 to 3-41, figure 3-8)
+    // ---- exchange (HRM pages 3-35 to 3-41; CSM-0111000 figure 3-3)
 
     /// The exchange package of the active program as 16 words.  A word is
-    /// undefined if an A or S register (or VL, for word 3) it holds is.
-    /// Fields the figure leaves blank and the memory error fields are zero.
+    /// undefined if an A or S register (or VL, for word 3) it holds is, and
+    /// word 1 also if the floating point status is unknown.
     ///
-    /// On the X-MP the layout is that of CSM-0111000 figure 3-3: P in bits
-    /// 16 to 39 of word 0; IBA, ILA, DBA and DLA in bits 16 to 34 of words
-    /// 1, 2, 4 and 5; modes in bits 35 to 39 of words 1 and 2; the deadlock
-    /// flag in bit 15 of word 3; PS and CLN in word 4.  PN, the error fields,
-    /// VNU, ESVL and EAM are stored as zero.  Words 4 and 5 are undefined if
-    /// A4 or A5 is, word 1 also if the floating point status is unknown.
+    /// The layout is that of CSM-0111000 figure 3-3: P in bits 16 to 39 of
+    /// word 0; IBA, ILA, DBA and DLA in bits 16 to 34 of words 1, 2, 4 and
+    /// 5; modes in bits 35 to 39 of words 1 and 2; XA, VL and the flags in
+    /// word 3, the deadlock flag in its bit 15; PS and CLN in word 4.  PN,
+    /// the error fields, VNU, ESVL and EAM are stored as zero.
     pub fn exchange_package(&self) -> [Option<u64>; 16] {
         let a = |i: usize| self.a[i].map(|v| v as u64);
         let mut w = [None; 16];
-        if self.cpu == Cpu::Xmp {
-            let ws = if self.waiting_semaphore {
-                mode1::WAITING_SEMAPHORE
-            } else {
-                0
-            };
-            w[0] = a(0).map(|a0| (self.p as u64) << 24 | a0);
-            w[1] = match (a(1), self.m1()) {
-                (Some(a1), Some(m1)) => {
-                    Some((self.ba as u64) << 29 | ((m1 | ws) as u64) << 24 | a1)
-                }
-                _ => None,
-            };
-            w[2] = a(2).map(|a2| (self.la as u64) << 29 | (self.m as u64) << 24 | a2);
-            w[3] = match (self.vl, a(3)) {
-                (Some(vl), Some(a3)) => Some(
-                    ((self.f >> 9) as u64) << 48
-                        | (self.xa as u64) << 40
-                        | (vl as u64) << 33
-                        | ((self.f & 0o777) as u64) << 24
-                        | a3,
-                ),
-                _ => None,
-            };
-            w[4] = a(4).map(|a4| {
-                (self.dba as u64) << 29 | (self.ps as u64) << 28 | (self.cln as u64) << 24 | a4
-            });
-            w[5] = a(5).map(|a5| (self.dla as u64) << 29 | a5);
-            w[6] = a(6);
-            w[7] = a(7);
-            w[8..16].copy_from_slice(&self.s);
-            return w;
-        }
+        let ws = if self.waiting_semaphore {
+            mode1::WAITING_SEMAPHORE
+        } else {
+            0
+        };
         w[0] = a(0).map(|a0| (self.p as u64) << 24 | a0);
-        w[1] = a(1).map(|a1| (self.ba as u64) << 28 | a1);
-        w[2] = a(2).map(|a2| (self.la as u64) << 28 | (self.m as u64) << 24 | a2);
-        w[3] = match (self.vl, a(3)) {
-            (Some(vl), Some(a3)) => {
-                Some((self.xa as u64) << 40 | (vl as u64) << 33 | (self.f as u64) << 24 | a3)
-            }
+        w[1] = match (a(1), self.m1()) {
+            (Some(a1), Some(m1)) => Some((self.ba as u64) << 29 | ((m1 | ws) as u64) << 24 | a1),
             _ => None,
         };
-        for (i, word) in w.iter_mut().enumerate().take(8).skip(4) {
-            *word = a(i);
-        }
+        w[2] = a(2).map(|a2| (self.la as u64) << 29 | (self.m as u64) << 24 | a2);
+        w[3] = match (self.vl, a(3)) {
+            (Some(vl), Some(a3)) => Some(
+                ((self.f >> 9) as u64) << 48
+                    | (self.xa as u64) << 40
+                    | (vl as u64) << 33
+                    | ((self.f & 0o777) as u64) << 24
+                    | a3,
+            ),
+            _ => None,
+        };
+        w[4] = a(4).map(|a4| {
+            (self.dba as u64) << 29 | (self.ps as u64) << 28 | (self.cln as u64) << 24 | a4
+        });
+        w[5] = a(5).map(|a5| (self.dla as u64) << 29 | a5);
+        w[6] = a(6);
+        w[7] = a(7);
         w[8..16].copy_from_slice(&self.s);
         w
     }
@@ -1128,15 +1004,14 @@ impl Machine {
         for (n, w) in incoming.iter_mut().enumerate() {
             *w = self.mem.get(base + n as u32);
         }
-        // P, BA, LA, M, XA, VL and F steer the program: they must be known
-        // (on the X-MP words 4 and 5 too: DBA, CLN and DLA)
+        // P, the base and limit addresses, the modes, XA, VL, F and CLN
+        // steer the program: words 0 to 5 must be known
         let mut control = [0u64; 6];
-        let steering = if self.cpu == Cpu::Xmp { 6 } else { 4 };
-        for (n, c) in control.iter_mut().enumerate().take(steering) {
+        for (n, c) in control.iter_mut().enumerate() {
             *c = incoming[n].ok_or_else(|| {
                 self.error(
                     ErrorKind::UndefinedValue,
-                    format!("word {} of the exchange package at {:o} (it holds P, BA, LA, M, XA, VL or F)", n, base),
+                    format!("word {} of the exchange package at {:o} (it holds P, a base or limit address, modes, XA, VL, F or CLN)", n, base),
                 )
             })?;
         }
@@ -1148,20 +1023,15 @@ impl Machine {
         }
         self.waiting_semaphore = false;
         self.p = (control[0] >> 24) as u32 & self.p_mask();
-        if self.cpu == Cpu::Xmp {
-            self.ba = (control[1] >> 29) as u32 & 0x7ffff;
-            self.la = (control[2] >> 29) as u32 & 0x7ffff;
-            self.dba = (control[4] >> 29) as u32 & 0x7ffff;
-            self.dla = (control[5] >> 29) as u32 & 0x7ffff;
-            let m1 = (control[1] >> 24) as u8;
-            self.m1 = m1 & (mode1::BIDIRECTIONAL | mode1::INTERRUPT_MONITOR);
-            self.fps = Some(m1 & mode1::FP_STATUS != 0);
-            self.ps = control[4] >> 28 & 1 != 0;
-            self.cln = (control[4] >> 24) as u8 & 3;
-        } else {
-            self.ba = (control[1] >> 28) as u32 & 0x3ffff;
-            self.la = (control[2] >> 28) as u32 & 0x3ffff;
-        }
+        self.ba = (control[1] >> 29) as u32 & 0x7ffff;
+        self.la = (control[2] >> 29) as u32 & 0x7ffff;
+        self.dba = (control[4] >> 29) as u32 & 0x7ffff;
+        self.dla = (control[5] >> 29) as u32 & 0x7ffff;
+        let m1 = (control[1] >> 24) as u8;
+        self.m1 = m1 & (mode1::BIDIRECTIONAL | mode1::INTERRUPT_MONITOR);
+        self.fps = Some(m1 & mode1::FP_STATUS != 0);
+        self.ps = control[4] >> 28 & 1 != 0;
+        self.cln = (control[4] >> 24) as u8 & 3;
         self.emit(Event::P(self.p));
         self.emit(Event::Ba(self.ba));
         self.emit(Event::La(self.la));
@@ -1271,7 +1141,7 @@ impl Machine {
             return self.exchange(false);
         };
         self.cur_parcels = Some((parcel0, None));
-        let mut d: Decoded = decode_cpu(self.cpu, parcel0, None);
+        let mut d: Decoded = decode(parcel0, None);
         if d.parcels == 2 {
             let Some(parcel1) = self.fetch((p + 1) & self.p_mask())? else {
                 self.program_range_on_fetch()?;
@@ -1279,7 +1149,7 @@ impl Machine {
                 return self.exchange(false);
             };
             self.cur_parcels = Some((parcel0, Some(parcel1)));
-            d = decode_cpu(self.cpu, parcel0, Some(parcel1));
+            d = decode(parcel0, Some(parcel1));
         }
         self.instructions += 1;
         self.emit(Event::Issue {

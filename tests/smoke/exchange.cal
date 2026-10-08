@@ -1,8 +1,9 @@
 * exchange: a round trip into a user program with a base address.
 * The test, in monitor mode, enters XA with the address of a package at
 * word 3000 and exits (004).  The package describes a user program at
-* absolute word 10000 (BA = 400, LA = 404) that adds two words of its field
-* and exits.  The test then checks its own registers, the result, and the
+* absolute word 10000 (both base addresses 200, both limit addresses 202)
+* that adds two words of its field and exits.  The test then checks its own
+* registers, the result, and the
 * user's package: P one parcel past the exit, the normal exit flag, the
 * user's registers.  It clears the flag and exits again; the user program
 * resumes after its own exit.
@@ -37,10 +38,14 @@ UPKG     =       3000                    ; the user's exchange package
          CHKS    S3,UEXIT-UBASE*4+1,11   ; one parcel past the EX, relative
          S2      S2<D'40
          CHKS    S2,0,12                 ; A0 = 0
-         S2      UPKG+1,0                ; BA and A1
-         CHKS    S2,UBASE/20*T$P2_28,13
-         S2      UPKG+2,0                ; LA, M and A2
-         CHKS    S2,(UBASE+100)/20*T$P2_28,14
+         S2      UPKG+1,0                ; IBA, the modes of word 1 and A1
+         CHKS    S2,UBASE/40*T$P2_29,13
+         S2      UPKG+2,0                ; ILA, the modes of word 2 and A2
+         CHKS    S2,(UBASE+100)/40*T$P2_29,14
+         S2      UPKG+4,0                ; DBA, the cluster number and A4
+         CHKS    S2,UBASE/40*T$P2_29,22
+         S2      UPKG+5,0                ; DLA and A5
+         CHKS    S2,(UBASE+100)/40*T$P2_29+D'99,23
          S2      UPKG+3,0                ; XA, VL, F and A3
          CHKS    S2,UPKG/20*T$P2_40+3*T$P2_33+1*T$P2_24,15
          A3      UPKG+5,0
@@ -62,10 +67,12 @@ UPKG     =       3000                    ; the user's exchange package
 *
          ORG     UPKG
          CON     (UCODE-UBASE*4)*T$P2_24 ; P, relative to the base
-         CON     UBASE/20*T$P2_28        ; BA
-         CON     (UBASE+100)/20*T$P2_28  ; LA: the field is 10000-10077; M = 0
+         CON     UBASE/40*T$P2_29        ; IBA
+         CON     (UBASE+100)/40*T$P2_29  ; ILA: the field is 10000-10077; no mode
          CON     UPKG/20*T$P2_40+3*T$P2_33 ; XA back to this package; VL = 3
-         BSSZ    D'12                    ; A4-A7, S0-S7
+         CON     UBASE/40*T$P2_29        ; DBA: the same field for data
+         CON     (UBASE+100)/40*T$P2_29  ; DLA
+         BSSZ    D'10                    ; A6, A7, S0-S7
 *
 * the user program; its addresses are relative to UBASE
          ORG     UBASE+10

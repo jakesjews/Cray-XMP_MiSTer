@@ -3,8 +3,7 @@
 
 use cray_xmp_fp::vectors::{corner_operands, SplitMix64};
 use cray_xmp_fp::{
-    fadd, fdiv, fmul, frecip, fsub, pack, unpack, MulKind, Op, Profile, EXP_BIAS, NORM_BIT,
-    SIGN_BIT,
+    fadd, fdiv, fmul, frecip, fsub, pack, unpack, MulKind, Op, EXP_BIAS, NORM_BIT, SIGN_BIT,
 };
 
 const MILLION: usize = 1_000_000;
@@ -135,7 +134,7 @@ fn multiply_matches_the_exact_product_within_the_truncation_bound() {
             (MulKind::Rounded, 9 * u + 96 * u, 48),
             (MulKind::HalfRounded, 9 * u + (3i128 << 64), 29),
         ] {
-            let r = fmul(a, b, kind, Profile::Xmp);
+            let r = fmul(a, b, kind);
             assert!(!r.range_error);
             let x = unpack(r.value);
             assert_eq!(x.sign, (a ^ b) >> 63 != 0);
@@ -157,7 +156,7 @@ fn multiply_matches_the_exact_product_within_the_truncation_bound() {
                 seen_high |= diff > 0;
             }
             // The X-MP pyramid is symmetric: the product is commutative.
-            assert_eq!(fmul(b, a, kind, Profile::Xmp), r);
+            assert_eq!(fmul(b, a, kind), r);
         }
     }
     // Unrounded results fall on both sides of the exact product, as the manual says.
@@ -167,7 +166,7 @@ fn multiply_matches_the_exact_product_within_the_truncation_bound() {
 fn recip_error(x: u64) -> u128 {
     // x * frecip(x) = c * cr / 2^95 exactly; return |c*cr - 2^95|.
     let c = u128::from(unpack(x).coef);
-    let r = frecip(x, Profile::Xmp);
+    let r = frecip(x);
     assert!(!r.range_error);
     let out = unpack(r.value);
     assert_eq!(out.exp, 0o100001 - unpack(x).exp);
@@ -199,7 +198,7 @@ fn reciprocal_is_accurate_to_30_bits() {
         assert!(err < limit, "{x:016X}: error {err}");
         worst = worst.max(err);
     }
-    for (x, _) in corner_operands(Op::Recip, Profile::Xmp) {
+    for (x, _) in corner_operands(Op::Recip) {
         let u = unpack(x);
         if u.coef & NORM_BIT != 0 && (0o20002..=0o57777).contains(&u.exp) {
             let err = recip_error(x);
@@ -258,7 +257,7 @@ fn divide_sequence_accuracy() {
             EXP_BIAS - 500 + rng.below(1000) as u16,
             rng.norm_coef(),
         );
-        let q = fdiv(a, b, Profile::Xmp);
+        let q = fdiv(a, b);
         assert!(!q.range_error);
         let (num, den) = quotient_error(a, b, q.value);
         // Hard bounds: more than 3 units low or 2 units high never happens.
@@ -301,10 +300,10 @@ fn xmp_divide_sequence_accuracy() {
             EXP_BIAS - 500 + rng.below(1000) as u16,
             rng.norm_coef(),
         );
-        let r = frecip(b, Profile::Xmp).value;
-        let c = fmul(r, b, MulKind::TwoMinus, Profile::Xmp).value;
-        let full = fmul(c, r, MulKind::Full, Profile::Xmp).value;
-        let q = fmul(full, a, MulKind::Rounded, Profile::Xmp).value;
+        let r = frecip(b).value;
+        let c = fmul(r, b, MulKind::TwoMinus).value;
+        let full = fmul(c, r, MulKind::Full).value;
+        let q = fmul(full, a, MulKind::Rounded).value;
         let (num, den) = quotient_error(a, b, q);
         assert!(
             num > -3 * den && num < 3 * den,
@@ -331,8 +330,8 @@ fn reciprocal_iteration_is_two_minus_the_product() {
             EXP_BIAS - 100 + rng.below(200) as u16,
             rng.norm_coef(),
         );
-        let r = frecip(b, Profile::Xmp).value;
-        let c = fmul(r, b, MulKind::TwoMinus, Profile::Xmp);
+        let r = frecip(b).value;
+        let c = fmul(r, b, MulKind::TwoMinus);
         assert!(!c.range_error);
         let uc = unpack(c.value);
         assert!(uc.coef & NORM_BIT != 0);

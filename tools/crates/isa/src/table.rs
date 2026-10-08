@@ -1,38 +1,11 @@
 //! The instruction table: one row per line of Appendix D of the CRAY-1
 //! Hardware Reference Manual (2240004 rev C), the rows of the two options of
 //! the 1982 machine (HR-0004 rev F: programmable clock, vector population
-//! instructions), plus the few rows needed to give every 16-bit parcel a
-//! meaning.  Everything else in this crate is driven from `FORMS`.
+//! instructions), the rows the X-MP added (CSM-0111000), plus the few rows
+//! needed to give every 16-bit parcel a meaning.  Everything else in this
+//! crate is driven from `FORMS`.
 
-/// The machine whose instruction set is meant.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum Cpu {
-    /// The CRAY-1 of 1982 with its two instruction set options.
-    #[default]
-    Cray1,
-    /// The CRAY-1 plus the instructions of a one-processor CRAY X-MP that the
-    /// operating system COS needs: the rows with `flag::XMP`.
-    Xmp,
-}
-
-impl Cpu {
-    /// `CRAY1` or `XMP`, as the assembler's `MACHINE` directive spells it.
-    pub fn name(self) -> &'static str {
-        match self {
-            Cpu::Cray1 => "CRAY1",
-            Cpu::Xmp => "XMP",
-        }
-    }
-    pub fn from_name(name: &str) -> Option<Cpu> {
-        match name.to_ascii_uppercase().replace(['-', '_'], "").as_str() {
-            "CRAY1" => Some(Cpu::Cray1),
-            "XMP" | "XMP1" => Some(Cpu::Xmp),
-            _ => None,
-        }
-    }
-}
-
-/// A base instruction of the Cray-1.  Every first parcel decodes to exactly
+/// A base instruction.  Every first parcel decodes to exactly
 /// one `Op`; special syntax forms and alternate spellings share the `Op` of
 /// the instruction they assemble to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -57,7 +30,7 @@ pub enum Op {
     Eci,
     /// 0014x7 disable the programmable clock interrupt request
     Dci,
-    /// 0014xk with k = 1, 2 or 3: not defined with the programmable clock; a pass
+    /// 0014xk with k = 1 or 2: not defined; a pass
     ClockPass,
     /// 0015xx to 0017xx: pass
     MonitorPass,
@@ -101,8 +74,6 @@ pub enum Op {
     Efi,
     /// 0022xx clear the floating point interrupt mode flag
     Dfi,
-    /// 0023xx to 0027xx: not defined by the Cray-1 manual
-    Undefined,
     /// 003xjx VM <- (Sj)
     SetVm,
     /// 004xxx normal exit
@@ -490,8 +461,8 @@ pub mod flag {
     /// rev F): the programmable clock or the vector population instructions.
     /// Its page reference is to rev F.
     pub const OPTION: u16 = 1 << 9;
-    /// The row exists only on the X-MP (`Cpu::Xmp`); its page reference is to
-    /// the X-MP mainframe reference manual CSM-0111000.
+    /// The row is from the X-MP mainframe reference manual CSM-0111000, and
+    /// so is its page reference; the CRAY-1 did not have it.
     pub const XMP: u16 = 1 << 10;
 }
 
@@ -728,7 +699,7 @@ pub static FORMS: &[Form] = &[
     base(Eci, "0014x6", "ECI", "", "F 4-10", "Enable the programmable clock interrupt request").f(MONITOR | OPT),
     base(Dci, "0014x7", "DCI", "", "F 4-10", "Disable the programmable clock interrupt request").f(MONITOR | OPT),
     base(SetCln, "0014j3", "CLN", "exp", "X 5-11", "Enter cluster number register with j").e(E::J).f(MONITOR | XM),
-    base(ClockPass, "0014xk", "", "", "F 4-10", "Pass (0014jk with k = 1, 2 or 3 is not defined)").f(X),
+    base(ClockPass, "0014xk", "", "", "F 4-10", "Pass (0014jk with k = 1 or 2 is not defined)").f(X),
     base(MonitorPass, "001ixx", "", "", "4-8", "Pass (monitor function with i = 5, 6 or 7)").f(X),
     base(SetVl, "0020xk", "VL", "Ak", "4-10", "Transmit (Ak) to VL register").r(&[Ak]).w(&[Vl]),
     spec(SetVl, "0020x0", "VL", "1", "4-10", "Transmit 1 to VL register"),
@@ -739,7 +710,6 @@ pub static FORMS: &[Form] = &[
     base(Dbm, "0025xx", "DBM", "", "X 5-15", "Disable bidirectional memory transfers").f(XM),
     base(Ebm, "0026xx", "EBM", "", "X 5-15", "Enable bidirectional memory transfers").f(XM),
     base(Cmr, "0027xx", "CMR", "", "X 5-15", "Complete memory references").f(XM),
-    base(Undefined, "002ixx", "", "", "", "Not defined by the Cray-1 manual (0023xx to 0027xx)").f(X),
     base(SemTestSet, "0034jk", "SMjk", "1,TS", "X 5-17", "Test and set semaphore jk").f(XM),
     base(SemClear, "0036jk", "SMjk", "0", "X 5-17", "Clear semaphore jk").f(XM),
     base(SemSet, "0037jk", "SMjk", "1", "X 5-17", "Set semaphore jk").f(XM),

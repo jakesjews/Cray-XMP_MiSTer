@@ -31,7 +31,7 @@ tools:
 	cargo build --release --examples --bins --manifest-path tools/Cargo.toml
 
 sim:
-	$(MAKE) -C sim cpu cpu-xmp fp iop ios xmp core ampex spool bridge
+	$(MAKE) -C sim cpu fp iop ios xmp core ampex spool bridge
 
 test-quick: tools sim
 	$(PYTHON) tools/py/runtests.py quick

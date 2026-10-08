@@ -2,7 +2,7 @@
 //! result register that is also an operand.
 
 use super::*;
-use cray_xmp_fp::{fadd, fmul, frecip, from_f64, fsub, MulKind, Profile};
+use cray_xmp_fp::{fadd, fmul, frecip, from_f64, fsub, MulKind};
 
 /// Set elements 0.. of Vi.
 fn fill(m: &mut Machine, i: usize, values: &[u64]) {
@@ -307,7 +307,6 @@ fn f(v: f64) -> u64 {
 fn vector_floating_point_160_to_174() {
     // Pages 4-61 to 4-67: each element is what the floating point unit
     // delivers for the pair of operands; (Sj) = 0 if j = 0.
-    let p = Profile::Cray1;
     let a = [f(6.0), f(-2.5), f(1.0e10)];
     let b = [f(1.5), f(8.0), f(-3.0)];
     let s = f(3.0);
@@ -325,26 +324,18 @@ fn vector_floating_point_160_to_174() {
         }
         assert_eq!(m.v(3, 3), None);
     };
-    check(0o160312, true, &|x, y| fmul(x, y, MulKind::Full, p).value);
-    check(0o161312, false, &|x, y| fmul(x, y, MulKind::Full, p).value);
+    check(0o160312, true, &|x, y| fmul(x, y, MulKind::Full).value);
+    check(0o161312, false, &|x, y| fmul(x, y, MulKind::Full).value);
     check(0o162312, true, &|x, y| {
-        fmul(x, y, MulKind::HalfRounded, p).value
+        fmul(x, y, MulKind::HalfRounded).value
     });
     check(0o163312, false, &|x, y| {
-        fmul(x, y, MulKind::HalfRounded, p).value
+        fmul(x, y, MulKind::HalfRounded).value
     });
-    check(0o164312, true, &|x, y| {
-        fmul(x, y, MulKind::Rounded, p).value
-    });
-    check(0o165312, false, &|x, y| {
-        fmul(x, y, MulKind::Rounded, p).value
-    });
-    check(0o166312, true, &|x, y| {
-        fmul(x, y, MulKind::TwoMinus, p).value
-    });
-    check(0o167312, false, &|x, y| {
-        fmul(x, y, MulKind::TwoMinus, p).value
-    });
+    check(0o164312, true, &|x, y| fmul(x, y, MulKind::Rounded).value);
+    check(0o165312, false, &|x, y| fmul(x, y, MulKind::Rounded).value);
+    check(0o166312, true, &|x, y| fmul(x, y, MulKind::TwoMinus).value);
+    check(0o167312, false, &|x, y| fmul(x, y, MulKind::TwoMinus).value);
     check(0o170312, true, &|x, y| fadd(x, y).value);
     check(0o171312, false, &|x, y| fadd(x, y).value);
     check(0o172312, true, &|x, y| fsub(x, y).value);
@@ -361,7 +352,7 @@ fn vector_floating_point_160_to_174() {
     assert_eq!(m.v(4, 0), Some(f(4.5)));
     assert_eq!(m.v(5, 0), Some(f(1.5)));
     assert_eq!(m.v(6, 0), Some(f(-1.5)));
-    assert_eq!(m.v(7, 0), Some(frecip(b[0], p).value));
+    assert_eq!(m.v(7, 0), Some(frecip(b[0]).value));
 }
 
 #[test]
@@ -406,263 +397,8 @@ fn vector_mask_test_175() {
 }
 
 #[test]
-fn recursive_floating_sum_of_pages_3_15_and_3_16() {
-    // The manual's example: all elements of V1 hold floating point values,
-    // element 0 of V2 holds 0, (VL) = 64, and 171212 is executed.  The
-    // floating point add unit has a functional unit time of 6 CP, "causing
-    // sums to be generated in groups of eight (f.u. + 2 = 8)":
-    //   (V2 00) = (V2 00) + (V1 00)   ...   (V2 07) = (V2 00) + (V1 07)
-    //   (V2 08) = (V2 00)[new] + (V1 08) = (V2 00) + (V1 00) + (V1 08)
-    //   (V2 16) = (V2 08) + (V1 16) = (V2 00) + (V1 00) + (V1 08) + (V1 16)
-    //   (V2 56) = (V2 48) + (V1 56) = (V2 00) + (V1 00) + (V1 08) ... + (V1 56)
-    //   (V2 63) = (V2 55) + (V1 63) = (V2 00) + (V1 07) + (V1 15) ... + (V1 63)
-    assert_eq!(vector::unit_time::FP_ADD, 6);
-    for parcel in [0o171212u16, 0o171221] {
-        let mut m = monitor(&[parcel]);
-        m.set_vl(Some(0o100));
-        for e in 0..64 {
-            m.set_v(1, e, Some(f(e as f64 + 1.0)));
-            m.set_v(2, e, Some(f(1.0e6))); // only element 0 matters
-        }
-        m.set_v(2, 0, Some(0));
-        let before: Vec<u64> = (0..64).map(|e| m.v(1, e).unwrap()).collect();
-        let events = record(&mut m);
-        steps(&mut m, 1);
-        // the recurrence, in the manual's order of addition
-        let mut expect = [0u64; 64];
-        for e in 0..64 {
-            let other = if e < 8 { 0 } else { expect[e - 8] };
-            expect[e] = fadd(before[e], other).value;
-        }
-        for e in 0..64 {
-            assert_eq!(m.v(2, e), Some(expect[e]), "element {}", e);
-        }
-        // the values themselves: V1 holds 1.0 to 64.0, the sums are exact
-        for e in 0..8 {
-            assert_eq!(m.v(2, e), Some(f(e as f64 + 1.0)));
-        }
-        assert_eq!(m.v(2, 8), Some(f(1.0 + 9.0)));
-        assert_eq!(m.v(2, 16), Some(f(1.0 + 9.0 + 17.0)));
-        for r in 0..8 {
-            // elements 56 to 63: the eight partial sums of the 64 elements
-            let sum: f64 = (0..8).map(|g| (8 * g + r + 1) as f64).sum();
-            assert_eq!(m.v(2, 56 + r), Some(f(sum)), "element {}", 56 + r);
-        }
-        let total: f64 = (56..64)
-            .map(|e| cray_xmp_fp::to_f64(m.v(2, e).unwrap()))
-            .sum();
-        assert_eq!(total, 64.0 * 65.0 / 2.0);
-        // V1 is unchanged and the results were reported in element order
-        assert_eq!(
-            (0..64).map(|e| m.v(1, e).unwrap()).collect::<Vec<_>>(),
-            before
-        );
-        let order: Vec<u8> = events
-            .borrow()
-            .iter()
-            .filter_map(|e| match e {
-                Event::V { i: 2, elem, .. } => Some(*elem),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(order, (0..64).collect::<Vec<u8>>());
-    }
-}
-
-#[test]
-fn recursive_integer_sum_of_page_3_16() {
-    // "if an integer summation were performed instead ... five partial sums
-    // would be generated and placed in elements 59 through 63 since the
-    // functional unit time for the integer add unit is 3 CP":
-    //   (V2 59) = (V2 00) + (V1 04) + (V1 09) + (V1 14) ... + (V1 59)
-    //   (V2 60) = (V2 00) + (V1 00) + (V1 05) + (V1 10) ... + (V1 55) + (V1 60)
-    //   (V2 61) = (V2 00) + (V1 01) + (V1 06) + (V1 11) ... + (V1 56) + (V1 61)
-    //   (V2 62) = (V2 00) + (V1 02) + (V1 07) + (V1 12) ... + (V1 57) + (V1 62)
-    //   (V2 63) = (V2 00) + (V1 03) + (V1 08) + (V1 13) ... + (V1 58) + (V1 63)
-    // With (V1 e) = 2**e every sum shows which elements went into it.
-    assert_eq!(vector::unit_time::VECTOR_ADD, 3);
-    for parcel in [0o155212u16, 0o155221] {
-        let mut m = monitor(&[parcel]);
-        m.set_vl(Some(0o100));
-        for e in 0..64 {
-            m.set_v(1, e, Some(1 << e));
-            m.set_v(2, e, Some(u64::MAX)); // only element 0 matters
-        }
-        m.set_v(2, 0, Some(0));
-        steps(&mut m, 1);
-        let bits = |list: std::iter::StepBy<std::ops::RangeInclusive<u32>>| {
-            list.fold(0u64, |s, e| s | 1 << e)
-        };
-        assert_eq!(m.v(2, 59), Some(bits((4..=59).step_by(5))));
-        assert_eq!(m.v(2, 60), Some(bits((0..=60).step_by(5))));
-        assert_eq!(m.v(2, 61), Some(bits((1..=61).step_by(5))));
-        assert_eq!(m.v(2, 62), Some(bits((2..=62).step_by(5))));
-        assert_eq!(m.v(2, 63), Some(bits((3..=63).step_by(5))));
-        // the first group is based on the old element 0 alone
-        for e in 0..5 {
-            assert_eq!(m.v(2, e), Some(1 << e));
-        }
-        // the five partial sums together are the sum of all of V1
-        assert_eq!((59..64).fold(0u64, |s, e| s | m.v(2, e).unwrap()), u64::MAX);
-    }
-    // a non-zero (V2 00) is in every sum
-    let mut m = monitor(&[0o155212]);
-    m.set_vl(Some(0o100));
-    for e in 0..64 {
-        m.set_v(1, e, Some(1));
-        m.set_v(2, e, Some(0));
-    }
-    m.set_v(2, 0, Some(1000));
-    steps(&mut m, 1);
-    assert_eq!(m.v(2, 0), Some(1001));
-    assert_eq!(m.v(2, 4), Some(1001));
-    assert_eq!(m.v(2, 5), Some(1002));
-    assert_eq!(m.v(2, 63), Some(1000 + 13)); // elements 3, 8, ... 63
-}
-
-#[test]
-fn recursive_operations_in_the_other_units() {
-    // Page 3-16: "This recursive characteristic of vector processing is
-    // applicable to any vector operation, arithmetic or logical."  The
-    // group size is the functional unit time + 2 (page 3-14): logical 2 + 2,
-    // shift 4 + 2, multiply 7 + 2, reciprocal 14 + 2 (pages 3-17, 3-18).
-    use vector::unit_time::*;
-    assert_eq!(
-        (VECTOR_LOGICAL, VECTOR_SHIFT, FP_MULTIPLY, FP_RECIPROCAL),
-        (2, 4, 7, 14)
-    );
-
-    // 145121: V1 = V2 xor V1, groups of four
-    let mut m = monitor(&[0o145121]);
-    m.set_vl(Some(10));
-    for e in 0..10 {
-        m.set_v(1, e, Some(0xff00));
-        m.set_v(2, e, Some(1 << e));
-    }
-    m.set_v(1, 0, Some(0));
-    steps(&mut m, 1);
-    let expect: Vec<u64> = (0..10u32)
-        .map(|e| (0..=e).rev().step_by(4).fold(0, |s, g| s | 1 << g))
-        .collect();
-    assert_eq!(elements(&m, 1, 10), some(&expect));
-
-    // 150110: V1 = V1 < 1, groups of six: element 0 is shifted once more
-    // for every group
-    let mut m = monitor(&[0o150110]);
-    m.set_vl(Some(14));
-    for e in 0..14 {
-        m.set_v(1, e, Some(0xff00));
-    }
-    m.set_v(1, 0, Some(1));
-    steps(&mut m, 1);
-    let expect: Vec<u64> = (0..14).map(|e| 2 << (e / 6)).collect();
-    assert_eq!(elements(&m, 1, 14), some(&expect));
-
-    // 161112: V1 = V1 * V2 with (V1 00) = 1.0, "element 0 of the
-    // operand/result register will usually be set to an initial value of
-    // 1.0": products in groups of nine
-    let mut m = monitor(&[0o161112]);
-    m.set_vl(Some(20));
-    for e in 0..20 {
-        m.set_v(1, e, Some(f(1.0e6)));
-        m.set_v(2, e, Some(f(2.0)));
-    }
-    m.set_v(1, 0, Some(f(1.0)));
-    steps(&mut m, 1);
-    for e in 0..20 {
-        assert_eq!(m.v(1, e), Some(f([2.0, 4.0, 8.0][e / 9])), "element {}", e);
-    }
-
-    // 174110: V1 = 1 / V1, groups of sixteen
-    let mut m = monitor(&[0o174110]);
-    m.set_vl(Some(20));
-    for e in 0..20 {
-        m.set_v(1, e, Some(f(1.0e6)));
-    }
-    m.set_v(1, 0, Some(f(4.0)));
-    steps(&mut m, 1);
-    let once = frecip(f(4.0), Profile::Cray1).value;
-    let twice = frecip(once, Profile::Cray1).value;
-    for e in 0..20 {
-        assert_eq!(
-            m.v(1, e),
-            Some(if e < 16 { once } else { twice }),
-            "element {}",
-            e
-        );
-    }
-}
-
-#[test]
-fn recursive_cases_the_manual_does_not_spell_out() {
-    // Model choices, see the crate documentation.
-    // i = j = k: both operands follow the operand/result rule.  155111 with
-    // (V1 00) = 1: element e is 2 * the element five before it.
-    let mut m = monitor(&[0o155111]);
-    m.set_vl(Some(12));
-    for e in 0..12 {
-        m.set_v(1, e, Some(1000));
-    }
-    m.set_v(1, 0, Some(1));
-    steps(&mut m, 1);
-    let expect: Vec<u64> = (0..12).map(|e| 2 << (e / 5)).collect();
-    assert_eq!(elements(&m, 1, 12), some(&expect));
-
-    // 152 with i = j: each operand is joined with the next operand in the
-    // stream the rule produces (the old element 0 six times, then the new
-    // elements), the last with zeros.
-    let x = 0x8000_0000_0000_0001u64;
-    let mut m = monitor(&[0o152113]);
-    m.set_vl(Some(8));
-    m.set_a(3, Some(4));
-    for e in 0..8 {
-        m.set_v(1, e, Some(0x1234));
-    }
-    m.set_v(1, 0, Some(x));
-    steps(&mut m, 1);
-    let first = x << 4 | x >> 60; // (x, x) << 4
-    let stream = [x, x, x, x, x, x, first, first, 0]; // operands 0 to 7, then zeros
-    for e in 0..8 {
-        let expect = stream[e] << 4 | stream[e + 1] >> 60;
-        assert_eq!(m.v(1, e), Some(expect), "element {}", e);
-    }
-    // 153 with i = j: joined with the operand before it, zeros before the
-    // first.
-    let mut m = monitor(&[0o153113]);
-    m.set_vl(Some(8));
-    m.set_a(3, Some(4));
-    for e in 0..8 {
-        m.set_v(1, e, Some(0x1234));
-    }
-    m.set_v(1, 0, Some(x));
-    steps(&mut m, 1);
-    let r0 = x >> 4; // (0, x) >> 4
-    let r1 = x << 60 | x >> 4; // (x, x) >> 4
-    let stream = [x, x, x, x, x, x, r0, r1];
-    for e in 0..8 {
-        let before = if e == 0 { 0 } else { stream[e - 1] };
-        assert_eq!(
-            m.v(1, e),
-            Some(before << 60 | stream[e] >> 4),
-            "element {}",
-            e
-        );
-    }
-    // 146 with i = k: the merge reads the operand/result register by the
-    // same rule (vector logical unit, groups of four).
-    let mut m = monitor(&[0o146101]);
-    m.set_vl(Some(8));
-    m.set_vm(Some(0x0f00_0000_0000_0000)); // elements 4 to 7 take (S0 as j) = 0
-    for e in 0..8 {
-        m.set_v(1, e, Some(e as u64 + 10));
-    }
-    steps(&mut m, 1);
-    assert_eq!(elements(&m, 1, 8), some(&[10, 10, 10, 10, 0, 0, 0, 0]));
-}
-
-#[test]
 fn vector_population_count_and_parity() {
-    // Rev F page 4-70.  174ij1: the count goes to the low 7 bits of each
+    // 174ij1: the count goes to the low 7 bits of each
     // element of Vi, "the remaining higher order bits ... are zeroed".
     // 174ij2: the low bit of the count goes to the low bit of the element.
     let mut m = monitor_cal("V1 PV2; V3 QV2");
@@ -678,28 +414,8 @@ fn vector_population_count_and_parity() {
         m.set_vl(Some(1));
         m.set_v(2, 0, Some(f(2.0)));
         steps(&mut m, 1);
-        assert_eq!(
-            m.v(1, 0),
-            Some(frecip(f(2.0), FP_PROFILE).value),
-            "k = {}",
-            k
-        );
+        assert_eq!(m.v(1, 0), Some(frecip(f(2.0)).value), "k = {}", k);
     }
-    // The result register as the operand: the chain slot time of 8 clock
-    // periods on page 4-70 is unit time + 2, so the counts come in groups of
-    // eight (pages 3-14 to 3-16).  Element 0 holds three one bits.
-    assert_eq!(vector::unit_time::VECTOR_POPULATION, 6);
-    let mut m = monitor(&[0o174111]);
-    m.set_vl(Some(20));
-    for e in 0..20 {
-        m.set_v(1, e, Some(u64::MAX)); // only element 0 matters
-    }
-    m.set_v(1, 0, Some(7));
-    steps(&mut m, 1);
-    let mut expect = vec![3u64; 8]; // population of 7
-    expect.extend([2u64; 8]); // population of 3
-    expect.extend([1u64; 4]); // population of 2
-    assert_eq!(elements(&m, 1, 20), some(&expect));
     // an undefined element gives an undefined count, the others are done
     let mut m = monitor_cal("V1 PV2");
     m.set_vl(Some(3));
@@ -720,4 +436,35 @@ fn elements_beyond_the_vector_length_are_unaltered() {
     fill(&mut m, 3, &[2, 2, 2]);
     steps(&mut m, 1);
     assert_eq!(elements(&m, 1, 3), some(&[3, 7, 7]));
+}
+
+#[test]
+fn a_vector_register_as_operand_and_result_is_not_recursive() {
+    // X 3-33: "A V register can be used, however, as both an operand and
+    // result in the same vector operation."  Nothing is said of the
+    // CRAY-1's groups (HRM 3-14): each operation takes the element as it was
+    // before the instruction.
+    let mut m = monitor_cal("V1 V1+V2; V3 V3,V3>A1");
+    m.set_vl(Some(20));
+    m.set_a(1, Some(4));
+    for e in 0..20 {
+        m.set_v(1, e, Some(100 + e as u64));
+        m.set_v(2, e, Some(1000));
+        m.set_v(3, e, Some(e as u64 + 1));
+    }
+    steps(&mut m, 1);
+    for e in 0..20 {
+        assert_eq!(m.v(1, e), Some(1100 + e as u64), "element {}", e);
+    }
+    // the double shift takes its neighbour as it was before, too
+    steps(&mut m, 1);
+    assert_eq!(m.v(3, 0), Some(0));
+    for e in 1..20u64 {
+        assert_eq!(
+            m.v(3, e as usize),
+            Some(e << 60 | (e + 1) >> 4),
+            "element {}",
+            e
+        );
+    }
 }

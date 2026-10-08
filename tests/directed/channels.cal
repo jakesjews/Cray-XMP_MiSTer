@@ -4,9 +4,8 @@
 * by reading the number of the channel that asks, so it does not depend on
 * how long a transfer takes.  Where a Ready must have arrived before the
 * next order, it waits far longer than the slowest memory needs.
-         MACHINE XMP
-         INCLUDE "rt_xmp.cal"
-         INCLUDE "rt_xuser.cal"
+         INCLUDE "rt_direct.cal"
+         INCLUDE "rt_user.cal"
 UPKG     =       3000
 FIOI     =       4                       ; flag bit 37
 *

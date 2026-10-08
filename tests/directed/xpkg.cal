@@ -2,9 +2,8 @@
 * 3): its layout, the separate instruction and data fields, the operand
 * range interrupt mode, the deadlock interrupt of a test and set, a P of 24
 * bits, and vector operations whose result register is an operand.
-         MACHINE XMP
-         INCLUDE "rt_xmp.cal"
-         INCLUDE "rt_xuser.cal"
+         INCLUDE "rt_direct.cal"
+         INCLUDE "rt_user.cal"
 UPKG     =       3000
 UIBA     =       300                     ; instruction base: word 14000
 UBASE    =       14000

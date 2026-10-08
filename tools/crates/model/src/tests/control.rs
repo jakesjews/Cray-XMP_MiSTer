@@ -1,78 +1,100 @@
-//! Dead start, the exchange sequence, exits, flags, monitor functions and
-//! branches.
+//! Dead start, the exchange package and sequence, exits, flags, monitor
+//! functions and branches.
 
 use super::*;
 use cray_xmp_fp::{pack, unpack};
 
 #[test]
 fn exchange_package_layout() {
-    // Figure 3-8, page 3-37 (bit 0 is the leftmost bit of a word):
-    //   word n    P  bits 18-39                              A0 bits 40-63
-    //   word n+1  BA bits 18-35                              A1
-    //   word n+2  LA bits 18-35, M bits 36-39                A2
-    //   word n+3  XA bits 16-23, VL bits 24-30, F bits 31-39 A3
-    //   n+4 to n+7   A4 to A7;  n+8 to n+15   S0 to S7
-    // A field that ends at bit b is shifted left 63 - b places.
-    let mut m = Machine::new();
-    let ones: [u64; 16] = [u64::MAX; 16];
-    m.load_words(0, &ones).unwrap();
-    steps(&mut m, 1); // dead start with an all-ones package
-    assert_eq!(m.p(), 0x3f_ffff); // 22 bits
-    assert_eq!(m.ba(), 0x3_ffff); // 18 bits
-    assert_eq!(m.la(), 0x3_ffff);
-    assert_eq!(m.m(), 0xf); // 4 bits
-    assert_eq!(m.xa(), 0xff); // 8 bits
-    assert_eq!(m.vl(), Some(0x7f)); // 7 bits
-    assert_eq!(m.f(), 0x1ff); // 9 bits
-    for i in 0..8 {
-        assert_eq!(m.a(i), Some(0xff_ffff));
-        assert_eq!(m.s(i), Some(u64::MAX));
-    }
-    let w = m.exchange_package();
-    assert_eq!(w[0], Some(0x3f_ffff << 24 | 0xff_ffff)); // bits 18 to 63
-    assert_eq!(w[1], Some(0x3_ffff << 28 | 0xff_ffff)); // 18-35, 40-63
-    assert_eq!(w[2], Some(0x3_ffff << 28 | 0xf << 24 | 0xff_ffff)); // 18-63
-    assert_eq!(
-        w[3],
-        Some(0xff << 40 | 0x7f << 33 | 0x1ff << 24 | 0xff_ffff)
-    ); // 16-63
-    assert_eq!(w[4], Some(0xff_ffff));
-    assert_eq!(w[15], Some(u64::MAX));
-
-    // each field alone
-    let mut m = Machine::new();
+    // X figure 3-3 and table 3-1.  The package at 0 is loaded by EX and
+    // stored again at (XA) * 16 by the EX it runs.  Every field holds a
+    // pattern, and every bit the machine does not keep is set on the way in.
+    let (p, iba, ila, dba, dla) = (0o1000u64 * 4 + 2, 0o1u64, 0x7_5a5a, 0x1_2345, 0x6_abcd);
+    let modes = (mode::OPERAND_RANGE
+        | mode::CORRECTABLE_MEMORY
+        | mode::FLOATING_POINT
+        | mode::UNCORRECTABLE_MEMORY
+        | mode::MONITOR) as u64;
+    let m1 = (mode1::FP_STATUS | mode1::BIDIRECTIONAL | mode1::INTERRUPT_MONITOR) as u64;
+    let (xa, vl, cln) = (0o40u64, 0o125u64, 2u64);
+    let a = |i: u64| 0o1234567 + i;
+    let kept = [
+        p << 24 | a(0),
+        iba << 29 | m1 << 24 | a(1),
+        ila << 29 | modes << 24 | a(2),
+        xa << 40 | vl << 33 | a(3),
+        dba << 29 | 1 << 28 | cln << 24 | a(4),
+        dla << 29 | a(5),
+        a(6),
+        a(7),
+    ];
+    // PN, E and S; R, CS, B, WS and the unused bit 38; VNU; ESVL; EAM
+    let dropped = [
+        0x7ff << 52,
+        0xfff << 52 | 0o22 << 24,
+        1 << 63,
+        1 << 63,
+        1 << 63,
+        0,
+        0,
+        0,
+    ];
+    let mut m = monitor_cal("EX");
     let mut package = [0u64; 16];
-    package[0] = 0o1234567 << 24 | 0o100;
-    package[1] = 0o654321 << 28 | 0o101;
-    package[2] = 0o123456 << 28 | 0o5 << 24 | 0o102;
-    package[3] = 0o321 << 40 | 0o143 << 33 | 0o0 << 24 | 0o103;
-    for n in 4..16 {
-        package[n] = 0o100 + n as u64;
+    for n in 0..8 {
+        package[n] = kept[n] | dropped[n];
+        package[8 + n] = 0x0123_4567_89ab_cdef ^ (n as u64) << 60;
     }
     m.load_words(0, &package).unwrap();
+    // the program of the package: IBA is 1, so relative word 1000 is 1040
+    m.load_words(0o1040, &words(&[0, 0, 0o004000])).unwrap();
+    // and the package its exit exchanges with
+    m.load_words(xa as u32 * 16, &[0; 16]).unwrap();
     steps(&mut m, 1);
-    assert_eq!((m.p(), m.ba(), m.la()), (0o1234567, 0o654321, 0o123456));
-    assert_eq!((m.m(), m.xa(), m.vl(), m.f()), (0o5, 0o321, Some(0o143), 0));
-    for i in 0..8 {
-        assert_eq!(m.a(i), Some(0o100 + i as u32));
-        assert_eq!(m.s(i), Some(0o110 + i as u64));
-    }
-    assert_eq!(m.exchange_package().map(|w| w.unwrap()), package);
+    assert_eq!(m.p(), p as u32);
+    assert_eq!((m.ba(), m.la()), (iba as u32, ila as u32));
+    assert_eq!(m.data_field(), (dba as u32, dla as u32));
+    assert_eq!(
+        (m.m() as u64, m.m1(), m.cluster()),
+        (modes, Some(m1 as u8), 2)
+    );
+    assert_eq!((m.xa(), m.vl(), m.f()), (xa as u8, Some(vl as u8), 0));
+    steps(&mut m, 1);
+    let stored: Vec<u64> = (0..16)
+        .map(|n| m.mem(xa as u32 * 16 + n).unwrap())
+        .collect();
+    // P is the parcel after the exit; an exit in monitor mode sets no flag
+    assert_eq!(stored[0], (p + 1) << 24 | a(0));
+    assert_eq!(&stored[1..8], &kept[1..8]);
+    assert_eq!(&stored[8..], &package[8..]);
+    // the outgoing package of the first EX went to word 0 in the same layout
+    let first = m.mem(0).unwrap();
+    assert_eq!(first >> 24, (CODE as u64 * 4 + 1) & 0xff_ffff);
+    assert_eq!(m.mem(2).unwrap() >> 29, LA_MAX as u64);
+    assert_eq!(m.mem(5).unwrap() >> 29, LA_MAX as u64);
 }
 
 #[test]
 fn mode_and_flag_bit_assignments() {
-    // Page 3-35: M bit 36 correctable memory error mode, 37 floating point
-    // error mode, 38 uncorrectable memory error mode, 39 monitor mode.
-    // Figure 3-8 (rev F): F bit 31 programmable clock, 32 MCU interrupt, 33 floating
-    // point error, 34 operand range, 35 program range, 36 memory error,
-    // 37 I/O interrupt, 38 error exit, 39 normal exit.
-    // M occupies bits 36-39 and F bits 31-39 of their words, so the bit
-    // numbered b has the value 2**(39 - b) in the register.
+    // X figure 3-3 and table 3-1.  Word 2 of the package: bit 35 interrupt
+    // on operand range error, 36 on correctable memory error, 37 on floating
+    // point error, 38 on uncorrectable memory error, 39 monitor mode.
+    // Word 1: bit 35 waiting for semaphore, 36 floating point error status,
+    // 37 bidirectional memory, 39 interrupt monitor mode.  Word 3: bit 31
+    // programmable clock, 32 MCU interrupt, 33 floating point error, 34
+    // operand range, 35 program range, 36 memory error, 37 I/O interrupt, 38
+    // error exit, 39 normal exit.  The bit numbered b has the value
+    // 2**(39 - b) in its register.  The deadlock flag is bit 15 of word 3;
+    // the model keeps it as the bit above the other flags.
+    assert_eq!(mode::OPERAND_RANGE, 1 << (39 - 35));
     assert_eq!(mode::CORRECTABLE_MEMORY, 1 << (39 - 36));
     assert_eq!(mode::FLOATING_POINT, 1 << (39 - 37));
     assert_eq!(mode::UNCORRECTABLE_MEMORY, 1 << (39 - 38));
     assert_eq!(mode::MONITOR, 1 << (39 - 39));
+    assert_eq!(mode1::WAITING_SEMAPHORE, 1 << (39 - 35));
+    assert_eq!(mode1::FP_STATUS, 1 << (39 - 36));
+    assert_eq!(mode1::BIDIRECTIONAL, 1 << (39 - 37));
+    assert_eq!(mode1::INTERRUPT_MONITOR, 1 << (39 - 39));
     assert_eq!(flag::PROGRAMMABLE_CLOCK, 1 << (39 - 31));
     assert_eq!(flag::MCU_INTERRUPT, 1 << (39 - 32));
     assert_eq!(flag::FLOATING_POINT, 1 << (39 - 33));
@@ -82,6 +104,7 @@ fn mode_and_flag_bit_assignments() {
     assert_eq!(flag::IO_INTERRUPT, 1 << (39 - 37));
     assert_eq!(flag::ERROR_EXIT, 1 << (39 - 38));
     assert_eq!(flag::NORMAL_EXIT, 1 << (39 - 39));
+    assert_eq!(flag::DEADLOCK, 1 << 9);
 }
 
 #[test]
@@ -92,7 +115,7 @@ fn dead_start() {
     // noisy after power on.
     let mut image = vec![0u64; 0o201];
     image[0] = (CODE as u64 * 4) << 24 | 7;
-    image[2] = (LA_MAX as u64) << 28 | (mode::MONITOR as u64) << 24;
+    image[2] = (LA_MAX as u64) << 29 | (mode::MONITOR as u64) << 24;
     image[3] = 0o20 << 40 | 0o10 << 33;
     image[9] = 0x1111;
     image[CODE as usize] = words(&cal("A1 5"))[0];
@@ -183,7 +206,10 @@ fn normal_exit_of_a_user_program() {
     // the user's package is at word 0
     let (p, ba, la, mode, xa, vl, f) = package_fields(&m, 0);
     assert_eq!(p, CODE * 4 + 2, "one parcel past the EX at parcel 1");
-    assert_eq!((ba, la, mode, xa, vl), (0o100, 0o200, 0, 0, 0o33));
+    assert_eq!(
+        (ba, la, mode, xa, vl),
+        (0o100, 0o200, mode::OPERAND_RANGE, 0, 0o33)
+    );
     assert_eq!(f, flag::NORMAL_EXIT);
     assert_eq!(m.mem(1).unwrap() & 0xff_ffff, 5, "A1");
     assert_eq!(m.mem(8 + 3), Some(0xabc), "S3");
@@ -223,7 +249,7 @@ fn exits_in_monitor_mode_exchange_without_a_flag() {
         let mut m = monitor(&[0o022120, 0o001310, parcel]); // A1 20; XA A1; exit
         let mut package = [0u64; 16];
         package[0] = 0o3000 << 24;
-        package[2] = (LA_MAX as u64) << 28; // a user program
+        package[2] = (LA_MAX as u64) << 29; // a user program
         package[3] = 0o1 << 40;
         m.load_words(0o20, &package).unwrap();
         steps(&mut m, 3);
@@ -240,7 +266,7 @@ fn a_package_that_arrives_with_a_flag_set_exchanges_at_once() {
     let mut m = monitor_cal("A1 400; XA A1; EX; A2 7");
     let mut package = [0u64; 16];
     package[0] = 0o3000 << 24;
-    package[2] = (LA_MAX as u64) << 28; // a user program
+    package[2] = (LA_MAX as u64) << 29; // a user program
     package[3] = 0o20 << 40 | (flag::NORMAL_EXIT as u64) << 24; // XA back to 400
     m.load_words(0o400, &package).unwrap();
     steps(&mut m, 3);
@@ -274,8 +300,8 @@ fn a_package_that_arrives_with_a_flag_set_exchanges_at_once() {
 #[test]
 fn monitor_functions() {
     // Page 4-8: 0013 transmits bits 2**11 to 2**4 of (Aj) to XA; XA is
-    // cleared if j = 0.  0014 enters the clock.  Page 4-9: 0010 to 0012 are
-    // no-ops here (no channels); i = 5, 6, 7 pass.
+    // cleared if j = 0.  0014 enters the clock.  0010 to 0012 with j = 0
+    // name no channel and pass (X 5-9); i = 5, 6, 7 pass.
     let mut m = monitor(&[
         0o001310, 0o001000, 0o001100, 0o001200, 0o001500, 0o001677, 0o001777, 0o001420, 0o001300,
     ]);
@@ -447,47 +473,35 @@ fn two_parcel_instruction_across_a_word_boundary() {
 }
 
 #[test]
-fn branch_address_bits_above_p() {
-    // Page 4-4: "A program range error occurs if either of the two low-order
-    // bits of i is set; the high-order bit of i is ignored."  Pages 4-15 to
-    // 4-18: P gets the low order 22 bits.
-    // 006400 001234: only the ignored bit of i is set
-    let mut m = user(&[0o006400, 0o001234], 0, LA_MAX);
-    steps(&mut m, 1);
-    assert_eq!((m.p(), m.f()), (0o1234, 0));
-    // 006100 001234: bit 2**22 of the address
-    for i in [0o100u16, 0o200, 0o300] {
-        let mut m = user(&[0o006000 | i, 0o001234], 0, LA_MAX);
-        steps(&mut m, 1);
-        let (p, _, _, _, _, _, f) = package_fields(&m, 0);
-        assert_eq!(f, flag::PROGRAM_RANGE);
-        assert_eq!(p, 0o1234);
-    }
-    // a conditional branch that is not taken raises nothing (model choice)
-    let mut m = user(&[0o011100, 0o001234, 0o004000], 0, LA_MAX);
-    steps(&mut m, 1);
-    assert_eq!((m.p(), m.f()), (CODE * 4 + 2, 0));
-    // 005 with a 24-bit (Bjk)
-    let mut m = user(&cal("J B1"), 0, LA_MAX);
-    m.set_b(1, Some(0x40_0000 | 0o1234));
-    steps(&mut m, 1);
-    assert_eq!(package_fields(&m, 0).6, flag::PROGRAM_RANGE);
-    // in monitor mode no flag sets and execution continues at the 22 bits
-    let mut m = monitor(&[0o006300, 0o001234]);
-    m.load_words(0o1234 / 4, &words(&cal("A1 5"))).unwrap();
+fn p_has_24_bits() {
+    // X 3-6 and 5-21: P is 24 bits and a branch takes the low 24 bits of
+    // ijkm; there is no range error from the address itself.
+    let far = 0o5000000u32; // a word above the first million: P needs 23 bits
+    let mut m = monitor_cal("J 24000000; A1 1");
+    m.load_words(far, &words(&cal("A1 2; R 1000"))).unwrap();
+    steps(&mut m, 3);
+    assert_eq!((m.a(1), m.f()), (Some(2), 0));
+    assert_eq!(m.b(0), Some(far * 4 + 3), "B00 holds all 24 bits");
+    assert_eq!(m.p(), 0o1000);
+    // a fetch beyond the limit is the range error, in a user program
+    let mut m = user_cal("J 24000000");
+    m.start_at(CODE * 4, 0, 0o100, 0);
     steps(&mut m, 2);
-    assert_eq!((m.a(1), m.f()), (Some(5), 0));
+    assert!(m.monitor_mode());
+    assert_eq!(package_fields(&m, 0).6, flag::PROGRAM_RANGE);
+    assert_eq!(m.mem(0).unwrap() >> 24 & 0xff_ffff, 0o24000000);
 }
 
 #[test]
 fn program_range_error_on_fetch() {
-    // Pages 3-43 and 3-44: the final address that can be executed is
-    // (LA) * 16 - 1; beyond it a user program gets the program range flag
-    // (bit 35).  BA = 100, LA = 112: relative words 0 to 237.
-    let mut m = user(&cal("J 1174"), 0o100, 0o112);
+    // X 3-19 to 3-21: instructions are fetched from (IBA) * 32 on and the
+    // last word that can be executed is (ILA) * 32 - 1, an absolute address;
+    // beyond it a user program gets the program range flag (bit 35).
+    // IBA = 100, ILA = 112: relative words 0 to 477.
+    let mut m = user(&cal("J 2374"), 0o100, 0o112);
     // the last two parcels of the field and what lies beyond
     m.load_words(
-        0o2237,
+        0o4477,
         &[
             words(&cal("PASS; PASS; A1 1; A2 2"))[0],
             words(&cal("A3 3"))[0],
@@ -496,22 +510,22 @@ fn program_range_error_on_fetch() {
     .unwrap();
     steps(&mut m, 5);
     assert_eq!((m.a(1), m.a(2), m.f()), (Some(1), Some(2), 0));
-    assert_eq!(m.p(), 0o1200);
+    assert_eq!(m.p(), 0o2400);
     steps(&mut m, 1);
     assert!(m.monitor_mode());
     let (p, _, _, _, _, _, f) = package_fields(&m, 0);
     assert_eq!(f, flag::PROGRAM_RANGE);
-    assert_eq!(p, 0o1200, "the address that could not be fetched");
+    assert_eq!(p, 0o2400, "the address that could not be fetched");
     assert_eq!(m.mem(3).unwrap() & 0xff_ffff, 0, "A3 3 did not execute");
 
     // the second parcel of an instruction beyond the limit: model choice,
     // the saved P is the address of the instruction
-    let mut m = user(&cal("J 1177"), 0o100, 0o112);
-    m.load_words(0o2237, &[0o040100, 0x0005_0000_0000_0000])
+    let mut m = user(&cal("J 2377"), 0o100, 0o112);
+    m.load_words(0o4477, &[0o040100, 0x0005_0000_0000_0000])
         .unwrap(); // S1 5 across the limit
     steps(&mut m, 2);
     let (p, _, _, _, _, _, f) = package_fields(&m, 0);
-    assert_eq!((p, f), (0o1177, flag::PROGRAM_RANGE));
+    assert_eq!((p, f), (0o2377, flag::PROGRAM_RANGE));
     assert_eq!(m.mem(8 + 1), Some(0), "S1 was not loaded");
 }
 
@@ -522,7 +536,7 @@ fn program_range_error_in_monitor_mode_stops_the_model() {
     let mut m = Machine::new();
     m.load_words(CODE, &words(&cal("J 2000"))).unwrap();
     m.load_words(0o400, &words(&cal("A1 1"))).unwrap();
-    m.start_at(CODE * 4, 0, 0o20, mode::MONITOR); // limit: word 400
+    m.start_at(CODE * 4, 0, 0o10, mode::MONITOR); // limit: word 400
     define_registers(&mut m);
     steps(&mut m, 1);
     let e = error_of(&mut m);
@@ -532,13 +546,14 @@ fn program_range_error_in_monitor_mode_stops_the_model() {
 }
 
 #[test]
-fn undefined_opcodes_stop_the_model() {
-    // 0023xx to 0027xx are not in the manual (page 4-11 ends at 0022).
-    for parcel in [0o002300u16, 0o002477, 0o002700] {
-        let mut m = monitor(&[parcel]);
+fn encodings_this_machine_does_not_have_stop_the_model() {
+    // 01hijkm with the high bit of i set is `Ah exp`, a 24-bit constant, on
+    // an X-MP with extended addressing.  This one has none.
+    for parcel in [0o010400u16, 0o013700, 0o017500] {
+        let mut m = monitor(&[parcel, 0]);
         let e = error_of(&mut m);
         assert_eq!(e.kind, ErrorKind::NotDefinedByManual);
-        assert_eq!((e.p, e.parcels), (CODE * 4, Some((parcel, None))));
+        assert_eq!((e.p, e.parcels), (CODE * 4, Some((parcel, Some(0)))));
     }
 }
 
@@ -558,7 +573,7 @@ fn floating_point_error_flag() {
     assert!(m.monitor_mode());
     let (p, _, _, mode, _, _, f) = package_fields(&m, 0);
     assert_eq!(f, flag::FLOATING_POINT);
-    assert_eq!(mode, mode::FLOATING_POINT);
+    assert_eq!(mode, mode::FLOATING_POINT | mode::OPERAND_RANGE);
     assert_eq!(
         p,
         CODE * 4 + 2,
@@ -600,7 +615,8 @@ fn monitor_then_user(source: &str) -> Machine {
     let mut m = monitor_cal(source);
     let mut package = [0u64; 16];
     package[0] = (0o300u64 * 4) << 24;
-    package[2] = (LA_MAX as u64) << 28;
+    package[2] = (LA_MAX as u64) << 29;
+    package[5] = (LA_MAX as u64) << 29;
     m.load_words(0, &package).unwrap();
     m.load_words(0o300, &words(&cal("A1 5; A2 6"))).unwrap();
     m
@@ -641,11 +657,12 @@ fn programmable_clock() {
         assert_eq!(e.kind, ErrorKind::TimeDependent, "{}", source);
         assert_eq!(e.p, 0o300 * 4);
     }
-    // 0014jk with k = 1, 2 or 3 is a pass and does not enter the clock
+    // 0014jk with k = 1 or 2 is a pass and does not enter the clock; nor
+    // does k = 3, which enters the cluster number
     let mut m = monitor(&[0o001411, 0o001422, 0o001433, 0o020100, 5]);
     let events = record(&mut m);
     steps(&mut m, 4);
-    assert_eq!(m.a(1), Some(5));
+    assert_eq!((m.a(1), m.cluster()), (Some(5), 3));
     assert!(!events.borrow().iter().any(|e| matches!(e, Event::Rtc(_))));
 }
 

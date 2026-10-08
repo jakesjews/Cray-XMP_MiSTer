@@ -1,6 +1,7 @@
 * vrange: a vector store that runs off the end of a user program's field.
-* The user program (BA = 400, LA = 404: relative words 0 to 77) loads eight
-* words into V1 and stores them from word 74 on: four fit, four do not.
+* The user program (base addresses 200, limit addresses 202: relative words
+* 0 to 77; the operand range interrupt on) loads eight words into V1 and
+* stores them from word 74 on: four fit, four do not.
 * The words inside the field are stored, the word beyond the limit is not
 * altered, and the operand range flag sets.  The reference model takes the
 * interrupt right after the instruction, so the P it saves is the address
@@ -37,10 +38,12 @@ UPKG     =       3000                    ; the user's exchange package
 *
          ORG     UPKG
          CON     (UCODE-UBASE*4)*T$P2_24 ; P, relative to the base
-         CON     UBASE/20*T$P2_28        ; BA
-         CON     (UBASE+100)/20*T$P2_28  ; LA: the field is 10000-10077; M = 0
+         CON     UBASE/40*T$P2_29        ; IBA
+         CON     (UBASE+100)/40*T$P2_29+T$IOR*T$P2_24 ; ILA: the field is 10000-10077
          CON     UPKG/20*T$P2_40         ; XA back to this package
-         BSSZ    D'12                    ; A4-A7, S0-S7
+         CON     UBASE/40*T$P2_29        ; DBA: the same field for data
+         CON     (UBASE+100)/40*T$P2_29  ; DLA
+         BSSZ    D'10                    ; A6, A7, S0-S7
 *
 * the user program; its addresses are relative to UBASE
          ORG     UBASE+10

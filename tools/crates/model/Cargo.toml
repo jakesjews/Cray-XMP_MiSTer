@@ -3,7 +3,7 @@ name = "cray-xmp-model"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
-description = "Instruction-level reference model of the CRAY-1"
+description = "Instruction-level reference model of the CPU of a one-processor CRAY X-MP"
 
 [dependencies]
 cray-xmp-isa = { path = "../isa" }

@@ -2,7 +2,7 @@
 
 One Rust workspace, standard library only.
 
-- `crates/isa`: the Cray-1 instruction table (encode, decode, disassemble).
+- `crates/isa`: the instruction table of the CRAY X-MP (encode, decode, disassemble).
 - `crates/asm`: CAL-subset assembler producing raw memory images.
 - `crates/fp`: bit-exact Cray floating-point add, multiply and reciprocal.
 - `crates/model`: the reference model of the CPU, and `cray-xmp-run`, which runs a memory image on it.

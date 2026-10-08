@@ -1,6 +1,7 @@
 * vcases: VL = 1, VL encodings, chaining across lengths, operands changed
-* after issue, recursion, 076/077 next to vector operations.  The expected
-* values were worked out from the manual.
+* after issue, result registers that are their own operands, 076/077 next
+* to vector operations.  The expected values were worked out from the
+* manual.
          INCLUDE "rt_direct.cal"
          TBEGIN
          A1        D'64
@@ -209,23 +210,23 @@
          V5        V5+V4
          A2        D'63
          S1        V5,A2
-         CHKS      S1,D'13,44
+         CHKS      S1,1,44
          A2        D'4
          S1        V5,A2
          CHKS      S1,1,45
          A2        D'5
          S1        V5,A2
-         CHKS      S1,2,46
+         CHKS      S1,1,46
          A0        ONE
          A2        0
          V6        ,A0,A2
          V6        V6+V6
          A2        D'63
          S1        V6,A2
-         CHKS      S1,D'8192,47
+         CHKS      S1,2,47
          A2        D'5
          S1        V6,A2
-         CHKS      S1,4,50
+         CHKS      S1,2,50
          A2        D'4
          S1        V6,A2
          CHKS      S1,2,51
@@ -238,13 +239,13 @@
          CHKS      S1,1,52
          A2        D'4
          S1        V7,A2
-         CHKS      S1,0,53
+         CHKS      S1,1,53
          A2        D'59
          S1        V7,A2
          CHKS      S1,1,54
          A2        D'63
          S1        V7,A2
-         CHKS      S1,0,55
+         CHKS      S1,1,55
          A0        ONE
          A2        0
          V7        ,A0,A2
@@ -254,10 +255,10 @@
          CHKS      S1,2,56
          A2        D'6
          S1        V7,A2
-         CHKS      S1,4,57
+         CHKS      S1,2,57
          A2        D'63
          S1        V7,A2
-         CHKS      S1,D'2048,60
+         CHKS      S1,2,60
          A1        D'3
          VL        A1
          S2        D'10
@@ -266,7 +267,7 @@
          V5        V5+V4
          A2        D'2
          S1        V5,A2
-         CHKS      S1,D'11,61
+         CHKS      S1,2,61
          A2        D'0
          S1        V5,A2
          CHKS      S1,D'11,62
@@ -279,7 +280,7 @@
          V6        V6+V3
          A2        D'63
          S1        V6,A2
-         CHKS      S1,D'884,63
+         CHKS      S1,D'128,63
          A2        D'4
          S1        V6,A2
          CHKS      S1,D'10,64

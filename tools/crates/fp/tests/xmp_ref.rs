@@ -3,19 +3,19 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use cray_xmp_fp::{fmul, fmul_model, read_vector_file, MulKind, MulModel, Op, Profile};
+use cray_xmp_fp::{fmul, fmul_model, read_vector_file, MulKind, MulModel, Op};
 
 fn reference_file() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fp/xmp_ref.vec")
 }
 
 #[test]
-fn xmp_profile_reproduces_every_reference_vector() {
+fn every_reference_vector_is_reproduced() {
     let vectors =
         read_vector_file(reference_file()).expect("tests/fp/xmp_ref.vec must be readable");
     let mut counts: HashMap<Op, usize> = HashMap::new();
     for v in &vectors {
-        let got = v.op.eval(v.a, v.b, Profile::Xmp);
+        let got = v.op.eval(v.a, v.b);
         assert_eq!(got.value, v.result, "{v}: got {:016X}", got.value);
         assert_eq!(got, v.expected(), "{v}: flag mismatch");
         *counts.entry(v.op).or_default() += 1;
@@ -25,17 +25,6 @@ fn xmp_profile_reproduces_every_reference_vector() {
     assert_eq!(counts[&Op::Mul], 25);
     assert_eq!(counts[&Op::Recip], 25);
     assert_eq!(vectors.len(), 79);
-}
-
-#[test]
-fn cray1_profile_returns_the_same_results() {
-    for v in read_vector_file(reference_file()).unwrap() {
-        assert_eq!(
-            v.op.eval(v.a, v.b, Profile::Cray1),
-            v.op.eval(v.a, v.b, Profile::Xmp),
-            "{v}"
-        );
-    }
 }
 
 #[test]
@@ -59,18 +48,12 @@ fn product_vectors_do_not_separate_the_two_pyramid_widths() {
 fn excluded_product_case_is_the_rounded_product() {
     // main() of fp_test.cpp expects ...B48F from operator*, which cray-sim does not deliver.
     let (a, b) = (0x4005_CAE2_0FC3_F04D, 0x3FFE_CB56_F313_8000);
-    assert_eq!(
-        fmul(a, b, MulKind::Full, Profile::Xmp).value,
-        0x4003_A126_2B15_B48E
-    );
+    assert_eq!(fmul(a, b, MulKind::Full).value, 0x4003_A126_2B15_B48E);
     assert_eq!(
         fmul_model(a, b, MulKind::Full, &MulModel::CRAY_SIM).value,
         0x4003_A126_2B15_B48E
     );
-    assert_eq!(
-        fmul(a, b, MulKind::Rounded, Profile::Xmp).value,
-        0x4003_A126_2B15_B48F
-    );
+    assert_eq!(fmul(a, b, MulKind::Rounded).value, 0x4003_A126_2B15_B48F);
 }
 
 #[test]

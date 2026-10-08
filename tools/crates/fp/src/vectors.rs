@@ -20,9 +20,7 @@ use std::fs::File;
 use std::io::{self, BufRead, BufWriter, Write};
 use std::path::Path;
 
-use crate::{
-    fadd, fmul, frecip, fsub, pack, FpResult, MulKind, Profile, COEF_MASK, NORM_BIT, SIGN_BIT,
-};
+use crate::{fadd, fmul, frecip, fsub, pack, FpResult, MulKind, COEF_MASK, NORM_BIT, SIGN_BIT};
 
 /// Operation named in a vector line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -85,14 +83,12 @@ impl Op {
     }
 
     /// Run the operation. `b` is ignored by `Recip`.
-    pub fn eval(self, a: u64, b: u64, profile: Profile) -> FpResult {
+    pub fn eval(self, a: u64, b: u64) -> FpResult {
         match self {
             Op::Add => fadd(a, b),
             Op::Sub => fsub(a, b),
-            Op::Recip => frecip(a, profile),
-            Op::Mul | Op::MulH | Op::MulR | Op::Mul2M => {
-                fmul(a, b, self.mul_kind().unwrap(), profile)
-            }
+            Op::Recip => frecip(a),
+            Op::Mul | Op::MulH | Op::MulR | Op::Mul2M => fmul(a, b, self.mul_kind().unwrap()),
         }
     }
 }
@@ -112,9 +108,9 @@ pub struct Vector {
 
 impl Vector {
     /// Evaluate `op` on the operands with this crate and record the outcome.
-    pub fn compute(op: Op, a: u64, b: u64, profile: Profile) -> Vector {
+    pub fn compute(op: Op, a: u64, b: u64) -> Vector {
         let b = if op == Op::Recip { 0 } else { b };
-        let r = op.eval(a, b, profile);
+        let r = op.eval(a, b);
         Vector {
             op,
             a,
@@ -195,15 +191,9 @@ pub fn read_vector_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<Vector>> {
     read_vectors(io::BufReader::new(File::open(path)?))
 }
 
-/// Write `n` vectors for `op` (see [`vectors_for`]) as text lines.
-pub fn write_vectors<W: Write>(
-    out: &mut W,
-    op: Op,
-    profile: Profile,
-    n: usize,
-    seed: u64,
-) -> io::Result<()> {
-    for v in vectors_for(op, profile, n, seed) {
+/// Write `n` vectors for `op` (see [`vectors`]) as text lines.
+pub fn write_vectors<W: Write>(out: &mut W, op: Op, n: usize, seed: u64) -> io::Result<()> {
+    for v in vectors(op, n, seed) {
         writeln!(out, "{v}")?;
     }
     Ok(())
@@ -214,21 +204,20 @@ pub fn write_vectors<W: Write>(
 pub fn write_vector_file<P: AsRef<Path>>(
     path: P,
     ops: &[Op],
-    profile: Profile,
     n: usize,
     seed: u64,
 ) -> io::Result<usize> {
     let mut out = BufWriter::new(File::create(path)?);
     writeln!(
         out,
-        "# cray-xmp-fp vectors: profile {profile:?}, {n} per operation, seed {seed:#x}"
+        "# cray-xmp-fp vectors: {n} per operation, seed {seed:#x}"
     )?;
     writeln!(
         out,
         "# OP A B RESULT FLAGS (hex; FLAGS bit 0 = range error)"
     )?;
     for &op in ops {
-        write_vectors(&mut out, op, profile, n, seed)?;
+        write_vectors(&mut out, op, n, seed)?;
     }
     out.flush()?;
     Ok(ops.len() * n)
@@ -418,7 +407,7 @@ fn add_corners() -> Vec<(u64, u64)> {
     v
 }
 
-fn mul_corners(kind: MulKind, profile: Profile) -> Vec<(u64, u64)> {
+fn mul_corners(kind: MulKind) -> Vec<(u64, u64)> {
     let mut v = Vec::new();
 
     // Coefficients near all ones, near one half, near 1/sqrt(2), and unnormalised patterns.
@@ -533,7 +522,7 @@ fn mul_corners(kind: MulKind, profile: Profile) -> Vec<(u64, u64)> {
         ] {
             for e in [BIAS - 3, BIAS, BIAS + 1, BIAS + 40] {
                 let b = pack(false, e, coef);
-                let r = frecip(b, profile).value;
+                let r = frecip(b).value;
                 both(&mut v, r, b);
                 both(&mut v, r ^ SIGN_BIT, b);
             }
@@ -602,11 +591,11 @@ fn recip_corners() -> Vec<(u64, u64)> {
 /// * recip: all 128 table indices with minimum, maximum and random low bits; coefficient
 ///   exactly one half; unnormalised operands; zero; exponents 0, 1, 017777, 020000, 020001,
 ///   020002, 020003, 057776, 057777, 060000, 060001, 077777.
-pub fn corner_operands(op: Op, profile: Profile) -> Vec<(u64, u64)> {
+pub fn corner_operands(op: Op) -> Vec<(u64, u64)> {
     match op {
         Op::Add | Op::Sub => add_corners(),
         Op::Recip => recip_corners(),
-        Op::Mul | Op::MulH | Op::MulR | Op::Mul2M => mul_corners(op.mul_kind().unwrap(), profile),
+        Op::Mul | Op::MulH | Op::MulR | Op::Mul2M => mul_corners(op.mul_kind().unwrap()),
     }
 }
 
@@ -614,7 +603,7 @@ fn random_word(rng: &mut SplitMix64, exp: u16, coef: u64) -> u64 {
     pack(rng.flag(), exp, coef)
 }
 
-fn random_operands(op: Op, profile: Profile, rng: &mut SplitMix64, index: usize) -> (u64, u64) {
+fn random_operands(op: Op, rng: &mut SplitMix64, index: usize) -> (u64, u64) {
     let class = index % 4;
     match op {
         Op::Recip => {
@@ -698,7 +687,7 @@ fn random_operands(op: Op, profile: Profile, rng: &mut SplitMix64, index: usize)
                 let e = BIAS - 0o4000 + rng.below(0o10000) as u16;
                 let coef = rng.norm_coef();
                 let b = random_word(rng, e, coef);
-                let r = frecip(b, profile).value;
+                let r = frecip(b).value;
                 if rng.flag() {
                     (r, b)
                 } else {
@@ -743,27 +732,22 @@ fn random_operands(op: Op, profile: Profile, rng: &mut SplitMix64, index: usize)
     }
 }
 
-/// `n` vectors for `op`, computed with [`Profile::Xmp`]. See [`vectors_for`].
-pub fn vectors(op: Op, n: usize, seed: u64) -> impl Iterator<Item = Vector> {
-    vectors_for(op, Profile::Xmp, n, seed)
-}
-
 /// `n` vectors for `op`: first the corner cases of [`corner_operands`] (all of them if `n`
 /// is large enough), then pseudo-random cases that cycle through four classes: uniform
 /// random 64-bit patterns; normalised operands (for add and sub with exponent differences
 /// 0 to 50, for mul2m a value and its reciprocal approximation); range-edge and
 /// cancellation cases; unnormalised operands.
 ///
-/// The sequence depends only on `op`, `profile`, `n` and `seed`.
-pub fn vectors_for(op: Op, profile: Profile, n: usize, seed: u64) -> impl Iterator<Item = Vector> {
-    let corners = corner_operands(op, profile);
+/// The sequence depends only on `op`, `n` and `seed`.
+pub fn vectors(op: Op, n: usize, seed: u64) -> impl Iterator<Item = Vector> {
+    let corners = corner_operands(op);
     let salt = Op::ALL.iter().position(|&o| o == op).unwrap() as u64;
     let mut rng = SplitMix64::new(seed ^ salt.wrapping_mul(0xA076_1D64_78BD_642F));
     (0..n).map(move |i| {
         let (a, b) = match corners.get(i) {
             Some(&pair) => pair,
-            None => random_operands(op, profile, &mut rng, i - corners.len()),
+            None => random_operands(op, &mut rng, i - corners.len()),
         };
-        Vector::compute(op, a, b, profile)
+        Vector::compute(op, a, b)
     })
 }

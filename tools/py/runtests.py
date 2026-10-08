@@ -3,16 +3,15 @@
 
     runtests.py quick [-j JOBS]   smoke tests under every start-up, the directed tests,
                                   the self-checking clock and interrupt tests, the
-                                  floating-point reference vectors, 200 random programs;
-                                  then the X-MP mode: its tests and 100 random programs;
+                                  floating-point reference vectors, 300 random programs;
                                   then the I/O Processor: 400 random programs, and
                                   the self-check of three of them together; then
                                   the X-MP core: its terminal on 400 random screens,
                                   its message when no boot file is loaded, and the
                                   self-check on the whole core with what it prints
     runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
-                                  floating-point operation, 10,000 random programs and
-                                  2,000 for the X-MP mode; then, if the COS 1.17
+                                  floating-point operation and 12,000 random
+                                  programs; then, if the COS 1.17
                                   software is there (in the directory the environment
                                   variable CRAY_XMP_SYSTEM names), the system
                                   model dead starts it and runs a job, the I/O
@@ -108,9 +107,6 @@ def main():
                [PY, DIFF, 'file'] + sorted(glob.glob(os.path.join(ROOT, 'tests/directed/*.cal'))) + ['-I', 'tests/rt', '-j', jobs])
     ok &= rtl_only()
     ok &= step('floating-point reference vectors', [FPBENCH, 'tests/fp/xmp_ref.vec'])
-    xmp = sorted(glob.glob(os.path.join(ROOT, 'tests/xmp/*.cal')))
-    ok &= step('X-MP mode: %d tests' % len(xmp), [PY, DIFF, 'file'] + xmp + ['-I', 'tests/rt', '-j', jobs])
-    ok &= step('X-MP mode: 100 random programs', [PY, DIFF, 'rand', '1', '100', '-n', '250', '--xmp', '-j', jobs])
     ok &= step('I/O Processor: 400 random programs', [PY, IOP, 'rand', '1', '200', '-j', jobs])
     ok &= step('I/O Processors together: self-check', [PY, IOP, 'selftest'])
     ok &= step('the bridges between the two clocks, 2,000 cases', [PY, IOP, 'bridges'])
@@ -119,7 +115,7 @@ def main():
     ok &= step('X-MP core: no boot file', [PY, CORE, 'nofile'])
     ok &= step('X-MP core: the self-check, with its printing on the screen and in the file', [PY, CORE, 'printer'])
     if a[0] == 'quick':
-        ok &= step('200 random programs', [PY, DIFF, 'rand', '1', '200', '-n', '250', '-j', jobs])
+        ok &= step('300 random programs', [PY, DIFF, 'rand', '1', '300', '-n', '250', '-j', jobs])
     else:
         vec = os.path.join(ROOT, 'build/fpvec')
         ok &= step('generate floating-point vectors',
@@ -128,9 +124,7 @@ def main():
         for f in sorted(glob.glob(os.path.join(vec, '*.vec'))):
             ok &= step('floating point: ' + os.path.basename(f), [FPBENCH, f])
             ok &= step('floating point with gaps: ' + os.path.basename(f), [FPBENCH, f, '--gaps'])
-        ok &= step('10,000 random programs', [PY, DIFF, 'rand', '1', '10000', '-n', '250', '-j', jobs])
-        ok &= step('X-MP mode: 2,000 random programs',
-                   [PY, DIFF, 'rand', '1001', '3000', '-n', '250', '--xmp', '-j', jobs])
+        ok &= step('12,000 random programs', [PY, DIFF, 'rand', '1', '12000', '-n', '250', '-j', jobs])
         ok &= step('I/O Processor: 4,000 random programs', [PY, IOP, 'rand', '201', '2200', '-j', jobs])
         if os.path.exists(os.path.join(SYSTEM, 'boot_tape.tap')):
             ok &= step('system model: COS 1.17 dead starts and runs a job',

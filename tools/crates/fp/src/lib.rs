@@ -1,5 +1,5 @@
 //! Bit-exact Cray floating-point arithmetic: the add, multiply and reciprocal approximation
-//! units of the CRAY-1 and CRAY X-MP, working on 64-bit operand words.
+//! units of the CRAY X-MP, working on 64-bit operand words.
 //!
 //! This crate is the reference model that hardware floating-point units are checked
 //! against. Read the section "What is and is not validated" before relying on any corner.
@@ -10,14 +10,13 @@
 //! |------|-------------|-------|
 //! | [`fadd`]`(a, b)` | 062, 170, 171 | |
 //! | [`fsub`]`(a, b)` | 063, 172, 173 | `fadd(a, -b)` |
-//! | [`fmul`]`(a, b, kind, profile)` | 064 to 067, 160 to 167 | [`MulKind`], [`Profile`] |
-//! | [`frecip`]`(a, profile)` | 070, 174 | |
-//! | [`fdiv`]`(a, b, profile)` | none | the manual's four-instruction divide sequence |
+//! | [`fmul`]`(a, b, kind)` | 064 to 067, 160 to 167 | [`MulKind`] |
+//! | [`frecip`]`(a)` | 070, 174 | |
+//! | [`fdiv`]`(a, b)` | none | the manual's four-instruction divide sequence |
 //! | [`fmul_model`], [`MulModel`] | | the multiply with an explicit pyramid model |
 //! | [`pack`], [`unpack`], [`is_normalized`] | | word format helpers |
 //! | [`to_f64`], [`from_f64`] | | test convenience, never used by the arithmetic |
-//! | [`vectors()`], [`vectors_for`], [`write_vector_file`], [`read_vector_file`] | | test vectors, see [`mod@vectors`] |
-//! | [`cray1_pyramid`] | | experimental reconstruction of the CRAY-1 pyramid, not used by `fmul` |
+//! | [`vectors()`], [`write_vector_file`], [`read_vector_file`] | | test vectors, see [`mod@vectors`] |
 //!
 //! Every operation returns an [`FpResult`]: the result word and the range error flag. That
 //! flag is the only one the manuals define. Underflow is silent and gives an all-zero word.
@@ -32,30 +31,21 @@
 //! normalised when bit 47 is set. Exponents `020000..=057777` are in range; below is
 //! underflow, `060000` and above is overflow.
 //!
-//! # Profiles
+//! # The units
 //!
-//! [`Profile::Xmp`] is the X-MP arithmetic of the Cray manuals (HR-0097B section 4).
-//! [`Profile::Cray1`] returns **exactly the same results**, and stands for the CRAY-1 with
-//! the symmetric multiply unit:
+//! The arithmetic is that of the X-MP manuals (HR-0097B section 4):
 //!
-//! * The CRAY-1 changed its multiply unit. Revisions C (1977) and E (1979) of the hardware
-//!   manual describe a non-commutative staircase pyramid with its truncation constant at
-//!   `2^-51` and `2^-52`, one round bit at `2^-49` for 066 and a 30-bit half-precision
-//!   result. Change packet E-01 of May 1980, printed in revision F (1982), "documents
-//!   changes to the multiply functional unit that supports symmetrical multiply": a straight
-//!   cut after `2^-56`, nine carries at `2^-56`, round bits at `2^-50` and `2^-51`,
-//!   commutative. That text, the CRAY-1 S manual's and the X-MP manuals' are the same.
-//! * The original staircase unit is not modelled. [`cray1_pyramid`] has it as far as figure
-//!   3-5 of revision C allows; about one unrounded product in five differs from the
-//!   symmetric unit in its last bit (`tests/pyramid.rs`). Which serial numbers had which
-//!   unit is not known.
+//! * The multiply unit is the symmetric one: a straight cut after `2^-56`, nine carries at
+//!   `2^-56`, round bits at `2^-50` and `2^-51`, commutative. The CRAY-1 got it with change
+//!   packet E-01 of May 1980, printed in revision F (1982) of its hardware manual; that
+//!   text, the CRAY-1 S manual's and the X-MP manuals' are the same. The staircase pyramid
+//!   of the first CRAY-1s (revisions C and E of the manual) is not modelled.
 //! * E-01 still calls the half-precision result "30-bit"; the CRAY-1 S and X-MP manuals and
-//!   Cray's diagnostic say 29 bits, which is what both profiles return.
-//! * The reciprocal unit is the same in both: Cray's diagnostic simulation of it names
-//!   CRAY-1 modules.
-//!
-//! [`fadd`] and [`fsub`] take no profile. The one point where the two manuals differ for
-//! the add unit is noted below.
+//!   Cray's diagnostic say 29 bits, which is what [`fmul`] returns.
+//! * The reciprocal unit is the CRAY-1's: Cray's diagnostic simulation of it names CRAY-1
+//!   modules.
+//! * For the add unit the CRAY-1 manual is followed at the one point where the two differ,
+//!   noted below.
 //!
 //! # What is and is not validated
 //!
@@ -65,9 +55,7 @@
 //! of Cray's floating point diagnostic JFPT (tables COPA, COPB, ERFA, ERFM and ERRP in the
 //! CRAY J90 offline diagnostic listing of January 1997; the code dates from 1980). They cover in-range, mostly normalised
 //! operands of 062, 064 and 070 only. Three more cases in `main()` are left out because
-//! cray-sim itself does not reproduce them; one of them, a product, is matched by the
-//! reconstructed CRAY-1 staircase and by the X-MP rounded multiply but not by the X-MP
-//! unrounded multiply (`tests/pyramid.rs`).
+//! cray-sim itself does not reproduce them.
 //!
 //! Confirmed by those vectors:
 //!
@@ -76,7 +64,7 @@
 //! * multiply 064: a truncated pyramid plus the constant `9 x 2^-56`, and the integer
 //!   multiply for zero exponents. The vectors do **not** tell a pyramid cut after `2^-56`
 //!   (the manuals) from one cut after `2^-57` (cray-sim): both reproduce all of them.
-//!   `Profile::Xmp` uses `2^-56`, because the manual's own numbers single it out: the mean
+//!   [`fmul`] uses `2^-56`, because the manual's own numbers single it out: the mean
 //!   truncated carry of 9.25, results from one too small to one too large, and 99 percent
 //!   exact, all measured in this crate's tests. cray-sim's variant gives 4.25, never too
 //!   small, and 97.5 percent.
@@ -150,7 +138,6 @@
 
 mod add;
 mod convert;
-pub mod cray1_pyramid;
 mod mul;
 mod recip;
 pub mod vectors;
@@ -159,7 +146,7 @@ pub use add::{fadd, fsub};
 pub use convert::{from_f64, to_f64};
 pub use mul::{fmul, fmul_model, MulModel};
 pub use recip::{frecip, recip_seed, recip_table_word};
-pub use vectors::{read_vector_file, vectors, vectors_for, write_vector_file, Op, Vector};
+pub use vectors::{read_vector_file, vectors, write_vector_file, Op, Vector};
 
 /// Sign bit of the coefficient (bit 63).
 pub const SIGN_BIT: u64 = 1 << 63;
@@ -197,17 +184,6 @@ pub enum MulKind {
     Rounded,
     /// 067: reciprocal iteration, `2 - a*b`.
     TwoMinus,
-}
-
-/// Which machine's arithmetic to model. See the crate documentation: the two profiles
-/// currently give identical results.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Profile {
-    /// CRAY X-MP, per HR-0097B.
-    Xmp,
-    /// CRAY-1. Falls back to the X-MP arithmetic where the CRAY-1 behaviour is not known
-    /// at bit level, which today is everywhere.
-    Cray1,
 }
 
 /// The three fields of a floating-point word.
@@ -250,11 +226,11 @@ pub fn is_normalized(word: u64) -> bool {
 /// `range_error` is the OR of the four steps. This is a convenience for tests, not an
 /// instruction. The quotient is not correctly rounded: see "Measured accuracy" in the crate
 /// documentation.
-pub fn fdiv(a: u64, b: u64, profile: Profile) -> FpResult {
-    let r = frecip(b, profile);
-    let c = fmul(r.value, b, MulKind::TwoMinus, profile);
-    let q = fmul(a, r.value, MulKind::Full, profile);
-    let out = fmul(c.value, q.value, MulKind::Full, profile);
+pub fn fdiv(a: u64, b: u64) -> FpResult {
+    let r = frecip(b);
+    let c = fmul(r.value, b, MulKind::TwoMinus);
+    let q = fmul(a, r.value, MulKind::Full);
+    let out = fmul(c.value, q.value, MulKind::Full);
     FpResult {
         value: out.value,
         range_error: r.range_error || c.range_error || q.range_error || out.range_error,

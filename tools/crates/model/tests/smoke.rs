@@ -8,9 +8,9 @@
 //! * `direct`: as written;
 //! * `exch`: `INCLUDE "rt_exch.cal"` instead (the same text otherwise);
 //! * `user`: `rt_exch.cal` and `TUSER 0` after the INCLUDE: a user program
-//!   with base address 0;
+//!   with both base addresses 0;
 //! * `reloc`: `rt_exch.cal` and `TUSER 1000`: a user program relocated to
-//!   word 20000.
+//!   word 40000.
 
 use cray_xmp_model::{report, Machine, RunResult};
 use std::path::{Path, PathBuf};
@@ -19,9 +19,9 @@ const STATUS_WORD: u32 = 0o100;
 const DONE_WORD: u32 = 0o101;
 const DUMP: u32 = 0o4000;
 const CRAYDONE: u64 = u64::from_be_bytes(*b"CRAYDONE");
-/// Base address register for the `reloc` runtime, and the base it gives.
+/// The base addresses for the `reloc` runtime, and the base they give.
 const RELOC_BA: u32 = 0o1000;
-const RELOC_BASE: u32 = RELOC_BA * 16;
+const RELOC_BASE: u32 = RELOC_BA * 32;
 const MAX_STEPS: u64 = 200_000;
 
 fn tests_dir() -> PathBuf {
@@ -136,13 +136,11 @@ fn pass(name: &str, expect_runtimes: &[&str]) -> Vec<(String, Machine)> {
             let f = machine.mem(0o23).map(|w| (w >> 24) & 0o777);
             let user = matches!(runtime.as_str(), "user" | "reloc");
             assert_eq!(f, Some(user as u64), "{}: F of the test's package", label);
-            let ba = machine.mem(0o21).map(|w| (w >> 28) as u32);
-            assert_eq!(
-                ba,
-                Some(if runtime == "reloc" { RELOC_BA } else { 0 }),
-                "{}: BA of the test's package",
-                label
-            );
+            let reloc = if runtime == "reloc" { RELOC_BA } else { 0 };
+            for (word, what) in [(0o21, "IBA"), (0o24, "DBA")] {
+                let ba = machine.mem(word).map(|w| (w >> 29) as u32);
+                assert_eq!(ba, Some(reloc), "{}: {} of the test's package", label, what);
+            }
         }
         out.push((runtime, machine));
     }
@@ -174,7 +172,6 @@ fn every_smoke_test_is_run() {
             "mem.cal",
             "pop.cal",
             "range.cal",
-            "recur.cal",
             "shift.cal",
             "vector.cal",
             "vrange.cal"
@@ -185,7 +182,7 @@ fn every_smoke_test_is_run() {
 
 #[test]
 fn smoke_hello() {
-    let expect = b"HELLO, CRAY-1\n0000000000000001234567\n";
+    let expect = b"HELLO, CRAY X-MP\n0000000000000001234567\n";
     for (runtime, machine) in pass("hello", &["direct", "exch", "user"]) {
         assert_eq!(machine.console(), expect, "{}", runtime);
     }
@@ -253,7 +250,7 @@ fn smoke_float() {
     pass("float", ALL);
     // the quotient the test expects is the divide sequence of cray-xmp-fp
     let f = |v: f64| cray_xmp_fp::from_f64(v).unwrap();
-    let quotient = cray_xmp_fp::fdiv(f(6.0), f(3.0), cray_xmp_fp::Profile::Cray1);
+    let quotient = cray_xmp_fp::fdiv(f(6.0), f(3.0));
     assert_eq!(
         (quotient.value, quotient.range_error),
         (0x4002_8000_0000_0000, false)
@@ -322,11 +319,6 @@ fn smoke_dump() {
     }
 }
 
-#[test]
-fn smoke_recur() {
-    pass("recur", ALL);
-}
-
 // ---- the runtimes themselves
 
 fn runtime_test(body: &str, runtime: &str, input: &[u8]) -> (Machine, RunResult) {
@@ -373,23 +365,21 @@ fn a_test_without_a_verdict_fails() {
 
 #[test]
 fn the_exchange_runtime_reports_an_interrupted_test() {
-    // A user program that passes and then stores outside memory: operand
-    // range (flag 40), reported as 1000 + F.
+    // A relocated user program that passes and then stores above the end of
+    // memory: operand range (flag 40), reported as 1000 + F.
     let body = "         TPASS\n         S1      5\n         A1      -1\n         0,A1    S1\n         TEND";
-    for runtime in ["user", "reloc"] {
-        let (machine, result) = runtime_test(body, runtime, b"");
-        assert_eq!(result, RunResult::Exit(0o1040), "{}", runtime);
-        assert_eq!(machine.mem(STATUS_WORD), Some(0o1040));
-        assert_eq!(machine.mem(DONE_WORD), Some(CRAYDONE));
-    }
+    let (machine, result) = runtime_test(body, "reloc", b"");
+    assert_eq!(result, RunResult::Exit(0o1040));
+    assert_eq!(machine.mem(STATUS_WORD), Some(0o1040));
+    assert_eq!(machine.mem(DONE_WORD), Some(CRAYDONE));
     // an error exit (flag 2) in a user program
     for runtime in ["user", "reloc"] {
         let (_, result) = runtime_test("         TPASS\n         ERR\n         TEND", runtime, b"");
         assert_eq!(result, RunResult::Exit(0o1002), "{}", runtime);
     }
-    // In monitor mode no flag sets: the store is dropped and the test goes
-    // on (HRM pages 3-36 and 3-43).
-    for runtime in ["direct", "exch"] {
+    // With base address 0 the same store reaches the last word of memory,
+    // a word of the I/O page that ignores it: the test goes on.
+    for runtime in ["direct", "exch", "user"] {
         let (_, result) = runtime_test(body, runtime, b"");
         assert_eq!(result, RunResult::Exit(0), "{}", runtime);
     }
@@ -472,7 +462,10 @@ fn binary_runs_an_image() {
         trace.to_str().unwrap(),
     ]);
     assert_eq!(out.status.code(), Some(0));
-    assert_eq!(out.stdout, b"HELLO, CRAY-1\n0000000000000001234567\nhi\n");
+    assert_eq!(
+        out.stdout,
+        b"HELLO, CRAY X-MP\n0000000000000001234567\nhi\n"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.starts_with("cray-xmp-run: exit 0 after "),
@@ -481,7 +474,7 @@ fn binary_runs_an_image() {
     );
 
     let state = std::fs::read_to_string(&state).unwrap();
-    let console: String = b"HELLO, CRAY-1\n0000000000000001234567\nhi\n"
+    let console: String = b"HELLO, CRAY X-MP\n0000000000000001234567\nhi\n"
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect();
@@ -517,7 +510,7 @@ fn binary_runs_an_image() {
     // the run ends with the write to TEST_EXIT
     assert_eq!(
         lines[lines.len() - 2],
-        format!("I {:08o} 130117 177762  3777762,0 S1", machine.p() - 2)
+        format!("I {:08o} 130177 177762  -16,0     S1", machine.p() - 2)
     );
     assert_eq!(*lines.last().unwrap(), "E 0");
 
@@ -590,48 +583,28 @@ fn binary_exit_statuses() {
     );
 }
 
-/// The programs of `tests/xmp` are for the machine with the X-MP features
-/// (their `MACHINE XMP` line says so to the assembler, and the assembler to
-/// us).  Each must pass on the model.
+/// The programs of `tests/directed` must end with exit code 0 on the model,
+/// and those written with the runtime must have passed their checks.
 #[test]
-fn xmp_tests() {
-    let dir = tests_dir().join("xmp");
-    let rt = tests_dir().join("rt");
+fn directed_tests() {
+    let dir = tests_dir().join("directed");
     let mut names: Vec<String> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().file_name().into_string().unwrap())
         .filter(|n| n.ends_with(".cal"))
         .collect();
     names.sort();
-    assert_eq!(
-        names,
-        ["chan.cal", "shared.cal", "xpkg.cal"],
-        "tests/xmp changed"
-    );
+    assert!(names.len() >= 15, "tests/directed: {:?}", names);
     for name in names {
         let source = std::fs::read_to_string(dir.join(&name)).unwrap();
-        let mut include = |file: &str, _from: &str| -> Result<(String, String), String> {
-            let path = rt.join(file);
-            std::fs::read_to_string(&path)
-                .map(|text| (path.display().to_string(), text))
-                .map_err(|e| e.to_string())
-        };
-        let assembly = cray_xmp_asm::assemble(&name, &source, &mut include);
-        let messages: Vec<String> = assembly.diagnostics.iter().map(|d| d.to_string()).collect();
-        assert!(messages.is_empty(), "{}:\n{}", name, messages.join("\n"));
-        assert_eq!(assembly.machine, cray_xmp_isa::Cpu::Xmp, "{}", name);
-        let mut machine = Machine::for_cpu(assembly.machine);
-        machine.load_image(&assembly.image()).unwrap();
-        // chan.cal has each output channel cabled to its input channel
+        let mut machine = Machine::with_image(&assemble(&name, &source)).unwrap();
+        // channels.cal has each output channel cabled to its input channel
         machine.set_channel_loopback(true);
-        let result = machine.run(MAX_STEPS);
+        let result = machine.run(20 * MAX_STEPS);
         assert_eq!(result, RunResult::Exit(0), "{}", name);
-        assert_eq!(machine.mem(STATUS_WORD), Some(1), "{}", name);
-        assert_eq!(machine.mem(DONE_WORD), Some(CRAYDONE), "{}", name);
-        // the same image is not a CRAY-1 program
-        let mut other = Machine::new();
-        if other.load_image(&assembly.image()).is_ok() {
-            assert_ne!(other.run(MAX_STEPS), RunResult::Exit(0), "{}", name);
+        if source.contains("INCLUDE \"rt_direct.cal\"") {
+            assert_eq!(machine.mem(STATUS_WORD), Some(1), "{}", name);
+            assert_eq!(machine.mem(DONE_WORD), Some(CRAYDONE), "{}", name);
         }
     }
 }

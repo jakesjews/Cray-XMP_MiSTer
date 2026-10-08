@@ -27,15 +27,6 @@ fn asm_err(result: &str, operand: &str) -> String {
     }
 }
 
-/// The machine a row is assembled and decoded for in these tests.
-fn cpu_of(f: &Form) -> Cpu {
-    if f.on(Cpu::Cray1) {
-        Cpu::Cray1
-    } else {
-        Cpu::Xmp
-    }
-}
-
 /// Which fields the templates and expression kind of a row give a value to.
 fn bound_fields(f: &Form) -> (bool, bool, bool, bool, bool) {
     let text = format!("{} {}", f.result, f.operand);
@@ -111,20 +102,11 @@ fn table_is_consistent() {
 #[test]
 fn every_first_parcel_decodes_to_one_base_form() {
     let mut seen = [false; OP_COUNT];
-    for (cpu, p0) in [Cpu::Cray1, Cpu::Xmp]
-        .into_iter()
-        .flat_map(|c| (0..=0xffffu16).map(move |p| (c, p)))
-    {
-        let d = decode_cpu(cpu, p0, Some(0o123456));
+    for p0 in 0..=0xffffu16 {
+        let d = decode(p0, Some(0o123456));
         seen[d.op as usize] = true;
         assert_eq!(d.form.kind, Kind::Base);
-        assert_eq!(d.len(), length_cpu(cpu, p0));
-        // an X-MP row is only ever found on the X-MP, and changes no length
-        assert!(d.form.on(cpu));
         assert_eq!(d.len(), length(p0));
-        if cpu == Cpu::Cray1 {
-            assert_eq!(d, decode(p0, Some(0o123456)));
-        }
         assert_eq!(
             (d.g, d.h, d.i, d.j, d.k),
             (
@@ -137,7 +119,7 @@ fn every_first_parcel_decodes_to_one_base_form() {
         );
         // the canonical encoding is the same instruction with the same operands
         let c = d.canonical();
-        let again = decode_cpu(cpu, c.parcel0, c.parcel1);
+        let again = decode(c.parcel0, c.parcel1);
         assert_eq!(again.op, d.op, "{:06o}", p0);
         assert!(again.is_canonical(), "{:06o}", p0);
         assert_eq!(again.exp, d.exp, "{:06o}", p0);
@@ -153,10 +135,9 @@ fn every_first_parcel_decodes_to_one_base_form() {
 fn every_form_round_trips() {
     let mut spelled = 0;
     for f in FORMS {
-        let cpu = cpu_of(f);
         let fields = f.example_fields();
         let want = encode(f, fields);
-        let d = decode_cpu(cpu, want.parcel0, want.parcel1);
+        let d = decode(want.parcel0, want.parcel1);
         assert_eq!(d.op, f.op, "{}", f.pattern);
         assert!(f.matches(want.parcel0, want.parcel1), "{}", f.pattern);
         // only `ERR exp` and `EX exp` can set bits the machine ignores
@@ -175,23 +156,15 @@ fn every_form_round_trips() {
         };
         spelled += 1;
         // encode -> text of this row -> assemble
-        let a = assemble_numeric_cpu(cpu, &result, &operand)
+        let a = assemble_numeric(&result, &operand)
             .unwrap_or_else(|e| panic!("{} `{} {}`: {}", f.pattern, result, operand, e));
         assert_eq!(a.encoding, want, "{} `{} {}`", f.pattern, result, operand);
         assert_eq!(a.form.op, f.op);
         assert_eq!(a.form.kind, Kind::Base);
         // decode -> disassemble -> assemble
         let (r2, o2) = disassemble_fields(&d);
-        let b = assemble_numeric_cpu(cpu, &r2, &o2)
+        let b = assemble_numeric(&r2, &o2)
             .unwrap_or_else(|e| panic!("{} `{} {}`: {}", f.pattern, r2, o2, e));
-        // the X-MP spellings mean nothing to the CRAY-1 assembler
-        if cpu == Cpu::Xmp {
-            assert!(
-                assemble_numeric(&result, &operand).is_err(),
-                "{}",
-                f.pattern
-            );
-        }
         assert_eq!(
             b.encoding, want,
             "{} disassembled as `{} {}`",
@@ -203,77 +176,79 @@ fn every_form_round_trips() {
             assert_eq!((r2, o2), (result, operand), "{}", f.pattern);
         }
     }
-    // the three rows without a spelling: ClockPass, MonitorPass, Undefined
-    assert_eq!(spelled, FORMS.len() - 3);
+    // the two rows without a spelling: ClockPass, MonitorPass
+    assert_eq!(spelled, FORMS.len() - 2);
 }
 
 #[test]
 fn every_encoding_disassembles_to_text_that_assembles_back() {
-    for cpu in [Cpu::Cray1, Cpu::Xmp] {
-        let mut raw = 0;
-        for p0 in 0..=0xffffu16 {
-            for m in [0u16, 1, 0o77, 0o100, 0o123456, 0o177777] {
-                let d = decode_cpu(cpu, p0, Some(m));
-                let want = d.canonical();
-                let (result, operand) = disassemble_fields(&d);
-                if result == "VWD" {
-                    raw += 1;
-                    let no_spelling =
-                        matches!(d.op, Op::ClockPass | Op::MonitorPass | Op::Undefined);
-                    let alias = matches!(d.op, Op::ShlS | Op::ShrS) && d.i == 0;
-                    assert!(no_spelling || alias, "{:06o} {:06o} has no spelling", p0, m);
-                    let mut text = format!("D'16/O'{:06o}", want.parcel0);
-                    if let Some(m) = want.parcel1 {
-                        text.push_str(&format!(",D'16/O'{:06o}", m));
-                    }
-                    assert_eq!(operand, text);
-                } else {
-                    // the text of an X-MP instruction needs the X-MP assembler; any
-                    // other text means the same to both
-                    let a = assemble_numeric_cpu(cpu_of(d.form), &result, &operand).unwrap_or_else(
-                        |e| panic!("{:06o} {:06o} `{} {}`: {}", p0, m, result, operand, e),
-                    );
-                    // exact when the parcels are canonical or CAL can spell the ignored bits
-                    assert!(
-                        a.encoding == want || a.encoding.parcels() == [p0, m][..d.len()],
-                        "{:06o} {:06o} `{} {}` gave {}",
-                        p0,
-                        m,
-                        result,
-                        operand,
-                        oct(&a.encoding.parcels())
-                    );
-                    assert_eq!(a.form.op, d.op);
+    let mut raw = 0;
+    for p0 in 0..=0xffffu16 {
+        for m in [0u16, 1, 0o77, 0o100, 0o123456, 0o177777] {
+            let d = decode(p0, Some(m));
+            let want = d.canonical();
+            let (result, operand) = disassemble_fields(&d);
+            if result == "VWD" {
+                raw += 1;
+                let no_spelling = matches!(d.op, Op::ClockPass | Op::MonitorPass);
+                let alias = matches!(d.op, Op::ShlS | Op::ShrS) && d.i == 0;
+                assert!(no_spelling || alias, "{:06o} {:06o} has no spelling", p0, m);
+                let mut text = format!("D'16/O'{:06o}", want.parcel0);
+                if let Some(m) = want.parcel1 {
+                    text.push_str(&format!(",D'16/O'{:06o}", m));
                 }
-                if d.len() == 1 {
-                    break;
-                }
+                assert_eq!(operand, text);
+            } else {
+                let a = assemble_numeric(&result, &operand).unwrap_or_else(|e| {
+                    panic!("{:06o} {:06o} `{} {}`: {}", p0, m, result, operand, e)
+                });
+                // exact when the parcels are canonical or CAL can spell the ignored bits
+                assert!(
+                    a.encoding == want || a.encoding.parcels() == [p0, m][..d.len()],
+                    "{:06o} {:06o} `{} {}` gave {}",
+                    p0,
+                    m,
+                    result,
+                    operand,
+                    oct(&a.encoding.parcels())
+                );
+                assert_eq!(a.form.op, d.op);
+            }
+            if d.len() == 1 {
+                break;
             }
         }
-        let want = match cpu {
-            // 0014j1-0014j3, 0015xx-0017xx, 0023xx-0027xx, 0540jk, 0550jk
-            Cpu::Cray1 => 3 * 8 + 3 * 64 + 5 * 64 + 64 + 64,
-            // 0014j1, 0014j2, 0015xx-0017xx, 0540jk, 0550jk
-            Cpu::Xmp => 2 * 8 + 3 * 64 + 64 + 64,
-        };
-        assert_eq!(raw, want, "{:?}", cpu);
     }
+    // 0014j1, 0014j2, 0015xx-0017xx, 0540jk, 0550jk
+    assert_eq!(raw, 2 * 8 + 3 * 64 + 64 + 64);
 }
 
 #[test]
-fn ignored_fields_follow_the_cray_1_manual() {
+fn ignored_fields_follow_the_manual() {
     let op = |p0: u16| decode(p0, None).op;
-    // 003xjx: VM <- (Sj) whatever i and k are (0034, 0036, 0037 are X-MP)
+    // 003xjx: VM <- (Sj) whatever i and k are, but for the semaphore
+    // instructions 0034, 0036 and 0037
     for i in 0..8 {
         for k in 0..8 {
             let d = decode(0o003020 | i << 6 | k, None);
+            let semaphore = match i {
+                4 => Some(Op::SemTestSet),
+                6 => Some(Op::SemClear),
+                7 => Some(Op::SemSet),
+                _ => None,
+            };
+            if let Some(semaphore) = semaphore {
+                assert_eq!((d.op, d.jk()), (semaphore, 0o20 | k as u8));
+                continue;
+            }
             assert_eq!((d.op, d.j), (Op::SetVm, 2));
             assert_eq!(disassemble(&d), "VM        S2");
             assert_eq!(d.canonical().parcel0, 0o003020);
         }
     }
-    assert_eq!(disassemble(&decode(0o003407, None)), "VM        0");
-    // 0014j0: RTC <- (Sj); k selects the programmable clock functions
+    assert_eq!(disassemble(&decode(0o003307, None)), "VM        0");
+    // 0014j0: RTC <- (Sj); k selects the programmable clock functions and
+    // the cluster number
     assert_eq!(op(0o001430), Op::SetRt);
     assert_eq!(op(0o001434), Op::SetPci);
     for j in 0..8 {
@@ -281,13 +256,14 @@ fn ignored_fields_follow_the_cray_1_manual() {
         assert_eq!(op(0o001406 | j << 3), Op::Eci);
         assert_eq!(op(0o001407 | j << 3), Op::Dci);
     }
-    for k in 1..4 {
+    for k in 1..3 {
         assert_eq!(op(0o001430 | k), Op::ClockPass);
     }
+    assert_eq!(op(0o001433), Op::SetCln);
     assert_eq!(disassemble(&decode(0o001434, None)), "PCI       S3");
     assert_eq!(disassemble(&decode(0o001475, None)), "CCI");
     assert_eq!(decode(0o001475, None).canonical().parcel0, 0o001405);
-    // 001 with i = 5, 6, 7 is a pass; 0023 to 0027 are not defined
+    // 001 with i = 5, 6, 7 is a pass; 0023 to 0027 set and clear modes
     for i in 5..8 {
         assert_eq!(op(0o001000 | i << 6 | 0o25), Op::MonitorPass);
     }
@@ -295,16 +271,25 @@ fn ignored_fields_follow_the_cray_1_manual() {
     assert_eq!(op(0o002070), Op::SetVl);
     assert_eq!(op(0o002177), Op::Efi);
     assert_eq!(op(0o002277), Op::Dfi);
-    for i in 3..8 {
-        assert_eq!(op(0o002000 | i << 6), Op::Undefined);
+    for (i, mode) in [
+        (3, Op::Eri),
+        (4, Op::Dri),
+        (5, Op::Dbm),
+        (6, Op::Ebm),
+        (7, Op::Cmr),
+    ] {
+        assert_eq!(op(0o002000 | i << 6 | 0o25), mode);
     }
-    // 026ij1 is the parity; any other k the population count.  027ijx is
-    // the leading zero count whatever k is
-    assert_eq!(op(0o026127), Op::PopCount);
+    // 026ij1 is the parity and 026ij7 reads a shared B register; any other
+    // k is the population count.  027ijx is the leading zero count but for
+    // k = 7, which writes a shared B register
+    assert_eq!(op(0o026127), Op::AFromSb);
+    assert_eq!(op(0o026126), Op::PopCount);
     assert_eq!(op(0o026120), Op::PopCount);
     assert_eq!(op(0o026121), Op::PopParity);
     assert_eq!(op(0o027121), Op::LeadingZeros);
-    assert_eq!(disassemble(&decode(0o026127, None)), "A1        PS2");
+    assert_eq!(op(0o027127), Op::SbFromA);
+    assert_eq!(disassemble(&decode(0o026126, None)), "A1        PS2");
     assert_eq!(disassemble(&decode(0o026121, None)), "A1        QS2");
     // 070ijx: reciprocal whatever k is.  174ij1 and 174ij2 are the vector
     // population count and parity; any other k the reciprocal
@@ -322,10 +307,17 @@ fn ignored_fields_follow_the_cray_1_manual() {
     // 071: j selects, k ignored for the constants
     assert_eq!(op(0o071137), Op::SConstPoint6);
     assert_eq!(op(0o071177), Op::SConst4);
-    // 072ixx reads the real-time clock, 073ixx reads VM
-    for jk in 0..64 {
-        assert_eq!(op(0o072100 | jk), Op::SFromRt);
-        assert_eq!(op(0o073100 | jk), Op::SFromVm);
+    // 072ixx reads the real-time clock and 073ixx reads VM, but for the
+    // semaphores, the shared T registers and the status register
+    for jk in 0..64u16 {
+        let (rt, vm) = match jk {
+            0o01 => (Op::SFromRt, Op::SFromSr),
+            0o02 => (Op::SFromSm, Op::SmFromS),
+            _ if jk & 7 == 3 => (Op::SFromSt, Op::StFromS),
+            _ => (Op::SFromRt, Op::SFromVm),
+        };
+        assert_eq!(op(0o072100 | jk), rt, "{:o}", jk);
+        assert_eq!(op(0o073100 | jk), vm, "{:o}", jk);
     }
     assert_eq!(disassemble(&decode(0o073321, None)), "S3        VM");
     // 033: j = 0 is the channel number; otherwise k even is CA, k odd is CE
@@ -339,7 +331,7 @@ fn ignored_fields_follow_the_cray_1_manual() {
     assert_eq!(op(0o175724), Op::VmZero);
     assert_eq!(op(0o175027), Op::VmNegative);
     assert_eq!(disassemble(&decode(0o175726, None)), "VM        V2,P");
-    // 176ixk ignores j, 177xjk ignores i (no gather or scatter on a Cray-1)
+    // 176ixk ignores j, 177xjk ignores i (no gather or scatter on this machine)
     assert_eq!(disassemble(&decode(0o176173, None)), "V1        ,A0,A3");
     assert_eq!(disassemble(&decode(0o177723, None)), ",A0,A3    V2");
     assert_eq!(disassemble(&decode(0o176170, None)), "V1        ,A0,1");
@@ -735,67 +727,55 @@ fn garbage_operands_never_panic() {
 #[test]
 fn xmp_rows() {
     let x = |r: &str, o: &str| {
-        assemble_numeric_cpu(Cpu::Xmp, r, o)
+        assemble_numeric(r, o)
             .unwrap_or_else(|e| panic!("`{} {}`: {}", r, o, e))
             .encoding
             .parcels()
     };
-    let op = |cpu: Cpu, p0: u16| decode_cpu(cpu, p0, None).op;
-    // (X-MP spelling, parcel, X-MP instruction, CRAY-1 instruction)
+    let op = |p0: u16| decode(p0, None).op;
+    // (spelling, parcel, instruction): the rows the X-MP added to the CRAY-1's
     let rows = [
-        ("MC,A2", "", 0o001221u16, Op::ChanMc, Op::ClearCi),
-        ("CLN", "2", 0o001423, Op::SetCln, Op::ClockPass),
-        ("ERI", "", 0o002300, Op::Eri, Op::Undefined),
-        ("DRI", "", 0o002400, Op::Dri, Op::Undefined),
-        ("DBM", "", 0o002500, Op::Dbm, Op::Undefined),
-        ("EBM", "", 0o002600, Op::Ebm, Op::Undefined),
-        ("CMR", "", 0o002700, Op::Cmr, Op::Undefined),
-        ("SM23", "1,TS", 0o003423, Op::SemTestSet, Op::SetVm),
-        ("SM23", "0", 0o003623, Op::SemClear, Op::SetVm),
-        ("SM23", "1", 0o003723, Op::SemSet, Op::SetVm),
-        ("A1", "SB2", 0o026127, Op::AFromSb, Op::PopCount),
-        ("SB2", "A1", 0o027127, Op::SbFromA, Op::LeadingZeros),
-        ("S1", "SM", 0o072102, Op::SFromSm, Op::SFromRt),
-        ("S1", "ST2", 0o072123, Op::SFromSt, Op::SFromRt),
-        ("S1", "SR0", 0o073101, Op::SFromSr, Op::SFromVm),
-        ("SM", "S1", 0o073102, Op::SmFromS, Op::SFromVm),
-        ("ST2", "S1", 0o073123, Op::StFromS, Op::SFromVm),
+        ("MC,A2", "", 0o001221u16, Op::ChanMc),
+        ("CLN", "2", 0o001423, Op::SetCln),
+        ("ERI", "", 0o002300, Op::Eri),
+        ("DRI", "", 0o002400, Op::Dri),
+        ("DBM", "", 0o002500, Op::Dbm),
+        ("EBM", "", 0o002600, Op::Ebm),
+        ("CMR", "", 0o002700, Op::Cmr),
+        ("SM23", "1,TS", 0o003423, Op::SemTestSet),
+        ("SM23", "0", 0o003623, Op::SemClear),
+        ("SM23", "1", 0o003723, Op::SemSet),
+        ("A1", "SB2", 0o026127, Op::AFromSb),
+        ("SB2", "A1", 0o027127, Op::SbFromA),
+        ("S1", "SM", 0o072102, Op::SFromSm),
+        ("S1", "ST2", 0o072123, Op::SFromSt),
+        ("S1", "SR0", 0o073101, Op::SFromSr),
+        ("SM", "S1", 0o073102, Op::SmFromS),
+        ("ST2", "S1", 0o073123, Op::StFromS),
     ];
-    for (result, operand, parcel, xmp, cray1) in rows {
+    for (result, operand, parcel, instruction) in rows {
         assert_eq!(x(result, operand), [parcel], "{} {}", result, operand);
-        assert_eq!(op(Cpu::Xmp, parcel), xmp, "{:06o}", parcel);
-        assert_eq!(op(Cpu::Cray1, parcel), cray1, "{:06o}", parcel);
-        assert!(assemble_numeric(result, operand).is_err() || cray1 == xmp);
-        let d = decode_cpu(Cpu::Xmp, parcel, None);
+        assert_eq!(op(parcel), instruction, "{:06o}", parcel);
+        let d = decode(parcel, None);
         assert!(d.form.flags() & flag::XMP != 0);
         assert_eq!(
             disassemble_fields(&d),
             (result.to_string(), operand.to_string())
         );
     }
-    // everything else means the same on both machines
-    for parcel in [
-        0o072100u16,
-        0o073100,
-        0o003020,
-        0o026120,
-        0o026121,
-        0o027120,
-        0o001420,
-        0o001424,
-        0o174121,
+    // their neighbours are the instructions the CRAY-1 had there
+    for (parcel, instruction) in [
+        (0o072100u16, Op::SFromRt),
+        (0o073100, Op::SFromVm),
+        (0o003020, Op::SetVm),
+        (0o026120, Op::PopCount),
+        (0o027120, Op::LeadingZeros),
+        (0o001420, Op::SetRt),
     ] {
-        assert_eq!(
-            op(Cpu::Xmp, parcel),
-            op(Cpu::Cray1, parcel),
-            "{:06o}",
-            parcel
-        );
+        assert_eq!(op(parcel), instruction, "{:06o}", parcel);
+        assert!(decode(parcel, None).form.flags() & flag::XMP == 0);
     }
     // the semaphore number is jk, the cluster number j
-    assert_eq!(decode_cpu(Cpu::Xmp, 0o003437, None).jk(), 0o37);
-    assert_eq!(decode_cpu(Cpu::Xmp, 0o001433, None).exp, Some(3));
-    assert_eq!(Cpu::from_name("xmp"), Some(Cpu::Xmp));
-    assert_eq!(Cpu::from_name("Cray-1"), Some(Cpu::Cray1));
-    assert_eq!(Cpu::from_name("ymp"), None);
+    assert_eq!(decode(0o003437, None).jk(), 0o37);
+    assert_eq!(decode(0o001433, None).exp, Some(3));
 }

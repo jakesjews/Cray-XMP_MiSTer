@@ -27,11 +27,13 @@ UPKG     =       3000
          TPASS
          TEND
          ORG     UPKG
-         CON     UCODE*T$P2_24
-         CON     0
-         CON     T$LAMAX*T$P2_28
-         CON     UPKG/20*T$P2_40
-         BSSZ    D'12
+         CON     UCODE*T$P2_24           ; P
+         CON     0                       ; IBA = 0
+         CON     T$LAMAX*T$P2_29         ; ILA; a user program
+         CON     UPKG/20*T$P2_40         ; XA back to this package
+         CON     0                       ; DBA = 0, cluster 0
+         CON     T$LAMAX*T$P2_29         ; DLA
+         BSSZ    D'10                    ; A6, A7, S0-S7
          ORG     10000
 UCODE    A1      3
          A2      5

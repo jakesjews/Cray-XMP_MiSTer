@@ -25,7 +25,6 @@ version = "0.1.0"
 name = "cray-xmp-ios"
 version = "0.1.0"
 dependencies = [
- "cray-xmp-isa",
  "cray-xmp-model",
 ]
 

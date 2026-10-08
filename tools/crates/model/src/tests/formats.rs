@@ -101,7 +101,7 @@ fn trace_lines() {
     assert_eq!(line(Event::Flags(0o40)), "F 020");
     assert_eq!(line(Event::P(0o1000)), "P 000200");
     assert_eq!(line(Event::Ba(0o100)), "BA 00040");
-    assert_eq!(line(Event::La(LA_MAX)), "LA 3ffff");
+    assert_eq!(line(Event::La(LA_MAX)), "LA 7ffff");
     assert_eq!(line(Event::Rtc(Some(0))), "RT 0000000000000000");
     assert_eq!(line(Event::Exit(511)), "E 511");
 }
@@ -138,8 +138,8 @@ fn events_of_one_instruction() {
 fn state_file() {
     // a user program that prints, stores, and exits to a monitor that ends
     // the run
-    let mut m = user(&cal("3777761,0 S1; 300,0 S2; 301,0 S3; EX"), 0, LA_MAX);
-    m.load_words(0o100, &words(&cal("S1 D'300; 3777762,0 S1; J 400")))
+    let mut m = user(&cal("17777761,0 S1; 300,0 S2; 301,0 S3; EX"), 0, LA_MAX);
+    m.load_words(0o100, &words(&cal("S1 D'300; 17777762,0 S1; J 400")))
         .unwrap();
     m.set_s(1, Some(b'Z' as u64));
     m.set_s(2, Some(0xdead_beef));
@@ -157,10 +157,10 @@ exit 300
 console 5a
 mem 0000000 0000000207000000
 mem 0000001 0000000000000000
-mem 0000002 00003ffff0000000
+mem 0000002 0000fffff0000000
 mem 0000003 0000000001000000
 mem 0000004 0000000000000000
-mem 0000005 0000000000000000
+mem 0000005 0000ffffe0000000
 mem 0000006 0000000000000000
 mem 0000007 undef
 mem 0000010 0000000000000000
@@ -193,7 +193,7 @@ VL 00
 VM 8000000000000000
 P 000104
 BA 00000
-LA 3ffff
+LA 7ffff
 XA 00
 M 1
 F 000

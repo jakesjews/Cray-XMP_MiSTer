@@ -35,7 +35,7 @@ fn reset_state_is_undefined() {
 fn clock_and_cycle_counter_read_undefined() {
     // 072 (page 4-45) reads a counter of clock periods; CYCLES is the
     // project's equivalent in the I/O page.
-    let mut m = monitor_cal("S1 RT; S2 3777763,0; RT S3; S4 RT");
+    let mut m = monitor_cal("S1 RT; S2 17777763,0; RT S3; S4 RT");
     m.set_s(1, Some(1));
     m.set_s(2, Some(2));
     m.set_s(3, Some(0));
@@ -273,18 +273,18 @@ fn executing_undefined_memory_is_a_test_error() {
     assert_undefined(&error_of(&mut m), "instruction fetch");
 
     // the I/O page cannot be executed
-    let mut m = bare("J 17777700");
+    let mut m = bare("J 77777700");
     steps(&mut m, 1);
     assert_undefined(&error_of(&mut m), "I/O page");
 }
 
 #[test]
 fn io_writes_must_be_defined() {
-    assert_undefined(&error_of(&mut bare("3777761,0 S1")), "console");
-    assert_undefined(&error_of(&mut bare("3777762,0 S1")), "TEST_EXIT");
-    assert_undefined(&error_of(&mut bare("3777762,0 A1")), "TEST_EXIT");
+    assert_undefined(&error_of(&mut bare("17777761,0 S1")), "console");
+    assert_undefined(&error_of(&mut bare("17777762,0 S1")), "TEST_EXIT");
+    assert_undefined(&error_of(&mut bare("17777762,0 A1")), "TEST_EXIT");
     // the unused words of the page ignore writes of anything
-    let mut m = bare("3777770,0 S1; 3777763,0 S1");
+    let mut m = bare("17777770,0 S1; 17777763,0 S1");
     steps(&mut m, 2);
 }
 
@@ -295,21 +295,25 @@ fn an_exchange_needs_defined_control_words() {
     m.load_words(0, &[0, 0, 0]).unwrap(); // word 3 (XA, VL, F) is missing
     let e = error_of(&mut m);
     assert_undefined(&e, "word 3 of the exchange package at 0");
+    // Words 4 and 5 hold the data field and the cluster number.
+    let mut m = Machine::new();
+    m.load_words(0, &[0, 0, 0, 0, 0]).unwrap();
+    assert_undefined(&error_of(&mut m), "word 5 of the exchange package at 0");
     // An exit into a package the program left undefined.
     let mut m = monitor_cal("A1 400; XA A1; EX");
     steps(&mut m, 2);
     let e = error_of(&mut m);
     assert_undefined(&e, "word 0 of the exchange package at 400");
     assert_eq!(m.mem(0o400), None, "nothing was stored");
-    // Words 4 to 15 may be undefined: the registers just are.
+    // Words 6 to 15 may be undefined: the registers just are.
     let mut m = monitor_cal("A1 400; XA A1; EX");
-    let mut package = [0u64; 4];
+    let mut package = [0u64; 6];
     package[0] = 0o3000 << 24;
-    package[2] = (LA_MAX as u64) << 28 | (mode::MONITOR as u64) << 24;
+    package[2] = (LA_MAX as u64) << 29 | (mode::MONITOR as u64) << 24;
     m.load_words(0o400, &package).unwrap();
     steps(&mut m, 3);
     assert_eq!(
-        (m.p(), m.a(3), m.a(4), m.s(0)),
+        (m.p(), m.a(5), m.a(6), m.s(0)),
         (0o3000, Some(0), None, None)
     );
 }

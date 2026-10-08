@@ -18,7 +18,7 @@
 //!    pyramid of its own, kept to 33 bits (the low 15 coefficient bits of the result are
 //!    always zero).
 
-use crate::{pack, unpack, FpResult, Profile, EXP_OVERFLOW, NORM_BIT};
+use crate::{pack, unpack, FpResult, EXP_OVERFLOW, NORM_BIT};
 
 /// First approximation for table index `index` (coefficient bits 46..40):
 /// `round(2^15 / (128.5 + index))`, an integer in `128..=255`.
@@ -107,13 +107,8 @@ fn recip_coefficient(coef: u64) -> u64 {
 /// exponent is `060000` and bit 47 of the computed coefficient is cleared. The sign of the
 /// operand is copied to the result in every case.
 ///
-/// The operand is assumed normalised; bit 47 is not tested. [`Profile::Cray1`] returns the
-/// same result as [`Profile::Xmp`]: the CRAY-1 manual gives no bit-level description of its
-/// reciprocal unit.
-pub fn frecip(a: u64, profile: Profile) -> FpResult {
-    match profile {
-        Profile::Xmp | Profile::Cray1 => {}
-    }
+/// The operand is assumed normalised; bit 47 is not tested.
+pub fn frecip(a: u64) -> FpResult {
     let x = unpack(a);
     let coef = recip_coefficient(x.coef);
     if x.exp <= 0o20001 || x.exp >= EXP_OVERFLOW {
@@ -149,11 +144,8 @@ mod tests {
     #[test]
     fn reciprocal_of_one_and_of_zero() {
         // cray-sim fp_test.cpp: 1/1.0 and the range-error result for a zero operand.
-        assert_eq!(
-            frecip(0x4001_8000_0000_0000, Profile::Xmp).value,
-            0x4000_FFFF_FFFF_8000
-        );
-        let z = frecip(0, Profile::Xmp);
+        assert_eq!(frecip(0x4001_8000_0000_0000).value, 0x4000_FFFF_FFFF_8000);
+        let z = frecip(0);
         assert_eq!(z.value, 0x6000_7FFC_02FF_0000);
         assert!(z.range_error);
     }

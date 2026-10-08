@@ -6,11 +6,11 @@ use std::process::ExitCode;
 
 pub const DETAILS: &str = "
 Prints the instruction table the assembler, the disassembler and the
-other tools share: one row per line of Appendix D of the CRAY-1 Hardware
-Reference Manual (2240004 rev C), the rows of the options of the 1982
-machine, and the X-MP rows that `MACHINE XMP` turns on, with the opcode
-pattern, the CAL syntax, the length in parcels, the functional unit,
-flags, the registers read and written, and a description.
+other tools share: the instructions of a one-processor CRAY X-MP, with
+the opcode pattern, the CAL syntax, the length in parcels, the functional
+unit, flags, the registers read and written, and a description.  Most
+rows are lines of Appendix D of the CRAY-1 Hardware Reference Manual
+(2240004 rev C), which the X-MP's manual repeats; the others are marked.
 ";
 
 /// The registers of a list that this row can really touch: a special form
@@ -54,7 +54,7 @@ fn flags(f: &Form) -> String {
         (f.is_exit(), 'X'),
         (f.is_vector(), 'V'),
         (f.flags() & cray_xmp_isa::flag::OPTION != 0, 'O'),
-        (!f.on(cray_xmp_isa::Cpu::Cray1), 'P'),
+        (f.flags() & cray_xmp_isa::flag::XMP != 0, 'P'),
     ] {
         if set {
             s.push(letter);
@@ -70,7 +70,7 @@ pub fn table() -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "  {:<8} {:<9} {:<10} {:<3} {:<10} {:<5} {:<12} {:<6} {}\n",
-        "CRAY-1", "CAL", "", "LEN", "UNIT", "FLAGS", "READS", "WRITES", "DESCRIPTION"
+        "OCTAL", "CAL", "", "LEN", "UNIT", "FLAGS", "READS", "WRITES", "DESCRIPTION"
     ));
     for f in FORMS {
         let mark = match f.kind {
@@ -104,7 +104,7 @@ Pattern: octal digits of the first parcel; h i j k are operand fields, x is
 ignored by the machine, m is a second parcel.  Rows are matched in order.
 Flags: B branch, C conditional, R reads memory, W writes memory,
 M monitor mode only, X exit (exchange), V vector (uses VL),
-O an option of the 1982 machine, P X-MP only (after MACHINE XMP).
+O came as an option of the CRAY-1 of 1982, P new with the X-MP.
 Register 0 in the h, j or k field is a constant, not a register:
 (Ah) = 0, (Aj) = 0, (Ak) = 1, (Sj) = 0, (Sk) = 2**63.
 ",

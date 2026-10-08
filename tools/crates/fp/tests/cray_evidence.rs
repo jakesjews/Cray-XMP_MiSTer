@@ -11,23 +11,21 @@
 //! repository.
 
 use cray_xmp_fp::vectors::SplitMix64;
-use cray_xmp_fp::{fmul, frecip, fsub, pack, to_f64, MulKind, Profile};
-
-const P: Profile = Profile::Cray1;
+use cray_xmp_fp::{fmul, frecip, fsub, pack, to_f64, MulKind};
 
 fn full(a: u64, b: u64) -> u64 {
-    fmul(a, b, MulKind::Full, P).value
+    fmul(a, b, MulKind::Full).value
 }
 
 fn rounded(a: u64, b: u64) -> u64 {
-    fmul(a, b, MulKind::Rounded, P).value
+    fmul(a, b, MulKind::Rounded).value
 }
 
 /// Y / X as CAL programs form it: the reciprocal of X (070), its correction factor (067),
 /// their product, then the product with Y.
 fn divide(y: u64, x: u64, first: fn(u64, u64) -> u64, second: fn(u64, u64) -> u64) -> u64 {
-    let r = frecip(x, P).value;
-    let c = fmul(r, x, MulKind::TwoMinus, P).value;
+    let r = frecip(x).value;
+    let c = fmul(r, x, MulKind::TwoMinus).value;
     second(y, first(r, c))
 }
 
@@ -35,7 +33,7 @@ fn divide(y: u64, x: u64, first: fn(u64, u64) -> u64, second: fn(u64, u64) -> u6
 fn fixed_answers_of_the_multiply_diagnostic() {
     // The two half-precision answers together admit only round bits at 2^-31 and 2^-32
     // and a 29-bit result; the rounded answer fails with round bits one place lower.
-    let half = |a, b| fmul(a, b, MulKind::HalfRounded, P).value;
+    let half = |a, b| fmul(a, b, MulKind::HalfRounded).value;
     assert_eq!(
         half(0x4001_0000_0001_FFFF, 0x4001_8000_0000_0000),
         0x4001_0000_0000_0000
@@ -76,11 +74,11 @@ fn reciprocal_iteration_as_the_diagnostic_simulates_it() {
         ),
     ];
     for (r, x, want) in cases {
-        assert_eq!(frecip(x, P).value, r, "{x:016X}");
-        let got = fmul(r, x, MulKind::TwoMinus, P);
+        assert_eq!(frecip(x).value, r, "{x:016X}");
+        let got = fmul(r, x, MulKind::TwoMinus);
         assert_eq!((got.value, got.range_error), (want, false), "{x:016X}");
         // the operands either way round
-        assert_eq!(fmul(x, r, MulKind::TwoMinus, P).value, want);
+        assert_eq!(fmul(x, r, MulKind::TwoMinus).value, want);
     }
 }
 

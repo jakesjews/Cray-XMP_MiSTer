@@ -1,5 +1,6 @@
 //! Memory references: 10h to 13h, the block transfers 034 to 037, the
-//! vector transfers 176 and 177, base and limit.
+//! vector transfers 176 and 177, the base and limit addresses of the
+//! instruction and data fields.
 
 use super::*;
 
@@ -30,103 +31,175 @@ fn scalar_loads_and_stores() {
 
 #[test]
 fn base_address_relocates_data() {
-    // Page 3-44: absolute addresses are formed by adding (BA) * 16 to the
+    // X 3-19: absolute addresses are formed by adding (DBA) * 32 to the
     // relative address.
     let mut m = user(&cal("210,0 S1; S2 210,0; EX"), 0o100, 0o200);
     m.set_s(1, Some(0x77));
     steps(&mut m, 2);
-    assert_eq!(m.mem(0o100 * 16 + 0o210), Some(0x77));
+    assert_eq!(m.mem(0o100 * 32 + 0o210), Some(0x77));
     assert_eq!(m.mem(0o210), None);
     assert_eq!(m.s(2), Some(0x77));
 }
 
 #[test]
 fn operand_range_error_in_a_user_program() {
-    // Page 3-44: the final address a program can reference is (LA) * 16 - 1,
-    // an absolute address.  Page 3-43: a reference beyond the limit does not
-    // alter memory and, for a program not in monitor mode, sets the operand
-    // range flag (bit 34 of the flags, figure 3-8), which interrupts it.
-    // BA = 100 (base 2000), LA = 112 (limit 2240): relative 0 to 237.
-    let mut m = user(&cal("237,0 S1; S2 237,0; 240,0 S1; A3 5"), 0o100, 0o112);
+    // X 3-19 to 3-21: the last word a program can reference is
+    // (DLA) * 32 - 1, an absolute address.  A store beyond the limit does
+    // not alter memory and, for a program not in monitor mode whose
+    // interrupt-on-operand-range mode is on, sets the operand range flag
+    // (bit 34 of the flags), which interrupts it.
+    // DBA = 100 (base 4000), DLA = 112 (limit 4500): relative 0 to 477.
+    let mut m = user(&cal("477,0 S1; S2 477,0; 500,0 S1; A3 5"), 0o100, 0o112);
     m.set_s(1, Some(0x55));
-    m.load_words(0o2240, &[0x1234]).unwrap();
+    m.load_words(0o4500, &[0x1234]).unwrap();
     steps(&mut m, 2);
-    assert_eq!(m.mem(0o2237), Some(0x55));
+    assert_eq!(m.mem(0o4477), Some(0x55));
     assert_eq!(m.s(2), Some(0x55));
     assert_eq!(m.f(), 0);
     let events = record(&mut m);
     steps(&mut m, 1);
     // the store did not happen, the flag set, the monitor at word 0 is in
-    assert_eq!(m.mem(0o2240), Some(0x1234));
-    assert!(!m.mem_written(0o2240));
+    assert_eq!(m.mem(0o4500), Some(0x1234));
+    assert!(!m.mem_written(0o4500));
     assert!(events.borrow().contains(&Event::Flags(flag::OPERAND_RANGE)));
     assert!(m.monitor_mode());
     assert_eq!(m.p(), 0o100 * 4);
     let (p, ba, la, mode, xa, _vl, f) = package_fields(&m, 0);
     assert_eq!(f, flag::OPERAND_RANGE);
-    assert_eq!((ba, la, mode, xa), (0o100, 0o112, 0, 0));
+    assert_eq!((ba, la, mode, xa), (0o100, 0o112, mode::OPERAND_RANGE, 0));
+    assert_eq!(m.mem(4).unwrap() >> 29, 0o100, "DBA");
+    assert_eq!(m.mem(5).unwrap() >> 29, 0o112, "DLA");
     // model choice: the interrupt is taken right after the instruction
     assert_eq!(p, CODE * 4 + 6);
     assert_eq!(m.a(3), Some(0), "A3 5 did not execute");
 }
 
 #[test]
-fn operand_range_on_a_load_leaves_the_register_undefined() {
-    // The manual does not say what the register receives.
-    let mut m = user(&cal("S1 240,0"), 0o100, 0o112);
-    m.set_s(1, Some(0x55));
-    steps(&mut m, 1);
-    let (_, _, _, _, _, _, f) = package_fields(&m, 0);
-    assert_eq!(f, flag::OPERAND_RANGE);
-    assert_eq!(m.mem(0o11), None, "the saved S1 is undefined");
-    assert_eq!(m.mem(0o12), Some(0), "the saved S2 is not");
-}
-
-#[test]
 fn range_errors_set_no_flag_in_monitor_mode() {
     // Page 3-36: in monitor mode the flag remains cleared and no exchange
-    // sequence is initiated.  Page 3-43: memory is not altered.
+    // sequence is initiated.  X 3-19: memory is not altered, a load gives
+    // zero.
     let mut m = Machine::new();
     m.load_words(CODE, &words(&cal("1000,0 S1; S2 1000,0; A3 5")))
         .unwrap();
     m.load_words(0o1000, &[0x1234]).unwrap();
-    m.start_at(CODE * 4, 0, 0o20, mode::MONITOR); // limit 400
+    m.start_at(CODE * 4, 0, 0o10, mode::MONITOR | mode::OPERAND_RANGE); // limit 400
     define_registers(&mut m);
     m.set_s(1, Some(0x55));
     steps(&mut m, 3);
     assert_eq!(m.mem(0o1000), Some(0x1234));
     assert!(!m.mem_written(0o1000));
-    assert_eq!(m.s(2), None);
+    assert_eq!(m.s(2), Some(0));
     assert_eq!(m.a(3), Some(5));
     assert_eq!(m.f(), 0);
     assert!(m.monitor_mode());
 }
 
 #[test]
-fn addresses_above_the_memory_size_are_out_of_range() {
-    // Page 4-3: the upper two bits of the 22-bit address field are unused;
-    // "an operand range error occurs if either bit is set".  The same holds
-    // for any address of 2**20 or more, whatever LA is.
-    let mut m = user(&cal("S1 4000000,0"), 0, LA_MAX);
+fn operand_addresses_have_22_bits() {
+    // X 3-14: without extended addressing only the low 22 bits of an operand
+    // address count.
+    let mut m = user(&cal("S1 0,A1; EX"), 0, LA_MAX);
+    m.load_words(0o1000, &[0x77]).unwrap();
+    m.set_a(1, Some(0o40001000));
     steps(&mut m, 1);
-    assert_eq!(package_fields(&m, 0).6, flag::OPERAND_RANGE);
+    assert_eq!((m.s(1), m.f()), (Some(0x77), 0));
 
-    // -1 with no index: all 22 address bits set
-    let mut m = user(&cal("S1 -1,0"), 0, LA_MAX);
+    // -1 with no index is the last word of memory, which is the last word
+    // of the I/O page: in range
+    let mut m = user(&cal("S1 -1,0; EX"), 0, LA_MAX);
     steps(&mut m, 1);
-    assert_eq!(package_fields(&m, 0).6, flag::OPERAND_RANGE);
+    assert_eq!((m.s(1), m.f()), (Some(0), 0));
 
-    // the last word of memory is the last word of the I/O page: in range
-    let mut m = user(&cal("S1 3777777,0; EX"), 0, LA_MAX);
-    steps(&mut m, 1);
-    assert_eq!(m.s(1), Some(0));
-    assert_eq!(m.f(), 0);
-
-    // base + relative address is not wrapped
+    // base + relative address is not wrapped: nothing lies above the four
+    // million words, whatever the limit is
     let mut m = user(&cal("S1 0,A1"), 0o100, LA_MAX);
-    m.set_a(1, Some((1 << 20) - 0o2000));
+    m.set_a(1, Some((1 << 22) - 0o4000));
     steps(&mut m, 1);
     assert_eq!(package_fields(&m, 0).6, flag::OPERAND_RANGE);
+}
+
+#[test]
+fn instruction_and_data_fields_are_separate() {
+    // X 3-19 to 3-21: fetches use IBA and ILA, operands DBA and DLA, all in
+    // units of 32 words; the limit is absolute.
+    let mut m = Machine::new();
+    let (iba, dba) = (0o100u32, 0o300u32); // words 4000 and 14000
+    m.load_words(
+        iba * 32 + CODE,
+        &words(&cal("S1 5,0; 6,0 S1; S2 77,0; S3 100,0; A1 3")),
+    )
+    .unwrap();
+    m.load_words(dba * 32 + 5, &[0o777]).unwrap();
+    m.load_words(dba * 32 + 0o77, &[0o111]).unwrap();
+    m.load_words(dba * 32 + 0o100, &[0o222]).unwrap();
+    m.start_at(CODE * 4, iba, iba + 0o20, mode::MONITOR);
+    m.set_data_field(dba, dba + 2); // relative words 0 to 77
+    define_registers(&mut m);
+    steps(&mut m, 5);
+    assert_eq!(m.s(1), Some(0o777));
+    assert_eq!(m.mem(dba * 32 + 6), Some(0o777));
+    assert_eq!(m.s(2), Some(0o111), "the last word of the field");
+    // beyond the limit: "a zero value is transferred" (X 3-19); no flag in
+    // monitor mode
+    assert_eq!(m.s(3), Some(0));
+    assert_eq!((m.a(1), m.f()), (Some(3), 0));
+    // the data pair does not move instructions and the other way round
+    assert_eq!(m.translate(5), Some(dba * 32 + 5));
+    assert_eq!(m.translate_fetch(CODE), Some(iba * 32 + CODE));
+    assert_eq!(m.translate(0o100), None);
+    assert_eq!(m.translate_fetch(0o20 * 32), None);
+    // only the low 22 bits of an operand address count (X 3-14, EAM clear)
+    assert_eq!(m.translate(0o40000005), Some(dba * 32 + 5));
+    // nothing above the four million words
+    m.set_data_field(LA_MAX, LA_MAX);
+    assert_eq!(m.translate(0), None);
+}
+
+#[test]
+fn operand_range_error_needs_its_mode_bit() {
+    // X 3-21: the flag sets "if the Interrupt-on-operand Range Error mode
+    // bit is set" and the program is not in monitor mode.  A store outside
+    // the field does not happen, a load gives zero.
+    for (enabled, source) in [(true, "S1 100,0; A1 5"), (false, "S1 100,0; A1 5")] {
+        let mut m = user_cal(source);
+        m.set_data_field(0, 2);
+        if !enabled {
+            m.start_at(CODE * 4, 0, LA_MAX, 0);
+            m.set_data_field(0, 2);
+        }
+        m.set_s(1, Some(9));
+        steps(&mut m, 1);
+        assert_eq!(m.monitor_mode(), enabled);
+        if enabled {
+            assert_eq!(package_fields(&m, 0).6, flag::OPERAND_RANGE);
+            // the load completed with zero before the exchange
+            assert_eq!(m.mem(9), Some(0), "S1 of the stored package");
+        } else {
+            assert_eq!((m.s(1), m.f()), (Some(0), 0));
+            steps(&mut m, 1);
+            assert_eq!(m.a(1), Some(5));
+        }
+    }
+    let mut m = user_cal("100,0 S1; DRI; 101,0 S1; ERI; 102,0 S1");
+    m.set_data_field(0, 2);
+    m.load_words(0o100, &[1, 2, 3]).unwrap();
+    m.set_s(1, Some(9));
+    steps(&mut m, 1);
+    // back in the monitor: nothing was stored
+    assert!(m.monitor_mode());
+    assert_eq!(m.mem(0o100), Some(1));
+    // 0024 (DRI) and 0023 (ERI) switch the mode bit in any mode (X 5-15)
+    let mut m = user_cal("DRI; 101,0 S1; ERI; 102,0 S1");
+    m.set_data_field(0, 2);
+    m.load_words(0o100, &[1, 2, 3]).unwrap();
+    steps(&mut m, 2);
+    assert_eq!((m.monitor_mode(), m.f()), (false, 0));
+    assert_eq!(m.m() & mode::OPERAND_RANGE, 0);
+    steps(&mut m, 2);
+    assert!(m.monitor_mode());
+    assert_eq!(m.mem(0o101), Some(2));
+    assert_eq!(m.mem(0o102), Some(3));
 }
 
 #[test]
@@ -229,37 +302,37 @@ fn block_transfer_wrap_around() {
 
 #[test]
 fn block_transfer_outside_the_field() {
-    // Page 4-30: "an out-of-range memory reference will cause an interrupt
-    // condition to occur".  Model choice: in a user program everything
-    // from the first such reference on is undefined.
-    // BA = 100, LA = 112: relative words 0 to 237.
+    // X 3-19: a read beyond the limit "issues and completes, but a zero
+    // value is transferred"; the transfer is not cut short.  In a user
+    // program with the mode on, the operand range flag interrupts after it.
+    // DBA = 100, DLA = 112: relative words 0 to 477.
     let mut m = user(&cal("B10,A1 ,A0"), 0o100, 0o112);
-    m.load_words(0o2236, &[7, 8]).unwrap();
-    m.set_a(0, Some(0o236));
+    m.load_words(0o4476, &[7, 8, 9]).unwrap();
+    m.set_a(0, Some(0o476));
     m.set_a(1, Some(4));
     m.set_b(0o12, Some(1));
     m.set_b(0o13, Some(1));
     steps(&mut m, 1);
     assert_eq!(
         (m.b(0o10), m.b(0o11), m.b(0o12), m.b(0o13)),
-        (Some(7), Some(8), None, None)
+        (Some(7), Some(8), Some(0), Some(0))
     );
     assert_eq!(package_fields(&m, 0).6, flag::OPERAND_RANGE);
 
     // a store: the words inside the field are written, memory beyond it is
-    // not altered (page 3-43)
+    // not altered
     let mut m = user(&cal(",A0 B10,A1"), 0o100, 0o112);
-    m.load_words(0o2240, &[0x1234]).unwrap();
-    m.set_a(0, Some(0o236));
+    m.load_words(0o4500, &[0x1234]).unwrap();
+    m.set_a(0, Some(0o476));
     m.set_a(1, Some(4));
     for jk in 0o10..0o14 {
         m.set_b(jk, Some(jk as u32));
     }
     steps(&mut m, 1);
-    assert_eq!(m.mem(0o2236), Some(0o10));
-    assert_eq!(m.mem(0o2237), Some(0o11));
-    assert_eq!(m.mem(0o2240), Some(0x1234));
-    assert!(!m.mem_written(0o2240) && !m.mem_written(0o2241));
+    assert_eq!(m.mem(0o4476), Some(0o10));
+    assert_eq!(m.mem(0o4477), Some(0o11));
+    assert_eq!(m.mem(0o4500), Some(0x1234));
+    assert!(!m.mem_written(0o4500) && !m.mem_written(0o4501));
     assert_eq!(package_fields(&m, 0).6, flag::OPERAND_RANGE);
 }
 
@@ -341,11 +414,11 @@ fn vector_transfer_of_64_words_and_events_in_element_order() {
 
 #[test]
 fn vector_transfer_outside_the_field() {
-    // Page 4-71: "memory reference out of limits".  Model choice as for the
-    // block transfers.  BA = 100, LA = 112: relative words 0 to 237.
+    // As the block transfers.  DBA = 100, DLA = 112: relative words 0 to
+    // 477.
     let mut m = user(&cal("V1 ,A0,1"), 0o100, 0o112);
-    m.load_words(0o2236, &[7, 8]).unwrap();
-    m.set_a(0, Some(0o236));
+    m.load_words(0o4476, &[7, 8, 9]).unwrap();
+    m.set_a(0, Some(0o476));
     m.set_vl(Some(4));
     for e in 0..4 {
         m.set_v(1, e, Some(1));
@@ -353,7 +426,7 @@ fn vector_transfer_outside_the_field() {
     steps(&mut m, 1);
     assert_eq!(
         [m.v(1, 0), m.v(1, 1), m.v(1, 2), m.v(1, 3)],
-        [Some(7), Some(8), None, None]
+        [Some(7), Some(8), Some(0), Some(0)]
     );
     assert_eq!(package_fields(&m, 0).6, flag::OPERAND_RANGE);
 
@@ -362,7 +435,7 @@ fn vector_transfer_outside_the_field() {
     let mut m = Machine::new();
     m.load_words(CODE, &words(&cal(",A0,A2 V1"))).unwrap();
     m.load_words(0o400, &[0x1234]).unwrap();
-    m.start_at(CODE * 4, 0, 0o20, mode::MONITOR); // limit 400
+    m.start_at(CODE * 4, 0, 0o10, mode::MONITOR); // limit 400
     define_registers(&mut m);
     m.set_a(0, Some(0o400));
     m.set_a(2, Some(0xff_ffff)); // 400 is outside, then 377 and 376 inside
@@ -374,4 +447,41 @@ fn vector_transfer_outside_the_field() {
     assert_eq!(m.mem(0o400), Some(0x1234));
     assert_eq!((m.mem(0o377), m.mem(0o376)), (Some(2), Some(3)));
     assert_eq!(m.f(), 0);
+}
+
+#[test]
+fn block_and_vector_transfers_outside_the_field_go_on() {
+    // X 3-19: a read beyond the limit "issues and completes, but a zero
+    // value is transferred"; a write "is allowed to issue, but no write
+    // occurs".  The transfer is not cut short as it may be on a CRAY-1.
+    let mut m = monitor_cal("V1 ,A0,A2; ,A0,A2 V2; B10,A3 ,A0");
+    m.set_data_field(0, 0o100); // relative words 0 to 3777
+    for w in 0o3776..0o4002 {
+        m.store(w, Some(w as u64));
+    }
+    m.set_a(0, Some(0o3776));
+    m.set_a(2, Some(1));
+    m.set_a(3, Some(4));
+    m.set_vl(Some(4));
+    for e in 0..4 {
+        m.set_v(2, e, Some(0o70 + e as u64));
+    }
+    steps(&mut m, 3);
+    assert_eq!(
+        (0..4).map(|e| m.v(1, e)).collect::<Vec<_>>(),
+        some(&[0o3776, 0o3777, 0, 0])
+    );
+    assert_eq!(
+        (0o3776..0o4002).map(|w| m.mem(w)).collect::<Vec<_>>(),
+        some(&[0o70, 0o71, 0o4000, 0o4001])
+    );
+    assert_eq!(
+        (0o10..0o14).map(|jk| m.b(jk)).collect::<Vec<_>>(),
+        vec![Some(0o70), Some(0o71), Some(0), Some(0)]
+    );
+    assert_eq!(m.f(), 0);
+}
+
+fn some(values: &[u64]) -> Vec<Option<u64>> {
+    values.iter().map(|v| Some(*v)).collect()
 }

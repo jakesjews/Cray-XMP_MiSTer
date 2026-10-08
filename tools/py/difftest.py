@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
 """Differential testing: the hardware CPU simulation against the reference model.
 
-    difftest.py rand FIRST LAST [-n INSTRUCTIONS] [--no-vector] [--no-float] [--no-mem] [--xmp] [-j JOBS]
+    difftest.py rand FIRST LAST [-n INSTRUCTIONS] [--no-vector] [--no-float] [--no-mem] [-j JOBS]
     difftest.py file PROG.cal [PROG.cal ...] [-I INCLUDE_DIR] [-j JOBS]
 
 Each program is assembled, run on the model, and run on the RTL simulation in
 several modes: different memory latencies and with issue serialized.  Every run
 must leave the same memory and console output as the model.  Failing programs
 are kept in build/diff with their states.
-
-A program with a MACHINE XMP line (randprog.py --xmp writes one) is for the
-machine with the X-MP features: it runs on the model with --machine XMP and
-on the simulation built with XMP = 1 (make -C sim cpu-xmp).
 """
 import os
 import subprocess
-import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
@@ -23,7 +18,6 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 ASM = os.path.join(ROOT, 'tools/target/release/cray-xmp')
 MODEL = os.path.join(ROOT, 'tools/target/release/cray-xmp-run')
 RTL = os.environ.get('CRAY_RTL_SIM', os.path.join(ROOT, 'sim/build/cpu/Vcray_cpu'))
-RTL_XMP = os.environ.get('CRAY_RTL_SIM_XMP', os.path.join(ROOT, 'sim/build/cpu_xmp/Vcray_cpu'))
 OUT = os.path.join(ROOT, 'build/diff')
 MODES = [('fast', ['--mem', 'fixed:1']), ('rand', ['--mem', 'rand:1-9']), ('slow', ['--mem', 'slow']),
          ('step', ['--mem', 'ddr3', '--step']), ('seed', ['--mem', 'rand:2-5', '--seed', '77'])]
@@ -54,26 +48,18 @@ def compare(rtl_state, model_state):
     return n, problems
 
 
-def is_xmp(cal):
-    """A program for the machine with the X-MP features says so: MACHINE XMP."""
-    return re.search(r'^\s+MACHINE\s+XMP\b', open(cal).read(), re.M) is not None
-
-
 def one(name, cal, include):
     base = os.path.join(OUT, name)
-    xmp = is_xmp(cal)
-    rtl = RTL_XMP if xmp else RTL
-    machine = ['--machine', 'XMP'] if xmp else []
     a = run([ASM, 'asm', cal, '-o', base + '.img', '-l', base + '.lst'] + sum((['-I', d] for d in include), []))
     if a.returncode not in (0, 2):
         return name, 'ASM', a.stderr.decode()[:300]
-    m = run([MODEL, base + '.img', '--state', base + '.model.state', '--quiet'] + machine)
+    m = run([MODEL, base + '.img', '--state', base + '.model.state', '--quiet'])
     if m.returncode != 0:
         return name, 'MODEL', 'exit %d: %s' % (m.returncode, m.stderr.decode()[:300])
     words = 0
     for mode, args in MODES:
         st = '%s.%s.state' % (base, mode)
-        r = run([rtl, '--image', base + '.img', '--cycles', '30000000', '--quiet', '--state', st] + args)
+        r = run([RTL, '--image', base + '.img', '--cycles', '30000000', '--quiet', '--state', st] + args)
         words, problems = compare(st, base + '.model.state')
         if problems:
             return name, 'RTL ' + mode, '; '.join(problems[:3]) + (' ... %d in all' % len(problems) if len(problems) > 3 else '')
@@ -92,9 +78,9 @@ def main():
     if a[0] == 'rand':
         first, last = int(a[1]), int(a[2])
         n = a[a.index('-n') + 1] if '-n' in a else '200'
-        opts = [x for x in a if x in ('--no-vector', '--no-float', '--no-mem', '--xmp')]
+        opts = [x for x in a if x in ('--no-vector', '--no-float', '--no-mem')]
         for seed in range(first, last + 1):
-            name = ('x%d' if '--xmp' in opts else 'r%d') % seed
+            name = 'r%d' % seed
             cal = os.path.join(OUT, name + '.cal')
             subprocess.run([sys.executable, os.path.join(ROOT, 'tools/py/randprog.py'), str(seed), '-n', n, '-o', cal] + opts, check=True)
             work.append((name, cal))

@@ -5,10 +5,7 @@ use std::collections::HashSet;
 use cray_xmp_fp::vectors::{
     corner_operands, parse_line, read_vectors, write_vectors, FLAG_RANGE_ERROR,
 };
-use cray_xmp_fp::{
-    read_vector_file, unpack, vectors, vectors_for, write_vector_file, Op, Profile, Vector,
-    NORM_BIT,
-};
+use cray_xmp_fp::{read_vector_file, unpack, vectors, write_vector_file, Op, Vector, NORM_BIT};
 
 fn exp(word: u64) -> u16 {
     unpack(word).exp
@@ -26,7 +23,7 @@ fn generator_is_deterministic_and_seeded() {
         let c: Vec<Vector> = vectors(op, 3000, 43).collect();
         assert_eq!(a.len(), 3000);
         assert_eq!(a, b, "{op:?}");
-        let corners = corner_operands(op, Profile::Xmp).len();
+        let corners = corner_operands(op).len();
         assert!(corners < 3000, "{op:?} has {corners} corner cases");
         // Corner cases come first and do not depend on the seed; the rest does.
         assert_eq!(a[..corners], c[..corners]);
@@ -40,9 +37,9 @@ fn generator_is_deterministic_and_seeded() {
 #[test]
 fn every_vector_is_what_the_crate_computes() {
     for op in Op::ALL {
-        for v in vectors_for(op, Profile::Cray1, 2500, 7) {
+        for v in vectors(op, 2500, 7) {
             assert_eq!(v.op, op);
-            assert_eq!(v.expected(), op.eval(v.a, v.b, Profile::Cray1), "{v}");
+            assert_eq!(v.expected(), op.eval(v.a, v.b), "{v}");
             assert_eq!(v.flags & !FLAG_RANGE_ERROR, 0);
             if op == Op::Recip {
                 assert_eq!(v.b, 0);
@@ -84,7 +81,7 @@ fn text_format_round_trips() {
     for op in Op::ALL {
         assert_eq!(Op::from_name(op.name()), Some(op));
         let mut text = Vec::new();
-        write_vectors(&mut text, op, Profile::Xmp, 500, 3).unwrap();
+        write_vectors(&mut text, op, 500, 3).unwrap();
         let parsed = read_vectors(&text[..]).unwrap();
         assert_eq!(parsed, vectors(op, 500, 3).collect::<Vec<_>>());
         // Every line is exactly five fields of fixed width.
@@ -109,7 +106,7 @@ fn vector_file_round_trips() {
     let dir = std::env::temp_dir().join(format!("cray-xmp-fp-vectors-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("all.vec");
-    let written = write_vector_file(&path, &Op::ALL, Profile::Xmp, 300, 99).unwrap();
+    let written = write_vector_file(&path, &Op::ALL, 300, 99).unwrap();
     assert_eq!(written, 7 * 300);
     let back = read_vector_file(&path).unwrap();
     let expect: Vec<Vector> = Op::ALL
@@ -122,8 +119,8 @@ fn vector_file_round_trips() {
 
 #[test]
 fn add_corner_set_covers_the_listed_cases() {
-    let corners = corner_operands(Op::Add, Profile::Xmp);
-    assert_eq!(corners, corner_operands(Op::Sub, Profile::Xmp));
+    let corners = corner_operands(Op::Add);
+    assert_eq!(corners, corner_operands(Op::Sub));
     let normal = |w: u64| coef(w) & NORM_BIT != 0;
 
     // Exponent differences between normalised operands.
@@ -181,7 +178,7 @@ fn add_corner_set_covers_the_listed_cases() {
     // Outcomes: silent underflow from non-zero operands, range errors, in-range results.
     let results: Vec<Vector> = corners
         .iter()
-        .map(|&(a, b)| Vector::compute(Op::Add, a, b, Profile::Xmp))
+        .map(|&(a, b)| Vector::compute(Op::Add, a, b))
         .collect();
     assert!(results.iter().any(|v| v.result == 0
         && v.flags == 0
@@ -205,7 +202,7 @@ fn add_corner_set_covers_the_listed_cases() {
 #[test]
 fn multiply_corner_set_covers_the_listed_cases() {
     for op in [Op::Mul, Op::MulH, Op::MulR, Op::Mul2M] {
-        let corners = corner_operands(op, Profile::Xmp);
+        let corners = corner_operands(op);
         let set: HashSet<(u64, u64)> = corners.iter().copied().collect();
 
         // Coefficients near all ones and every single-bit coefficient.
@@ -250,7 +247,7 @@ fn multiply_corner_set_covers_the_listed_cases() {
         // Outcomes: range error, silent underflow, and a result exponent of 017777.
         let results: Vec<Vector> = corners
             .iter()
-            .map(|&(a, b)| Vector::compute(op, a, b, Profile::Xmp))
+            .map(|&(a, b)| Vector::compute(op, a, b))
             .collect();
         assert!(results.iter().any(|v| v.flags == FLAG_RANGE_ERROR));
         assert!(results
@@ -264,7 +261,7 @@ fn multiply_corner_set_covers_the_listed_cases() {
 
 #[test]
 fn reciprocal_corner_set_covers_the_listed_cases() {
-    let corners = corner_operands(Op::Recip, Profile::Xmp);
+    let corners = corner_operands(Op::Recip);
     assert!(corners.iter().all(|&(_, b)| b == 0));
     let low_mask = (1u64 << 40) - 1;
     for index in 0..128u64 {
@@ -304,7 +301,7 @@ fn reciprocal_corner_set_covers_the_listed_cases() {
 #[test]
 fn random_classes_include_uniform_and_aligned_normalised_operands() {
     for op in [Op::Add, Op::Sub] {
-        let corners = corner_operands(op, Profile::Xmp).len();
+        let corners = corner_operands(op).len();
         let random: Vec<Vector> = vectors(op, corners + 40_000, 5).skip(corners).collect();
         // Class 1: normalised, in range, exponent difference 0..=50 with every value seen.
         let mut seen = HashSet::new();

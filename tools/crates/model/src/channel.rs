@@ -1,4 +1,4 @@
-//! The 6 Mbyte channels of the X-MP mode: channels 10 to 17 octal, even
+//! The 6 Mbyte channels: channels 10 to 17 octal, even
 //! numbers input, odd numbers output (CSM-0111000 pages 2-15 to 2-19, 5-9,
 //! 5-37 and appendix B).
 //!
@@ -28,7 +28,6 @@
 //! send a Resume or a Ready out of turn.
 
 use crate::machine::Machine;
-use cray_xmp_isa::Cpu;
 
 /// Mask of a channel address: four million words.
 const ADDRESS: u32 = (1 << 22) - 1;
@@ -63,10 +62,10 @@ pub struct ChannelState {
 }
 
 impl Machine {
-    /// The index of channel `number` (10 to 17 octal); the X-MP looks only
+    /// The index of channel `number` (10 to 17 octal); the machine looks only
     /// at the low four bits of the number and passes over 0 to 7.
     pub(crate) fn channel_index(&self, number: u32) -> Option<usize> {
-        (self.cpu == Cpu::Xmp && number & 0o17 >= 0o10).then_some((number & 7) as usize)
+        (number & 0o17 >= 0o10).then_some((number & 7) as usize)
     }
 
     /// True if any channel asks for the I/O interrupt.

@@ -1,5 +1,6 @@
 * vmixed: scalar and vector use of the floating-point units side by side,
-* merges and mask tests behind each other; results compared with the model.
+* result registers that are their own operands, merges and mask tests behind
+* each other; results compared with the model.
          INCLUDE "rt_direct.cal"
          TBEGIN
          A1        D'64
@@ -14,10 +15,10 @@
          ,A0,1     V3
          A2        D'4
          S1        V3,A2
-         CHKS      S1,D'106,2
+         CHKS      S1,D'510,2
          A2        D'5
          S1        V3,A2
-         CHKS      S1,D'108,3
+         CHKS      S1,D'612,3
          A0        ONE
          A2        0
          V4        ,A0,A2
@@ -30,7 +31,7 @@
          ,A0,1     V6
          A2        D'63
          S1        V6,A2
-         CHKS      S1,D'77,4
+         CHKS      S1,D'65,4
          A0        VA
          V7        ,A0,1
          A0        VB
@@ -56,7 +57,7 @@
          CHKS      S1,X'4002800000000000,5
          A2        D'9
          S1        V5,A2
-         CHKS      S1,X'4003800000000000,6
+         CHKS      S1,X'4002800000000000,6
          A0        FTWO
          A2        0
          V6        ,A0,A2

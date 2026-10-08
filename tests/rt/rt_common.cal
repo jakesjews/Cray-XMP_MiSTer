@@ -32,8 +32,8 @@
 * Macros (every runtime defines the same set)
 *
 *     TUSER ba       between INCLUDE and TBEGIN: under rt_exch, run the test
-*                    in user mode with base address register = ba (octal,
-*                    in units of 20 words).  Ignored by rt_direct.
+*                    in user mode with both base addresses = ba (octal, in
+*                    units of 40 words).  Ignored by rt_direct.
 *     TBEGIN         start of the test: code follows, at word 0200
 *     TPASS          status = 1.  Clobbers S0.
 *     TFAIL n        status = n and go to the end of the test (TEND).
@@ -83,11 +83,14 @@ T$CSTA   =       T$IO                    ; CON_STAT
 T$CDAT   =       T$IO+1                  ; CON_DATA
 T$EXIT   =       T$IO+2                  ; TEST_EXIT
 T$CYCL   =       T$IO+3                  ; CYCLES
-T$P2_24  =       100000000               ; 2**24: P and the M and F fields
-T$P2_28  =       2000000000              ; 2**28: BA and LA
+T$P2_24  =       100000000               ; 2**24: P, the modes and the flags
+T$P2_28  =       2000000000              ; 2**28: bit 35 of a package word
+T$P2_29  =       4000000000              ; 2**29: the base and limit fields
 T$P2_33  =       100000000000            ; 2**33: VL
 T$P2_40  =       20000000000000          ; 2**40: XA
-T$LAMAX  =       777777                  ; the largest limit address
+T$LAMAX  =       1777777                 ; the largest base or limit field
+T$MM     =       1                       ; word 2: monitor mode
+T$IOR    =       20                      ; word 2: interrupt on operand range
 *
          ORG     T$STAT
          CON     777                     ; no verdict yet

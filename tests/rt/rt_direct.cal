@@ -1,9 +1,10 @@
 * rt_direct.cal: test runtime, direct start.
 *
 * The dead start loads the exchange package at words 0-17: monitor mode,
-* base address 0, the largest limit address, P at the test's entry.  The
-* test runs at once; no other exchange takes place.  A0-A7, S0-S7 and VL
-* start as 0 (VL = 0 is a vector length of 100 octal).
+* cluster 0, the instruction and the data field both from word 0 to the end
+* of the four million words, P at the test's entry.  The test runs at once;
+* no other exchange takes place.  A0-A7, S0-S7 and VL start as 0 (VL = 0 is
+* a vector length of 100 octal).
 *
 *          INCLUDE "rt_direct.cal"
 *          TBEGIN
@@ -26,15 +27,17 @@
 * (tools/crates/model/tests/smoke.rs does this; with sed:
 * sed 's/rt_direct\.cal/rt_exch.cal/' test.cal).
 *
-T$IO     =       3777760
+T$IO     =       17777760
          INCLUDE "rt_common.cal"
 *
          ORG     0
          CON     T$ENTRY*4*T$P2_24       ; P = entry parcel; A0 = 0
-         CON     0                       ; BA = 0; A1 = 0
-         CON     T$LAMAX*T$P2_28+1*T$P2_24 ; LA; M = monitor mode; A2 = 0
+         CON     0                       ; IBA = 0; A1 = 0
+         CON     T$LAMAX*T$P2_29+T$MM*T$P2_24 ; ILA; monitor mode; A2 = 0
          CON     0                       ; XA = 0, VL = 0, F = 0; A3 = 0
-         BSSZ    D'12                    ; A4-A7, S0-S7
+         CON     0                       ; DBA = 0, cluster 0; A4 = 0
+         CON     T$LAMAX*T$P2_29         ; DLA; A5 = 0
+         BSSZ    D'10                    ; A6, A7, S0-S7
 *
          MACRO   TUSER %BA
          ENDM

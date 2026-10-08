@@ -259,11 +259,6 @@ impl Form {
         self.flags() & flag::VECTOR != 0
     }
     /// True if CAL has a spelling for this row.
-    /// True if the machine has this row: every row but the X-MP ones on a
-    /// CRAY-1, every row on the X-MP.
-    pub fn on(&self, cpu: Cpu) -> bool {
-        cpu == Cpu::Xmp || self.flags & flag::XMP == 0
-    }
     pub fn has_syntax(&self) -> bool {
         !self.result.is_empty()
     }
@@ -344,18 +339,13 @@ pub fn encode(form: &Form, fields: Fields) -> Encoding {
 
 /// Length in parcels (1 or 2) of the instruction that starts with `parcel0`.
 pub fn length(parcel0: u16) -> usize {
-    decode_form(Cpu::Cray1, parcel0).parcels as usize
+    decode_form(parcel0).parcels as usize
 }
 
-/// `length` for the given machine.  (No X-MP row changes a length.)
-pub fn length_cpu(cpu: Cpu, parcel0: u16) -> usize {
-    decode_form(cpu, parcel0).parcels as usize
-}
-
-fn decode_form(cpu: Cpu, parcel0: u16) -> &'static Form {
+fn decode_form(parcel0: u16) -> &'static Form {
     rows_for_gh((parcel0 >> 9) as u8)
         .map(|(_, f)| f)
-        .find(|f| f.kind == Kind::Base && f.on(cpu) && f.matches(parcel0, None))
+        .find(|f| f.kind == Kind::Base && f.matches(parcel0, None))
         .expect("the table gives every parcel a base form")
 }
 
@@ -403,17 +393,10 @@ impl Eq for Decoded {}
 /// parcel that follows it.
 ///
 /// Every first parcel decodes: fields the manual says are ignored are
-/// ignored, and the few encodings the manual leaves undefined come back as
-/// `Op::Undefined`.  If `parcels` is 2 and `parcel1` was `None`, `m` is taken
+/// ignored.  If `parcels` is 2 and `parcel1` was `None`, `m` is taken
 /// as zero; use `length` first when the second parcel has to be fetched.
 pub fn decode(parcel0: u16, parcel1: Option<u16>) -> Decoded {
-    decode_cpu(Cpu::Cray1, parcel0, parcel1)
-}
-
-/// `decode` for the given machine: on `Cpu::Xmp` the rows with `flag::XMP`
-/// take the encodings they name, and everything else decodes as on a CRAY-1.
-pub fn decode_cpu(cpu: Cpu, parcel0: u16, parcel1: Option<u16>) -> Decoded {
-    let form = decode_form(cpu, parcel0);
+    let form = decode_form(parcel0);
     let m = if form.parcels == 2 {
         parcel1.unwrap_or(0)
     } else {

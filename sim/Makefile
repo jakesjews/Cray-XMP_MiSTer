@@ -2,7 +2,7 @@
 ROOT  := $(abspath ..)
 BUILD := $(ROOT)/sim/build
 
-.PHONY: core ampex spool cpu cpu-xmp fp iop ios xmp bridge clean
+.PHONY: core ampex spool cpu fp iop ios xmp bridge clean
 
 # Core-level simulation of the CRAY X-MP core
 core: $(BUILD)/core/Vemu
@@ -24,11 +24,6 @@ $(BUILD)/spool/Vprint_spool: $(ROOT)/sim/spool.vc $(ROOT)/sim/harness/spool_main
 cpu: $(BUILD)/cpu/Vcray_cpu
 $(BUILD)/cpu/Vcray_cpu: $(ROOT)/sim/cpu.vc $(wildcard $(ROOT)/sim/harness/*) $(wildcard $(ROOT)/rtl/cray/*.v $(ROOT)/rtl/cray/cray-1x/*.v $(ROOT)/rtl/cray/cray-1x/*.vh)
 	mkdir -p $(BUILD)/cpu && cd $(ROOT) && verilator -f sim/cpu.vc --Mdir $(BUILD)/cpu -o Vcray_cpu
-
-# The same for the CPU with the X-MP features (XMP = 1, four million words)
-cpu-xmp: $(BUILD)/cpu_xmp/Vcray_cpu
-$(BUILD)/cpu_xmp/Vcray_cpu: $(ROOT)/sim/cpu_xmp.vc $(wildcard $(ROOT)/sim/harness/*) $(wildcard $(ROOT)/rtl/cray/*.v $(ROOT)/rtl/cray/cray-1x/*.v $(ROOT)/rtl/cray/cray-1x/*.vh)
-	mkdir -p $(BUILD)/cpu_xmp && cd $(ROOT) && verilator -f sim/cpu_xmp.vc --Mdir $(BUILD)/cpu_xmp -o Vcray_cpu
 
 # Floating point unit bench
 fp: $(BUILD)/fp/Vfp_tb

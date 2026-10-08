@@ -12,7 +12,7 @@
 //! logical product `a_p b_q` has weight `2^-(p+q)` and lives in pyramid "column" p+q, so
 //! columns run from 2 to 96 and the pyramid output from `2^-1` to `2^-96`.
 
-use crate::{pack, unpack, FpResult, MulKind, Profile, COEF_MASK, EXP_BIAS, EXP_MIN, EXP_OVERFLOW};
+use crate::{pack, unpack, FpResult, MulKind, COEF_MASK, EXP_BIAS, EXP_MIN, EXP_OVERFLOW};
 
 /// Parameters of a truncated multiply pyramid with a symmetric (commutative) cut.
 ///
@@ -53,7 +53,7 @@ impl MulModel {
     /// The X-MP multiplier as the Cray manuals describe it (HR-0097B figure 4-10 and page
     /// 4-30): pyramid cut after column `2^-56`, nine carries injected at `2^-56`, round bits
     /// at `2^-50` and `2^-51`, half-precision round bits at `2^-31` and `2^-32`, 29-bit
-    /// half-precision result. This is what [`Profile::Xmp`] uses.
+    /// half-precision result. This is what [`fmul`] uses.
     pub const XMP_MANUAL: MulModel = MulModel {
         last_column: 56,
         compensation: 9,
@@ -124,13 +124,9 @@ impl MulModel {
 /// Floating product for instructions 064 (`Full`), 065 (`HalfRounded`), 066 (`Rounded`) and
 /// 067 (`TwoMinus`, the reciprocal iteration `2 - a*b`).
 ///
-/// [`Profile::Cray1`] returns exactly what [`Profile::Xmp`] returns: the symmetric multiply
-/// unit the CRAY-1 had from 1980 is documented in the same words as the X-MP's. The original
-/// staircase pyramid of figure 3-5 is not used (see [`crate::cray1_pyramid`]).
-pub fn fmul(a: u64, b: u64, kind: MulKind, profile: Profile) -> FpResult {
-    match profile {
-        Profile::Xmp | Profile::Cray1 => fmul_model(a, b, kind, &MulModel::XMP_MANUAL),
-    }
+/// This is the symmetric multiply unit of the X-MP manuals, [`MulModel::XMP_MANUAL`].
+pub fn fmul(a: u64, b: u64, kind: MulKind) -> FpResult {
+    fmul_model(a, b, kind, &MulModel::XMP_MANUAL)
 }
 
 /// [`fmul`] with an explicit pyramid model.
@@ -211,7 +207,7 @@ mod tests {
     fn one_times_one() {
         let one = 0x4001_8000_0000_0000;
         for kind in [MulKind::Full, MulKind::HalfRounded, MulKind::Rounded] {
-            assert_eq!(fmul(one, one, kind, Profile::Xmp).value, one, "{kind:?}");
+            assert_eq!(fmul(one, one, kind).value, one, "{kind:?}");
         }
     }
 

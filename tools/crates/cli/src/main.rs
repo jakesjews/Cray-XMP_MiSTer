@@ -34,7 +34,7 @@ const COMMANDS: &[Command] = &[
     },
     Command {
         name: "dis",
-        synopsis: "IMG [--start WORD] [--words N] [--machine CRAY1|XMP]",
+        synopsis: "IMG [--start WORD] [--words N]",
         about: "disassemble a memory image parcel by parcel",
         details: cmd_dis::DETAILS,
         run: cmd_dis::run,

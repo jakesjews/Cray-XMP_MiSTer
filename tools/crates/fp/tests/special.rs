@@ -3,7 +3,7 @@
 
 use cray_xmp_fp::{
     fadd, fmul, frecip, fsub, pack, recip_seed, recip_table_word, unpack, FpResult, MulKind,
-    Profile, EXP_BIAS, SIGN_BIT,
+    EXP_BIAS, SIGN_BIT,
 };
 
 const HALF: u64 = 0x8000_0000_0000;
@@ -14,7 +14,6 @@ const KINDS: [MulKind; 4] = [
     MulKind::Rounded,
     MulKind::TwoMinus,
 ];
-const PROFILES: [Profile; 2] = [Profile::Xmp, Profile::Cray1];
 
 fn ok(value: u64) -> FpResult {
     FpResult {
@@ -215,44 +214,39 @@ fn add_sign_follows_the_larger_magnitude() {
 fn multiply_simple_values() {
     let one = w(0o40001, HALF);
     let half = w(0o40000, HALF);
-    for p in PROFILES {
-        assert_eq!(fmul(half, half, MulKind::Full, p), ok(w(0o37777, HALF)));
-        assert_eq!(
-            fmul(one, pack(true, 0o40005, 0xA000_0000_0000), MulKind::Full, p),
-            ok(pack(true, 0o40005, 0xA000_0000_0000))
-        );
-        // 1.5 * 1.5 = 2.25
-        assert_eq!(
-            fmul(
-                w(0o40001, 0xC000_0000_0000),
-                w(0o40001, 0xC000_0000_0000),
-                MulKind::Full,
-                p
-            ),
-            ok(w(0o40002, 0x9000_0000_0000))
-        );
-    }
+    assert_eq!(fmul(half, half, MulKind::Full), ok(w(0o37777, HALF)));
+    assert_eq!(
+        fmul(one, pack(true, 0o40005, 0xA000_0000_0000), MulKind::Full),
+        ok(pack(true, 0o40005, 0xA000_0000_0000))
+    );
+    // 1.5 * 1.5 = 2.25
+    assert_eq!(
+        fmul(
+            w(0o40001, 0xC000_0000_0000),
+            w(0o40001, 0xC000_0000_0000),
+            MulKind::Full
+        ),
+        ok(w(0o40002, 0x9000_0000_0000))
+    );
 }
 
 #[test]
 fn integer_multiply_when_both_exponents_are_zero() {
-    for p in PROFILES {
-        // XMP page 4-26, figure 4-8: 4 and 6 in bits 47..24 give 30 (octal) in the low bits.
-        assert_eq!(fmul(4 << 24, 6 << 24, MulKind::Full, p), ok(0o30));
-        // The result is the upper 48 bits of the product, never normalised.
-        assert_eq!(fmul(HALF, HALF, MulKind::Full, p), ok(0x4000_0000_0000));
-        assert_eq!(fmul(1 << 40, 1 << 40, MulKind::Full, p), ok(1 << 32));
-        // Signs multiply as usual (sign and magnitude result).
-        assert_eq!(
-            fmul(SIGN_BIT | (4 << 24), 6 << 24, MulKind::Full, p),
-            ok(SIGN_BIT | 0o30)
-        );
-        assert_eq!(
-            fmul(SIGN_BIT | (4 << 24), SIGN_BIT | (6 << 24), MulKind::Full, p),
-            ok(0o30)
-        );
-        assert_eq!(fmul(0, 0, MulKind::Full, p), ok(0));
-    }
+    // XMP page 4-26, figure 4-8: 4 and 6 in bits 47..24 give 30 (octal) in the low bits.
+    assert_eq!(fmul(4 << 24, 6 << 24, MulKind::Full), ok(0o30));
+    // The result is the upper 48 bits of the product, never normalised.
+    assert_eq!(fmul(HALF, HALF, MulKind::Full), ok(0x4000_0000_0000));
+    assert_eq!(fmul(1 << 40, 1 << 40, MulKind::Full), ok(1 << 32));
+    // Signs multiply as usual (sign and magnitude result).
+    assert_eq!(
+        fmul(SIGN_BIT | (4 << 24), 6 << 24, MulKind::Full),
+        ok(SIGN_BIT | 0o30)
+    );
+    assert_eq!(
+        fmul(SIGN_BIT | (4 << 24), SIGN_BIT | (6 << 24), MulKind::Full),
+        ok(0o30)
+    );
+    assert_eq!(fmul(0, 0, MulKind::Full), ok(0));
 }
 
 #[test]
@@ -260,21 +254,15 @@ fn integer_multiply_can_be_one_too_large() {
     // XMP page 4-27: with non-zero low bits the truncation compensation constant can make
     // the product one too large. 6 * 0x54 * 2^40 / 2^48 = 1.97, returned as 2. (This case is
     // also in cray-sim's fp_test.cpp.)
-    assert_eq!(
-        fmul(6, 0x5400_0000_0000, MulKind::Full, Profile::Xmp),
-        ok(2)
-    );
-    assert_eq!(
-        fmul(6, 0x5000_0000_0000, MulKind::Full, Profile::Xmp),
-        ok(1)
-    );
+    assert_eq!(fmul(6, 0x5400_0000_0000, MulKind::Full), ok(2));
+    assert_eq!(fmul(6, 0x5000_0000_0000, MulKind::Full), ok(1));
 }
 
 #[test]
 fn negative_zero_can_leave_the_multiply_unit() {
     // XMP page 4-23: a negative zero is generated only when one goes into the multiply unit.
-    assert_eq!(fmul(SIGN_BIT, 0, MulKind::Full, Profile::Xmp), ok(SIGN_BIT));
-    assert_eq!(fmul(SIGN_BIT, SIGN_BIT, MulKind::Full, Profile::Xmp), ok(0));
+    assert_eq!(fmul(SIGN_BIT, 0, MulKind::Full), ok(SIGN_BIT));
+    assert_eq!(fmul(SIGN_BIT, SIGN_BIT, MulKind::Full), ok(0));
 }
 
 #[test]
@@ -290,13 +278,11 @@ fn exactly_one_zero_exponent_is_an_underflow() {
         w(0o60000, ONES),
         w(0o77777, ONES),
     ];
-    for p in PROFILES {
-        for kind in KINDS {
-            for z in zero_exp {
-                for x in others {
-                    assert_eq!(fmul(z, x, kind, p), ok(0), "{z:016X} * {x:016X} {kind:?}");
-                    assert_eq!(fmul(x, z, kind, p), ok(0), "{x:016X} * {z:016X} {kind:?}");
-                }
+    for kind in KINDS {
+        for z in zero_exp {
+            for x in others {
+                assert_eq!(fmul(z, x, kind), ok(0), "{z:016X} * {x:016X} {kind:?}");
+                assert_eq!(fmul(x, z, kind), ok(0), "{x:016X} * {z:016X} {kind:?}");
             }
         }
     }
@@ -304,87 +290,73 @@ fn exactly_one_zero_exponent_is_an_underflow() {
 
 #[test]
 fn multiply_overflow_zones() {
-    for p in PROFILES {
-        // Either operand exponent >= 060000 (zone 7).
-        assert_eq!(
-            fmul(w(0o60000, HALF), w(0o40001, HALF), MulKind::Full, p),
-            err(w(0o60000, HALF))
-        );
-        assert_eq!(
-            fmul(
-                w(0o40001, ONES),
-                pack(true, 0o77777, ONES),
-                MulKind::Full,
-                p
-            ),
-            err(pack(true, 0o60000, 0xFFFF_FFFF_FFFD))
-        );
-        assert_eq!(
-            fmul(w(0o60000, HALF), w(1, HALF), MulKind::Full, p),
-            err(w(0o60000, HALF))
-        );
-        // Exponent sum >= 060000 with both operands in range (zone 7).
-        assert_eq!(
-            fmul(w(0o50001, ONES), w(0o50000, ONES), MulKind::Full, p),
-            err(w(0o60000, 0xFFFF_FFFF_FFFD))
-        );
-        // Zone 6: the sum is exactly 060000 and the product needs the normalising shift. The
-        // true exponent would be 057777, but the test is made before the shift.
-        assert_eq!(
-            fmul(w(0o50000, HALF), w(0o50000, HALF), MulKind::Full, p),
-            err(w(0o60000, HALF))
-        );
-        // One below the boundary is fine.
-        assert_eq!(
-            fmul(w(0o50000, ONES), w(0o47777, ONES), MulKind::Full, p),
-            ok(w(0o57777, 0xFFFF_FFFF_FFFD))
-        );
-        assert_eq!(
-            fmul(w(0o50000, HALF), w(0o47777, HALF), MulKind::Full, p),
-            ok(w(0o57776, HALF))
-        );
-    }
+    // Either operand exponent >= 060000 (zone 7).
+    assert_eq!(
+        fmul(w(0o60000, HALF), w(0o40001, HALF), MulKind::Full),
+        err(w(0o60000, HALF))
+    );
+    assert_eq!(
+        fmul(w(0o40001, ONES), pack(true, 0o77777, ONES), MulKind::Full),
+        err(pack(true, 0o60000, 0xFFFF_FFFF_FFFD))
+    );
+    assert_eq!(
+        fmul(w(0o60000, HALF), w(1, HALF), MulKind::Full),
+        err(w(0o60000, HALF))
+    );
+    // Exponent sum >= 060000 with both operands in range (zone 7).
+    assert_eq!(
+        fmul(w(0o50001, ONES), w(0o50000, ONES), MulKind::Full),
+        err(w(0o60000, 0xFFFF_FFFF_FFFD))
+    );
+    // Zone 6: the sum is exactly 060000 and the product needs the normalising shift. The
+    // true exponent would be 057777, but the test is made before the shift.
+    assert_eq!(
+        fmul(w(0o50000, HALF), w(0o50000, HALF), MulKind::Full),
+        err(w(0o60000, HALF))
+    );
+    // One below the boundary is fine.
+    assert_eq!(
+        fmul(w(0o50000, ONES), w(0o47777, ONES), MulKind::Full),
+        ok(w(0o57777, 0xFFFF_FFFF_FFFD))
+    );
+    assert_eq!(
+        fmul(w(0o50000, HALF), w(0o47777, HALF), MulKind::Full),
+        ok(w(0o57776, HALF))
+    );
 }
 
 #[test]
 fn multiply_underflow_zones() {
-    for p in PROFILES {
-        // Zone 2: exponent sum below 020000 gives +0 and no error.
-        assert_eq!(
-            fmul(
-                w(0o30000, ONES),
-                pack(true, 0o27777, ONES),
-                MulKind::Full,
-                p
-            ),
-            ok(0)
-        );
-        assert_eq!(fmul(w(1, ONES), w(1, ONES), MulKind::Full, p), ok(0));
-        // Zone 3: sum exactly 020000. Without a shift the result is in range; with a shift
-        // the exponent 017777 comes out and is not zeroed.
-        assert_eq!(
-            fmul(w(0o30000, ONES), w(0o30000, ONES), MulKind::Full, p),
-            ok(w(0o20000, 0xFFFF_FFFF_FFFD))
-        );
-        assert_eq!(
-            fmul(w(0o30000, HALF), w(0o30000, HALF), MulKind::Full, p),
-            ok(w(0o17777, HALF))
-        );
-        // Zone 4: an operand from the underflow range is accepted when the result is in range.
-        assert_eq!(
-            fmul(w(0o10000, HALF), w(0o57777, HALF), MulKind::Full, p),
-            ok(w(0o27776, HALF))
-        );
-        assert_eq!(
-            fmul(w(0o17777, ONES), w(0o40002, HALF), MulKind::Full, p),
-            ok(w(0o20000, ONES))
-        );
-        // The same operand one exponent lower lands on the zone 3 boundary with a shift.
-        assert_eq!(
-            fmul(w(0o17777, ONES), w(0o40001, HALF), MulKind::Full, p),
-            ok(w(0o17777, ONES))
-        );
-    }
+    // Zone 2: exponent sum below 020000 gives +0 and no error.
+    assert_eq!(
+        fmul(w(0o30000, ONES), pack(true, 0o27777, ONES), MulKind::Full),
+        ok(0)
+    );
+    assert_eq!(fmul(w(1, ONES), w(1, ONES), MulKind::Full), ok(0));
+    // Zone 3: sum exactly 020000. Without a shift the result is in range; with a shift
+    // the exponent 017777 comes out and is not zeroed.
+    assert_eq!(
+        fmul(w(0o30000, ONES), w(0o30000, ONES), MulKind::Full),
+        ok(w(0o20000, 0xFFFF_FFFF_FFFD))
+    );
+    assert_eq!(
+        fmul(w(0o30000, HALF), w(0o30000, HALF), MulKind::Full),
+        ok(w(0o17777, HALF))
+    );
+    // Zone 4: an operand from the underflow range is accepted when the result is in range.
+    assert_eq!(
+        fmul(w(0o10000, HALF), w(0o57777, HALF), MulKind::Full),
+        ok(w(0o27776, HALF))
+    );
+    assert_eq!(
+        fmul(w(0o17777, ONES), w(0o40002, HALF), MulKind::Full),
+        ok(w(0o20000, ONES))
+    );
+    // The same operand one exponent lower lands on the zone 3 boundary with a shift.
+    assert_eq!(
+        fmul(w(0o17777, ONES), w(0o40001, HALF), MulKind::Full),
+        ok(w(0o17777, ONES))
+    );
 }
 
 #[test]
@@ -395,10 +367,9 @@ fn multiply_does_not_normalise_unnormalised_operands() {
         w(0o40010, 0x0000_0001_0000),
         w(0o40001, HALF),
         MulKind::Full,
-        Profile::Xmp,
     );
     assert_eq!(r, ok(w(0o40010, 0x0000_0001_0000)));
-    let z = fmul(w(0o40010, 0), w(0o40001, HALF), MulKind::Full, Profile::Xmp);
+    let z = fmul(w(0o40010, 0), w(0o40001, HALF), MulKind::Full);
     assert_eq!(z, ok(w(0o40010, 0)));
 }
 
@@ -408,21 +379,21 @@ fn half_precision_keeps_29_bits_and_rounds() {
     // normalised result kept, low 19 bits zero.
     let third = w(0o37777, 0xAAAA_AAAA_AAAA);
     let three = w(0o40002, 0xC000_0000_0000);
-    let r = fmul(third, three, MulKind::HalfRounded, Profile::Xmp);
+    let r = fmul(third, three, MulKind::HalfRounded);
     // The exact product coefficient is just below one half; the round bits carry it up to
     // exactly one half, so the result is 1.0 with no normalising shift.
     assert_eq!(r, ok(w(0o40001, HALF)));
     assert_eq!(
-        fmul(third, three, MulKind::Full, Profile::Xmp),
+        fmul(third, three, MulKind::Full),
         ok(w(0o40000, 0xFFFF_FFFF_FFFF))
     );
     for (a, b) in [
         (w(0o40001, ONES), w(0o40001, 0xB504_F333_F9DE)),
         (w(0o40003, 0xDEAD_BEEF_1234), w(0o37770, 0x9E37_79B9_7F4A)),
     ] {
-        let h = fmul(a, b, MulKind::HalfRounded, Profile::Xmp);
+        let h = fmul(a, b, MulKind::HalfRounded);
         assert_eq!(unpack(h.value).coef & 0x7_FFFF, 0);
-        let full = fmul(a, b, MulKind::Full, Profile::Xmp);
+        let full = fmul(a, b, MulKind::Full);
         // Within one unit of the 29th bit of the full product.
         let diff = unpack(h.value).coef.abs_diff(unpack(full.value).coef);
         assert!(unpack(h.value).exp == unpack(full.value).exp && diff < 1 << 19);
@@ -434,7 +405,7 @@ fn half_precision_round_carry_out_of_the_top_wraps_unverified() {
     // Not covered by any source: two coefficients within 2^-33 of one make the rounded
     // pyramid sum reach 1.0, which does not fit. This model lets the carry fall off.
     let a = w(0o40001, 0xFFFF_FFFF_8000);
-    let r = fmul(a, a, MulKind::HalfRounded, Profile::Xmp);
+    let r = fmul(a, a, MulKind::HalfRounded);
     assert_eq!(r, ok(w(0o40001, 0)));
 }
 
@@ -451,12 +422,12 @@ fn rounded_multiply_adds_three_eighths_of_the_last_bit() {
     for (n, full, rounded) in [(1u64, 0u64, 1u64), (2, 1, 1), (3, 2, 2), (4, 3, 3)] {
         let x = w(0o40001, 0xC000_0000_0000 | n);
         assert_eq!(
-            fmul(x, y, MulKind::Full, Profile::Xmp),
+            fmul(x, y, MulKind::Full),
             ok(w(0o40002, 0x9000_0000_0000 + full)),
             "n = {n}"
         );
         assert_eq!(
-            fmul(x, y, MulKind::Rounded, Profile::Xmp),
+            fmul(x, y, MulKind::Rounded),
             ok(w(0o40002, 0x9000_0000_0000 + rounded)),
             "n = {n}"
         );
@@ -468,12 +439,12 @@ fn rounded_multiply_adds_three_eighths_of_the_last_bit() {
     for (n, full, rounded) in [(1u64, 1u64, 2u64), (2, 2, 3), (3, 3, 4), (4, 5, 5)] {
         let x = w(0o40001, HALF | n);
         assert_eq!(
-            fmul(x, y, MulKind::Full, Profile::Xmp),
+            fmul(x, y, MulKind::Full),
             ok(w(0o40001, 0xA000_0000_0000 + full)),
             "n = {n}"
         );
         assert_eq!(
-            fmul(x, y, MulKind::Rounded, Profile::Xmp),
+            fmul(x, y, MulKind::Rounded),
             ok(w(0o40001, 0xA000_0000_0000 + rounded)),
             "n = {n}"
         );
@@ -486,11 +457,11 @@ fn reciprocal_iteration_of_an_exact_reciprocal_is_wrong() {
     // on an exact reciprocal it gives an incorrect result. The unit forms 2^E - product, so
     // "2 - 1.0 * 1.0" comes out as 3.0.
     let one = w(0o40001, HALF);
-    let r = fmul(one, one, MulKind::TwoMinus, Profile::Xmp);
+    let r = fmul(one, one, MulKind::TwoMinus);
     assert_eq!(cray_xmp_fp::to_f64(r.value), 3.0);
     // With the approximation from the reciprocal unit it works.
-    let approx = frecip(one, Profile::Xmp).value;
-    let c = fmul(approx, one, MulKind::TwoMinus, Profile::Xmp).value;
+    let approx = frecip(one).value;
+    let c = fmul(approx, one, MulKind::TwoMinus).value;
     assert!((cray_xmp_fp::to_f64(c) - 1.0).abs() < 1.0e-9);
 }
 
@@ -507,10 +478,7 @@ fn xmp_multiply_is_commutative_on_awkward_operands() {
     for kind in KINDS {
         for a in words {
             for b in words {
-                assert_eq!(
-                    fmul(a, b, kind, Profile::Xmp),
-                    fmul(b, a, kind, Profile::Xmp)
-                );
+                assert_eq!(fmul(a, b, kind), fmul(b, a, kind));
             }
         }
     }
@@ -520,23 +488,18 @@ fn xmp_multiply_is_commutative_on_awkward_operands() {
 
 #[test]
 fn reciprocal_exponent_and_sign() {
-    for p in PROFILES {
-        assert_eq!(
-            frecip(w(0o40001, HALF), p),
-            ok(w(0o40000, 0xFFFF_FFFF_8000))
-        );
-        assert_eq!(
-            frecip(pack(true, 0o40001, HALF), p),
-            ok(pack(true, 0o40000, 0xFFFF_FFFF_8000))
-        );
-        // Result exponent is 0100001 - e over the whole valid range.
-        assert_eq!(unpack(frecip(w(0o20002, HALF), p).value).exp, 0o57777);
-        assert_eq!(unpack(frecip(w(0o57777, HALF), p).value).exp, 0o20002);
-        assert_eq!(
-            unpack(frecip(w(EXP_BIAS + 10, ONES), p).value).exp,
-            EXP_BIAS - 9
-        );
-    }
+    assert_eq!(frecip(w(0o40001, HALF)), ok(w(0o40000, 0xFFFF_FFFF_8000)));
+    assert_eq!(
+        frecip(pack(true, 0o40001, HALF)),
+        ok(pack(true, 0o40000, 0xFFFF_FFFF_8000))
+    );
+    // Result exponent is 0100001 - e over the whole valid range.
+    assert_eq!(unpack(frecip(w(0o20002, HALF)).value).exp, 0o57777);
+    assert_eq!(unpack(frecip(w(0o57777, HALF)).value).exp, 0o20002);
+    assert_eq!(
+        unpack(frecip(w(EXP_BIAS + 10, ONES)).value).exp,
+        EXP_BIAS - 9
+    );
 }
 
 #[test]
@@ -544,26 +507,24 @@ fn reciprocal_range_errors() {
     // HRM page 3-22: exponent <= 020001 or >= 060000 is a range error; exponent 060000 goes
     // to the result with the computed coefficient. Bit 47 of that coefficient is cleared
     // (cray-sim, confirmed for the zero operand by its test data).
-    for p in PROFILES {
-        for e in [
-            0u16, 1, 0o17777, 0o20000, 0o20001, 0o60000, 0o60001, 0o77777,
-        ] {
-            for sign in [false, true] {
-                let r = frecip(pack(sign, e, HALF), p);
-                assert_eq!(
-                    r,
-                    err(pack(sign, 0o60000, 0x7FFF_FFFF_8000)),
-                    "exponent {e:o}"
-                );
-            }
+    for e in [
+        0u16, 1, 0o17777, 0o20000, 0o20001, 0o60000, 0o60001, 0o77777,
+    ] {
+        for sign in [false, true] {
+            let r = frecip(pack(sign, e, HALF));
+            assert_eq!(
+                r,
+                err(pack(sign, 0o60000, 0x7FFF_FFFF_8000)),
+                "exponent {e:o}"
+            );
         }
-        for e in [0o20002u16, 0o20003, 0o40000, 0o57776, 0o57777] {
-            assert!(!frecip(w(e, HALF), p).range_error, "exponent {e:o}");
-        }
-        // (Sj) = 0 produces a range error; the result is meaningless (HRM page 4-42).
-        assert_eq!(frecip(0, p), err(0x6000_7FFC_02FF_0000));
-        assert_eq!(frecip(SIGN_BIT, p), err(0xE000_7FFC_02FF_0000));
     }
+    for e in [0o20002u16, 0o20003, 0o40000, 0o57776, 0o57777] {
+        assert!(!frecip(w(e, HALF)).range_error, "exponent {e:o}");
+    }
+    // (Sj) = 0 produces a range error; the result is meaningless (HRM page 4-42).
+    assert_eq!(frecip(0), err(0x6000_7FFC_02FF_0000));
+    assert_eq!(frecip(SIGN_BIT), err(0xE000_7FFC_02FF_0000));
 }
 
 #[test]
@@ -572,13 +533,10 @@ fn reciprocal_does_not_test_bit_47() {
     // bit". The result is normalised-looking but meaningless: the first Newton step uses the
     // bit as given and the second assumes it set.
     let unnorm = w(0o40001, 0x4000_0000_0000);
-    let r = frecip(unnorm, Profile::Xmp);
+    let r = frecip(unnorm);
     assert!(!r.range_error);
     assert!(cray_xmp_fp::is_normalized(r.value));
-    assert_ne!(
-        r.value,
-        frecip(w(0o40001, 0xC000_0000_0000), Profile::Xmp).value
-    );
+    assert_ne!(r.value, frecip(w(0o40001, 0xC000_0000_0000)).value);
     assert!((cray_xmp_fp::to_f64(r.value) * 0.5 - 1.0).abs() > 0.1);
 }
 

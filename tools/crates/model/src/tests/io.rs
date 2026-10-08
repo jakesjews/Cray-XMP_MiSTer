@@ -1,21 +1,23 @@
 //! The I/O page (not in the manual: the project's console, exit and cycle
-//! counter words at the top of memory).
+//! counter words in the top 16 of the four million words of memory, X 2-9).
 
 use super::*;
 
 #[test]
 fn io_page_addresses() {
-    assert_eq!(MEMORY_WORDS, 1 << 20);
+    assert_eq!(MEMORY_WORDS, 1 << 22);
     assert_eq!(
         (IO_PAGE, CON_STAT, CON_DATA, TEST_EXIT, CYCLES),
-        (0xffff0, 0xffff0, 0xffff1, 0xffff2, 0xffff3)
+        (0x3ffff0, 0x3ffff0, 0x3ffff1, 0x3ffff2, 0x3ffff3)
     );
-    assert_eq!(IO_PAGE, 0o3777760);
+    assert_eq!(IO_PAGE, 0o17777760);
+    let m = Machine::new();
+    assert_eq!((m.memory_words(), m.io_page()), (MEMORY_WORDS, IO_PAGE));
 }
 
 #[test]
 fn console_output() {
-    let mut m = monitor_cal("S1 3777760,0; 3777761,0 S2; 3777761,0 A3; S4 3777760,0");
+    let mut m = monitor_cal("S1 17777760,0; 17777761,0 S2; 17777761,0 A3; S4 17777760,0");
     m.set_s(2, Some(0x4141_4141_4141_4148)); // the low 8 bits are written
     m.set_a(3, Some(0x69));
     let events = record(&mut m);
@@ -37,7 +39,8 @@ fn console_output() {
 
 #[test]
 fn console_input() {
-    let mut m = monitor_cal("S1 3777760,0; S2 3777761,0; A3 3777761,0; S4 3777760,0; S5 3777761,0");
+    let mut m =
+        monitor_cal("S1 17777760,0; S2 17777761,0; A3 17777761,0; S4 17777760,0; S5 17777761,0");
     m.push_input(b"ok");
     steps(&mut m, 5);
     assert_eq!(
@@ -53,7 +56,7 @@ fn console_input() {
 
 #[test]
 fn test_exit_ends_the_run() {
-    let mut m = monitor_cal("S1 3777762,0; 3777762,0 S2; A1 5");
+    let mut m = monitor_cal("S1 17777762,0; 17777762,0 S2; A1 5");
     m.set_s(2, Some(7));
     steps(&mut m, 1);
     assert_eq!(m.s(1), Some(0), "TEST_EXIT reads 0");
@@ -65,7 +68,7 @@ fn test_exit_ends_the_run() {
     assert_eq!(m.a(1), Some(0));
     assert_eq!(m.instructions(), 2);
 
-    let mut m = monitor_cal("3777762,0 S2");
+    let mut m = monitor_cal("17777762,0 S2");
     m.set_s(2, Some(0));
     assert_eq!(m.run(10), RunResult::Exit(0));
 }
@@ -83,7 +86,6 @@ fn exit_status_saturates() {
         kind: ErrorKind::UndefinedValue,
         p: 0,
         parcels: None,
-        cpu: cray_xmp_isa::Cpu::Cray1,
         detail: String::new(),
     };
     assert_eq!(RunResult::Error(e).exit_status(), 3);
@@ -91,7 +93,7 @@ fn exit_status_saturates() {
 
 #[test]
 fn other_io_words_read_zero_and_ignore_writes() {
-    let mut m = monitor_cal("3777764,0 S1; S2 3777764,0; 3777777,0 S1; S3 3777777,0; 3777760,0 S1; S4 3777760,0; 3777763,0 S1");
+    let mut m = monitor_cal("17777764,0 S1; S2 17777764,0; 17777777,0 S1; S3 17777777,0; 17777760,0 S1; S4 17777760,0; 17777763,0 S1");
     m.set_s(1, Some(0x55));
     for i in 2..5 {
         m.set_s(i, Some(9));
@@ -102,7 +104,7 @@ fn other_io_words_read_zero_and_ignore_writes() {
     assert_eq!((m.s(2), m.s(3), m.s(4)), (Some(0), Some(0), Some(6)));
     assert!(m.console().is_empty());
     assert!(m.written_words().is_empty());
-    let mut m = monitor_cal("3777760,0 S1; S2 3777760,0; 3777760,0 S3; S4 3777760,0");
+    let mut m = monitor_cal("17777760,0 S1; S2 17777760,0; 17777760,0 S3; S4 17777760,0");
     m.set_s(1, Some(1));
     m.set_s(3, Some(0o776));
     steps(&mut m, 4);
@@ -111,17 +113,17 @@ fn other_io_words_read_zero_and_ignore_writes() {
 
 #[test]
 fn the_io_page_is_reached_like_memory() {
-    // After base relocation and the limit check: with BA = 100 the console
-    // data word is at relative 3777761 - 2000.
+    // After base relocation and the limit check: with DBA = 100 the console
+    // data word is at relative 17777761 - 4000.
     let mut m = user(&cal("0,A1 S2; S3 -1,A1; EX"), 0o100, LA_MAX);
-    m.set_a(1, Some(CON_DATA - 0o2000));
+    m.set_a(1, Some(CON_DATA - 0o4000));
     m.set_s(2, Some(b'!' as u64));
     steps(&mut m, 2);
     assert_eq!(m.console(), b"!");
     assert_eq!(m.s(3), Some(2), "CON_STAT");
     assert_eq!(m.f(), 0);
     // a limit below the page keeps a user program out
-    let mut m = user(&cal("3777761,0 S2"), 0, 0o177777);
+    let mut m = user(&cal("17777761,0 S2"), 0, 0o377777);
     m.set_s(2, Some(b'!' as u64));
     steps(&mut m, 1);
     assert!(m.console().is_empty());

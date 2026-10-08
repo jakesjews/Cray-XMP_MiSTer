@@ -1,7 +1,7 @@
 //! A and S register instructions, 020 to 077 except the block transfers.
 
 use super::*;
-use cray_xmp_fp::{fadd, fmul, frecip, from_f64, fsub, MulKind, Profile};
+use cray_xmp_fp::{fadd, fmul, frecip, from_f64, fsub, MulKind};
 
 #[test]
 fn special_register_values() {
@@ -92,8 +92,8 @@ fn population_count_parity() {
         (m.a(1), m.a(2), m.a(3), m.a(4)),
         (Some(1), Some(0), Some(0), Some(1))
     );
-    // k = 2 to 7 are not defined by rev F: the count, as without the option
-    let mut m = monitor(&[0o026112, 0o026217]);
+    // k = 2 to 6 are not defined: the count.  k = 7 reads a shared register.
+    let mut m = monitor(&[0o026112, 0o026216]);
     m.set_s(1, Some(0x0000_00f0_0000_0001));
     steps(&mut m, 2);
     assert_eq!((m.a(1), m.a(2)), (Some(5), Some(5)));
@@ -149,19 +149,6 @@ fn a_arithmetic() {
     assert_eq!(m.a(3), Some(0));
     assert_eq!(m.a(4), Some(0x12_3456));
     assert_eq!(m.a(5), Some(0x45_6000)); // low 24 bits of the product
-}
-
-#[test]
-fn channel_status_reads_zero() {
-    // Project definition: no channels are attached, 033 delivers 0
-    // (whatever (Aj) is, even undefined).
-    let mut m = monitor_cal("A1 CI; A2 CA,A3; A4 CE,A3");
-    m.set_a(1, Some(5));
-    m.set_a(2, Some(5));
-    m.set_a(3, None);
-    m.set_a(4, Some(5));
-    steps(&mut m, 3);
-    assert_eq!((m.a(1), m.a(2), m.a(4)), (Some(0), Some(0), Some(0)));
 }
 
 #[test]
@@ -390,23 +377,22 @@ fn floating_point_instructions_use_the_fp_units() {
         steps(&mut m, 1);
         m.s(3).unwrap()
     };
-    let p = Profile::Cray1;
     assert_eq!(run(0o062312), f(7.5));
     assert_eq!(run(0o062312), fadd(a, b).value);
     assert_eq!(run(0o063312), f(4.5));
     assert_eq!(run(0o063312), fsub(a, b).value);
-    assert_eq!(run(0o064312), fmul(a, b, MulKind::Full, p).value);
-    assert_eq!(run(0o065312), fmul(a, b, MulKind::HalfRounded, p).value);
-    assert_eq!(run(0o066312), fmul(a, b, MulKind::Rounded, p).value);
-    assert_eq!(run(0o067312), fmul(a, b, MulKind::TwoMinus, p).value);
-    assert_eq!(run(0o070310), frecip(a, p).value);
+    assert_eq!(run(0o064312), fmul(a, b, MulKind::Full).value);
+    assert_eq!(run(0o065312), fmul(a, b, MulKind::HalfRounded).value);
+    assert_eq!(run(0o066312), fmul(a, b, MulKind::Rounded).value);
+    assert_eq!(run(0o067312), fmul(a, b, MulKind::TwoMinus).value);
+    assert_eq!(run(0o070310), frecip(a).value);
     // Page 4-39: (Si) = (Sk) normalized if j = 0; -(Sk) normalized for 063.
     assert_eq!(run(0o062302), b);
     assert_eq!(run(0o063302), fsub(0, b).value);
     assert_eq!(run(0o063302), f(-1.5));
     assert_eq!(run(0o062310), fadd(a, 1 << 63).value);
-    assert_eq!(run(0o064310), fmul(a, 1 << 63, MulKind::Full, p).value);
-    assert_eq!(run(0o070300), frecip(0, p).value);
+    assert_eq!(run(0o064310), fmul(a, 1 << 63, MulKind::Full).value);
+    assert_eq!(run(0o070300), frecip(0).value);
 }
 
 #[test]

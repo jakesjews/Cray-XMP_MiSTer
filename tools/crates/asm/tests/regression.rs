@@ -3,7 +3,6 @@
 //! assembler (boot.SV.txt), and a round trip of every instruction form.
 
 use cray_xmp_asm::{assemble_file, assemble_source, Assembly};
-use cray_xmp_isa::Cpu;
 use std::path::PathBuf;
 
 fn fixture(name: &str) -> PathBuf {
@@ -176,36 +175,16 @@ fn boot_matches_the_python_assembler() {
     assert_eq!(a.entries, ["RX_SPIN"]);
 }
 
-/// The rows of the instruction table that can be reached on a machine.  On
-/// the X-MP the row for 0023xx to 0027xx is left with nothing: every one of
-/// those encodings has a meaning there.
-fn forms_of(cpu: Cpu) -> Vec<&'static cray_xmp_isa::Form> {
-    cray_xmp_isa::FORMS
-        .iter()
-        .filter(|f| f.on(cpu))
-        .filter(|f| {
-            let e = cray_xmp_isa::encode(f, f.example_fields());
-            cray_xmp_isa::decode_cpu(cpu, e.parcel0, e.parcel1).op == f.op
-        })
-        .collect()
-}
-
-/// A CAL source that uses every row of the instruction table a machine has
-/// once, written from the table's own examples.
-fn all_forms_source(cpu: Cpu) -> String {
+/// A CAL source that uses every row of the instruction table once, written
+/// from the table's own examples.
+fn all_forms_source() -> String {
     let mut out = String::new();
-    out.push_str("* Every instruction form of the Cray-1 once: one line per row of the\n");
+    out.push_str("* Every instruction form of the X-MP once: one line per row of the\n");
     out.push_str("* instruction table (cray-xmp isa), in table order, with the expected parcels\n");
     out.push_str("* in the comment column.  Checked against the table by the regression test\n");
     out.push_str("* in tools/crates/asm; regenerate with CRAY_XMP_UPDATE_FIXTURES=1 cargo test.\n");
-    if cpu == Cpu::Xmp {
-        out.push_str("* This file has the rows of the X-MP as well.\n");
-    }
     out.push_str("         IDENT     ALLFORMS\n");
-    if cpu == Cpu::Xmp {
-        out.push_str("         MACHINE   XMP\n");
-    }
-    for f in forms_of(cpu) {
+    for f in cray_xmp_isa::FORMS {
         let e = cray_xmp_isa::encode(f, f.example_fields());
         let (result, operand) = match f.example() {
             Some(x) => x,
@@ -224,13 +203,9 @@ fn all_forms_source(cpu: Cpu) -> String {
 
 #[test]
 fn every_instruction_form_round_trips() {
-    forms_round_trip("all_forms.cal", Cpu::Cray1);
-    forms_round_trip("xmp_forms.cal", Cpu::Xmp);
-}
-
-fn forms_round_trip(name: &str, cpu: Cpu) {
+    let name = "all_forms.cal";
     let path = fixture(name);
-    let source = all_forms_source(cpu);
+    let source = all_forms_source();
     if std::env::var_os("CRAY_XMP_UPDATE_FIXTURES").is_some() {
         std::fs::write(&path, &source).unwrap();
     }
@@ -258,7 +233,7 @@ fn forms_round_trip(name: &str, cpu: Cpu) {
         parcels.extend(&l.parcels);
         lines += 1;
     }
-    let forms = forms_of(cpu);
+    let forms = cray_xmp_isa::FORMS;
     assert_eq!(lines, forms.len());
     let total = parcels.len() as u64;
     assert_eq!((0..total).map(|p| a.parcel(p)).collect::<Vec<_>>(), parcels);
@@ -268,13 +243,10 @@ fn forms_round_trip(name: &str, cpu: Cpu) {
     let mut straddles = 0;
     let mut straddles_moved = 0;
     let mut text = String::from("         IDENT     AGAIN\n");
-    if cpu == Cpu::Xmp {
-        text.push_str("         MACHINE   XMP\n");
-    }
     for f in forms {
         let p0 = a.parcel(addr);
-        let len = cray_xmp_isa::length_cpu(cpu, p0) as u64;
-        let d = cray_xmp_isa::decode_cpu(cpu, p0, (len == 2).then(|| a.parcel(addr + 1)));
+        let len = cray_xmp_isa::length(p0) as u64;
+        let d = cray_xmp_isa::decode(p0, (len == 2).then(|| a.parcel(addr + 1)));
         assert_eq!(d.op, f.op, "parcel {:o}: {}", addr, f.pattern);
         assert!(
             f.matches(d.parcel0, Some(d.m)),
@@ -297,7 +269,6 @@ fn forms_round_trip(name: &str, cpu: Cpu) {
     // The same one parcel later, so that two-parcel instructions lie across
     // the word boundaries in one image or the other.
     let c = assemble_source(&text.replacen("AGAIN\n", "AGAIN\n         PASS\n", 1));
-    // (PASS before MACHINE: the directive emits nothing)
     assert_eq!(c.diagnostics, []);
     assert_eq!(c.parcel(0), 0o001000);
     assert_eq!(

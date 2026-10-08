@@ -1,4 +1,4 @@
-* Every instruction form of the Cray-1 once: one line per row of the
+* Every instruction form of the X-MP once: one line per row of the
 * instruction table (cray-xmp isa), in table order, with the expected parcels
 * in the comment column.  Checked against the table by the regression test
 * in tools/crates/asm; regenerate with CRAY_XMP_UPDATE_FIXTURES=1 cargo test.
@@ -8,6 +8,7 @@
          CA,A2     A3             001023
          PASS                     001000
          CL,A2     A3             001123
+         MC,A2                    001221
          CI,A2                    001220
          XA        A2             001320
          RT        S2             001420
@@ -15,13 +16,21 @@
          CCI                      001405
          ECI                      001406
          DCI                      001407
+         CLN       2              001423
          VWD       D'16/O'001401  001401
          VWD       D'16/O'001500  001500
          VL        A3             002003
          VL        1              002000
          EFI                      002100
          DFI                      002200
-         VWD       D'16/O'002300  002300
+         ERI                      002300
+         DRI                      002400
+         DBM                      002500
+         EBM                      002600
+         CMR                      002700
+         SM23      1,TS           003423
+         SM23      0              003623
+         SM23      1              003723
          VM        S2             003020
          VM        0              003000
          EX                       004000
@@ -45,8 +54,10 @@
          A1        S2             023120
          A1        B23            024123
          B23       A1             025123
+         A1        SB2            026127
          A1        QS2            026121
          A1        PS2            026120
+         SB2       A1             027127
          A1        ZS2            027120
          A1        A2+A3          030123
          A1        A3             030103
@@ -132,7 +143,12 @@
          S1        1.             071150
          S1        2.             071160
          S1        4.             071170
+         S1        SM             072102
+         S1        ST2            072123
          S1        RT             072100
+         S1        SR0            073101
+         SM        S1             073102
+         ST2       S1             073123
          S1        VM             073100
          S1        T23            074123
          T23       S1             075123

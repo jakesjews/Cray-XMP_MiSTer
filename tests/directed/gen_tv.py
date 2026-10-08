@@ -25,7 +25,7 @@ def store(reg, vals, vl):
 def setvl(n):
     emit("         A1        D'%d"%n, "         VL        A1")
 
-hdr=["         IDENT     TV","TEXIT    =         O'3777762","         ORG       0","         CON       P.START*O'100000000","         CON       0","         CON       O'1777776100000000","         CON       O'0000000030000000000000","         BSSZ      D'12","         ORG       O'40"]
+hdr=["         IDENT     TV","TEXIT    =         O'17777762","         ORG       0","         CON       P.START*O'100000000","         CON       0","         CON       O'7777774100000000","         CON       O'0000000030000000000000","         CON       0","         CON       O'7777774000000000","         BSSZ      D'10","         ORG       O'40"]
 emit("START    A1        D'64","         VL        A1","         A0        O'%o"%IN_A,"         V1        ,A0,1","         A0        O'%o"%IN_B,"         V2        ,A0,1")
 emit("         S1        SC,0","         S2        VMV,0")
 store(1,va,64); store(2,vb,64)                                   # load then store round trip

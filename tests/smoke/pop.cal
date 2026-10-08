@@ -1,7 +1,7 @@
-* pop: the population instructions of the 1982 machine.  026ij1 is the
-* parity of a scalar, 174ij1 the population counts of a vector and 174ij2
-* their parities.  Also a count chained between two sums, and a count whose
-* result register is its operand.
+* pop: the population instructions.  026ij1 is the parity of a scalar,
+* 174ij1 the population counts of a vector and 174ij2 their parities.  Also
+* a count chained between two sums, and a count whose result register is
+* its operand.
 * RUNTIMES: direct exch user reloc
          INCLUDE "rt_direct.cal"
          TBEGIN
@@ -74,30 +74,40 @@
          A2      D'32
          S1      V6,A2
          CHKS    S1,2,24
-* the result register is the operand: counts in groups of eight
+* the result register is the operand: each count is of the element as it
+* was before the instruction
          A1      D'20
          VL      A1
          S1      7
          A2      0
-         V7      V1+V1
+         V7      V1+V1                   ; element n holds 2n
          V7,A2   S1                      ; element 0: three one bits
          V7      PV7
-         A2      7
+         A2      0
          S1      V7,A2
          CHKS    S1,3,25
+         A2      7
+         S1      V7,A2
+         CHKS    S1,3,26                 ; 14: three one bits
          A2      D'8
          S1      V7,A2
-         CHKS    S1,2,26                 ; the count of the new element 0
+         CHKS    S1,1,27                 ; 16
          A2      D'19
          S1      V7,A2
-         CHKS    S1,1,27
+         CHKS    S1,3,30                 ; 38
          S1      7
          A2      0
          V7,A2   S1                      ; three one bits again
-         V7      QV7                     ; parities, same grouping: all one
+         V7      QV7                     ; the parities of the counts
+         A2      0
+         S1      V7,A2
+         CHKS    S1,1,31
+         A2      7
+         S1      V7,A2
+         CHKS    S1,0,32                 ; the count 3 has two one bits
          A2      D'16
          S1      V7,A2
-         CHKS    S1,1,30
+         CHKS    S1,1,33                 ; the count 1
          TPASS
          TEND    DUMPALL
 *

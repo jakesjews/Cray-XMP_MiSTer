@@ -1,42 +1,16 @@
 //! The vector instructions 140 to 177.
 //!
-//! # A result register that is also an operand (HRM pages 3-14 to 3-16)
+//! # A result register that is also an operand
 //!
-//! The manual: when i is the same as j or k the element counter of the
-//! operand/result register is held at zero until the first result arrives,
-//! functional unit time + 2 clock periods after the start, and then advances
-//! by one each clock period.  So with n = functional unit time + 2, the
-//! operation on element e takes, from the operand/result register,
-//!
-//! * the contents element 0 had before the instruction, for e < n;
-//! * the result this instruction delivered to element e - n, for e >= n;
-//!
-//! and element e of any other operand register.  The functional unit times
-//! are those of section 3: `unit_time`.
+//! Every operand element is read before its result arrives, so when i is
+//! the same as j or k the operation sees what the register held before the
+//! instruction (CSM-0111000 page 3-33; the CRAY-1's recursive use of such a
+//! register is gone).  `v_before` keeps those contents.
 
-use crate::exec::{and_values, double_shift_left, double_shift_right, FP_PROFILE};
+use crate::exec::{and_values, double_shift_left, double_shift_right};
 use crate::machine::{vl_count, Machine, TestError, A_MASK};
 use cray_xmp_fp::{fadd, fmul, frecip, fsub, FpResult, MulKind};
-use cray_xmp_isa::{Cpu, Decoded, Op};
-
-/// Functional unit times in clock periods (HRM section 3).
-pub mod unit_time {
-    /// Vector logical unit, 140 to 147 (page 3-17).
-    pub const VECTOR_LOGICAL: usize = 2;
-    /// Vector shift unit, 150 to 153 (page 3-17).
-    pub const VECTOR_SHIFT: usize = 4;
-    /// Vector add unit, 154 to 157 (page 3-17).
-    pub const VECTOR_ADD: usize = 3;
-    /// Floating point add unit, 170 to 173 (page 3-18).
-    pub const FP_ADD: usize = 6;
-    /// Floating point multiply unit, 160 to 167 (page 3-18).
-    pub const FP_MULTIPLY: usize = 7;
-    /// Reciprocal approximation unit, 174 (page 3-18).
-    pub const FP_RECIPROCAL: usize = 14;
-    /// Vector population count unit, 174ij1 and 174ij2.  Rev F page 4-70
-    /// gives a chain slot time of 8 clock periods, which is unit time + 2.
-    pub const VECTOR_POPULATION: usize = 6;
-}
+use cray_xmp_isa::{Decoded, Op};
 
 fn plain(value: u64) -> FpResult {
     FpResult {
@@ -52,28 +26,14 @@ impl Machine {
     }
 
     /// The operand that register `r` supplies to the operation on element
-    /// `e` of an instruction whose result register is `i`.  `delay` is the
-    /// functional unit time + 2 and `old0` what element 0 of the result
-    /// register held before the instruction.
+    /// `e` of an instruction whose result register is `i`: for the result
+    /// register itself, what it held before the instruction.
     #[inline]
-    fn operand(
-        &self,
-        r: usize,
-        i: usize,
-        e: usize,
-        delay: usize,
-        old0: Option<u64>,
-    ) -> Option<u64> {
+    fn operand(&self, r: usize, i: usize, e: usize) -> Option<u64> {
         if r != i {
             self.v[r][e]
-        } else if self.cpu == Cpu::Xmp {
-            // no recursion on the X-MP: every operand element is read before
-            // its result arrives, so the operation sees the old contents
-            self.v_before[e]
-        } else if e < delay {
-            old0
         } else {
-            self.v[i][e - delay]
+            self.v_before[e]
         }
     }
 
@@ -82,20 +42,15 @@ impl Machine {
         &mut self,
         d: &Decoded,
         scalar: bool,
-        time: usize,
         float: bool,
         f: impl Fn(u64, u64) -> FpResult,
     ) -> Result<(), TestError> {
         let (i, j, k) = (d.i as usize, d.j as usize, d.k as usize);
         let count = self.vector_count()?;
-        let (delay, old0, sj) = (time + 2, self.v[i][0], self.sj(d));
+        let sj = self.sj(d);
         for e in 0..count {
-            let a = if scalar {
-                sj
-            } else {
-                self.operand(j, i, e, delay, old0)
-            };
-            let b = self.operand(k, i, e, delay, old0);
+            let a = if scalar { sj } else { self.operand(j, i, e) };
+            let b = self.operand(k, i, e);
             let r = match (a, b) {
                 (Some(a), Some(b)) => Some(f(a, b)),
                 _ => None,
@@ -116,14 +71,10 @@ impl Machine {
     fn vector_and(&mut self, d: &Decoded, scalar: bool) -> Result<(), TestError> {
         let (i, j, k) = (d.i as usize, d.j as usize, d.k as usize);
         let count = self.vector_count()?;
-        let (delay, old0, sj) = (unit_time::VECTOR_LOGICAL + 2, self.v[i][0], self.sj(d));
+        let sj = self.sj(d);
         for e in 0..count {
-            let a = if scalar {
-                sj
-            } else {
-                self.operand(j, i, e, delay, old0)
-            };
-            let b = self.operand(k, i, e, delay, old0);
+            let a = if scalar { sj } else { self.operand(j, i, e) };
+            let b = self.operand(k, i, e);
             self.set_v(i, e, and_values(a, b));
         }
         Ok(())
@@ -134,15 +85,11 @@ impl Machine {
     fn vector_merge(&mut self, d: &Decoded, scalar: bool) -> Result<(), TestError> {
         let (i, j, k) = (d.i as usize, d.j as usize, d.k as usize);
         let count = self.vector_count()?;
-        let (delay, old0, sj) = (unit_time::VECTOR_LOGICAL + 2, self.v[i][0], self.sj(d));
+        let sj = self.sj(d);
         let vm = self.vm;
         for e in 0..count {
-            let a = if scalar {
-                sj
-            } else {
-                self.operand(j, i, e, delay, old0)
-            };
-            let b = self.operand(k, i, e, delay, old0);
+            let a = if scalar { sj } else { self.operand(j, i, e) };
+            let b = self.operand(k, i, e);
             let value = match vm {
                 Some(vm) if vm >> (63 - e) & 1 != 0 => a,
                 Some(_) => b,
@@ -161,15 +108,14 @@ impl Machine {
         let (i, j) = (d.i as usize, d.j as usize);
         let count = self.vector_count()?;
         let shift = self.need(self.ak(d), "Ak (shift count)")?;
-        let (delay, old0) = (unit_time::VECTOR_SHIFT + 2, self.v[i][0]);
         for e in 0..count {
-            let x = self.operand(j, i, e, delay, old0);
+            let x = self.operand(j, i, e);
             let value = match d.op {
                 Op::ShlV => x.map(|x| if shift > 63 { 0 } else { x << shift }),
                 Op::ShrV => x.map(|x| if shift > 63 { 0 } else { x >> shift }),
                 Op::ShlDV => {
                     let next = if e + 1 < count {
-                        self.operand(j, i, e + 1, delay, old0)
+                        self.operand(j, i, e + 1)
                     } else {
                         Some(0)
                     };
@@ -180,7 +126,7 @@ impl Machine {
                 }
                 _ => {
                     let before = if e > 0 {
-                        self.operand(j, i, e - 1, delay, old0)
+                        self.operand(j, i, e - 1)
                     } else {
                         Some(0)
                     };
@@ -227,10 +173,9 @@ impl Machine {
 
     fn vector_load(&mut self, d: &Decoded) -> Result<(), TestError> {
         let (count, a0, step) = self.vector_addresses(d)?;
-        let mut lost = false;
         for e in 0..count {
             let rel = a0.wrapping_add(step.wrapping_mul(e as u32)) & A_MASK;
-            let value = self.transfer_read(rel, &mut lost);
+            let value = self.read_data(rel);
             self.set_v(d.i as usize, e, value);
         }
         Ok(())
@@ -238,21 +183,17 @@ impl Machine {
 
     fn vector_store(&mut self, d: &Decoded) -> Result<(), TestError> {
         let (count, a0, step) = self.vector_addresses(d)?;
-        let mut lost = false;
         for e in 0..count {
             let rel = a0.wrapping_add(step.wrapping_mul(e as u32)) & A_MASK;
             let value = self.v[d.j as usize][e];
-            self.transfer_write(rel, value, &mut lost)?;
+            self.transfer_write(rel, value)?;
         }
         Ok(())
     }
 
     pub(crate) fn execute_vector(&mut self, d: &Decoded) -> Result<(), TestError> {
-        use unit_time::*;
-        if self.cpu == Cpu::Xmp {
-            self.v_before = self.v[d.i as usize];
-        }
-        let mul = |kind: MulKind| move |a: u64, b: u64| fmul(a, b, kind, FP_PROFILE);
+        self.v_before = self.v[d.i as usize];
+        let mul = |kind: MulKind| move |a: u64, b: u64| fmul(a, b, kind);
         match d.op {
             // ---- 145 and 157 with j = k: an element less itself, or
             // differing from itself, is zero whatever it holds.  `Vi Vi\Vi`
@@ -269,10 +210,10 @@ impl Machine {
             // ---- 140 to 147: vector logical (pages 4-49 to 4-52)
             Op::AndSV => self.vector_and(d, true),
             Op::AndVV => self.vector_and(d, false),
-            Op::OrSV => self.vector_binary(d, true, VECTOR_LOGICAL, false, |a, b| plain(a | b)),
-            Op::OrVV => self.vector_binary(d, false, VECTOR_LOGICAL, false, |a, b| plain(a | b)),
-            Op::XorSV => self.vector_binary(d, true, VECTOR_LOGICAL, false, |a, b| plain(a ^ b)),
-            Op::XorVV => self.vector_binary(d, false, VECTOR_LOGICAL, false, |a, b| plain(a ^ b)),
+            Op::OrSV => self.vector_binary(d, true, false, |a, b| plain(a | b)),
+            Op::OrVV => self.vector_binary(d, false, false, |a, b| plain(a | b)),
+            Op::XorSV => self.vector_binary(d, true, false, |a, b| plain(a ^ b)),
+            Op::XorVV => self.vector_binary(d, false, false, |a, b| plain(a ^ b)),
             Op::MergeSV => self.vector_merge(d, true),
             Op::MergeVV => self.vector_merge(d, false),
             // ---- 150 to 153: vector shifts
@@ -280,57 +221,43 @@ impl Machine {
             // ---- 154 to 157: vector integer add (pages 4-59, 4-60).  The text of
             // page 4-59 calls 155 a subtraction; its heading, its special cases
             // and page 3-17 make 154 and 155 sums, 156 and 157 differences.
-            Op::AddSV => {
-                self.vector_binary(d, true, VECTOR_ADD, false, |a, b| plain(a.wrapping_add(b)))
-            }
-            Op::AddVV => {
-                self.vector_binary(d, false, VECTOR_ADD, false, |a, b| plain(a.wrapping_add(b)))
-            }
-            Op::SubSV => {
-                self.vector_binary(d, true, VECTOR_ADD, false, |a, b| plain(a.wrapping_sub(b)))
-            }
-            Op::SubVV => {
-                self.vector_binary(d, false, VECTOR_ADD, false, |a, b| plain(a.wrapping_sub(b)))
-            }
+            Op::AddSV => self.vector_binary(d, true, false, |a, b| plain(a.wrapping_add(b))),
+            Op::AddVV => self.vector_binary(d, false, false, |a, b| plain(a.wrapping_add(b))),
+            Op::SubSV => self.vector_binary(d, true, false, |a, b| plain(a.wrapping_sub(b))),
+            Op::SubVV => self.vector_binary(d, false, false, |a, b| plain(a.wrapping_sub(b))),
             // ---- 160 to 167: vector floating multiply (pages 4-61 to 4-63)
-            Op::FMulSV => self.vector_binary(d, true, FP_MULTIPLY, true, mul(MulKind::Full)),
-            Op::FMulVV => self.vector_binary(d, false, FP_MULTIPLY, true, mul(MulKind::Full)),
-            Op::HMulSV => self.vector_binary(d, true, FP_MULTIPLY, true, mul(MulKind::HalfRounded)),
-            Op::HMulVV => {
-                self.vector_binary(d, false, FP_MULTIPLY, true, mul(MulKind::HalfRounded))
-            }
-            Op::RMulSV => self.vector_binary(d, true, FP_MULTIPLY, true, mul(MulKind::Rounded)),
-            Op::RMulVV => self.vector_binary(d, false, FP_MULTIPLY, true, mul(MulKind::Rounded)),
-            Op::IMulSV => self.vector_binary(d, true, FP_MULTIPLY, true, mul(MulKind::TwoMinus)),
-            Op::IMulVV => self.vector_binary(d, false, FP_MULTIPLY, true, mul(MulKind::TwoMinus)),
+            Op::FMulSV => self.vector_binary(d, true, true, mul(MulKind::Full)),
+            Op::FMulVV => self.vector_binary(d, false, true, mul(MulKind::Full)),
+            Op::HMulSV => self.vector_binary(d, true, true, mul(MulKind::HalfRounded)),
+            Op::HMulVV => self.vector_binary(d, false, true, mul(MulKind::HalfRounded)),
+            Op::RMulSV => self.vector_binary(d, true, true, mul(MulKind::Rounded)),
+            Op::RMulVV => self.vector_binary(d, false, true, mul(MulKind::Rounded)),
+            Op::IMulSV => self.vector_binary(d, true, true, mul(MulKind::TwoMinus)),
+            Op::IMulVV => self.vector_binary(d, false, true, mul(MulKind::TwoMinus)),
             // ---- 170 to 173: vector floating add (pages 4-64, 4-65)
-            Op::FAddSV => self.vector_binary(d, true, FP_ADD, true, fadd),
-            Op::FAddVV => self.vector_binary(d, false, FP_ADD, true, fadd),
-            Op::FSubSV => self.vector_binary(d, true, FP_ADD, true, fsub),
-            Op::FSubVV => self.vector_binary(d, false, FP_ADD, true, fsub),
+            Op::FAddSV => self.vector_binary(d, true, true, fadd),
+            Op::FAddVV => self.vector_binary(d, false, true, fadd),
+            Op::FSubSV => self.vector_binary(d, true, true, fsub),
+            Op::FSubVV => self.vector_binary(d, false, true, fsub),
             // ---- 174: reciprocal approximation (page 4-66)
             Op::RecipV => {
                 let (i, j) = (d.i as usize, d.j as usize);
                 let count = self.vector_count()?;
-                let (delay, old0) = (FP_RECIPROCAL + 2, self.v[i][0]);
                 for e in 0..count {
-                    let r = self
-                        .operand(j, i, e, delay, old0)
-                        .map(|x| frecip(x, FP_PROFILE));
+                    let r = self.operand(j, i, e).map(frecip);
                     let value = self.fp_result(r)?;
                     self.set_v(i, e, value);
                 }
                 Ok(())
             }
-            // ---- 174ij1, 174ij2: population count and its parity (rev F
-            // page 4-70).  The other bits of each element are zero.
+            // ---- 174ij1, 174ij2: population count and its parity.  The
+            // other bits of each element are zero.
             Op::PopV | Op::ParityV => {
                 let (i, j) = (d.i as usize, d.j as usize);
                 let count = self.vector_count()?;
-                let (delay, old0) = (VECTOR_POPULATION + 2, self.v[i][0]);
                 let low_bit = d.op == Op::ParityV;
                 for e in 0..count {
-                    let value = self.operand(j, i, e, delay, old0).map(|x| {
+                    let value = self.operand(j, i, e).map(|x| {
                         let n = x.count_ones() as u64;
                         if low_bit {
                             n & 1

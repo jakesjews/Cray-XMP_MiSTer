@@ -13,13 +13,14 @@
 *          ... data ...
 *          END
 *
-* Without TUSER the test runs in monitor mode with base address 0, as under
-* rt_direct.  TUSER ba makes it a user program (monitor mode off) with base
-* address register ba and the largest limit address.  If ba is not 0 the
-* start-up first copies words 100-3777 to (ba * 20) + 100, so the test runs
-* there unchanged with all its addresses relative; it then cannot reach the
-* I/O page (no console macros), and its status word and dump area are at
-* (ba * 20) + 100 and (ba * 20) + 4000.
+* Without TUSER the test runs in monitor mode with both fields from word 0,
+* as under rt_direct.  TUSER ba makes it a user program (monitor mode off,
+* the operand range interrupt on) with the instruction and the data base
+* address ba and the largest limit addresses.  If ba is not 0 the start-up
+* first copies words 100-3777 to (ba * 40) + 100, so the test runs there
+* unchanged with all its addresses relative; it then cannot reach the I/O
+* page (no console macros), and its status word and dump area are at
+* (ba * 40) + 100 and (ba * 40) + 4000.
 *
 * TEND takes the dump if asked, sets XA back to the start-up's package
 * (a pass in user mode), sets A3 = 0 and VL = 1 and executes EX.  A3 and VL
@@ -37,7 +38,7 @@
 *
 * The macros are described in rt_common.cal.
 *
-T$IO     =       3777760
+T$IO     =       17777760
          INCLUDE "rt_common.cal"
 *
 T$COPY0  =       100                     ; words copied for a base address
@@ -46,23 +47,27 @@ T$COPY1  =       4000                    ; other than 0: 100 to 3777
 * package 0: the start-up
          ORG     0
          CON     T$MON*T$P2_24           ; P; A0 = 0
-         CON     0                       ; BA = 0; A1 = 0
-         CON     T$LAMAX*T$P2_28+1*T$P2_24 ; LA; M = monitor mode; A2 = 0
+         CON     0                       ; IBA = 0; A1 = 0
+         CON     T$LAMAX*T$P2_29+T$MM*T$P2_24 ; ILA; monitor mode; A2 = 0
          CON     0                       ; XA = 0, VL = 0, F = 0; A3 = 0
-         BSSZ    D'12                    ; A4-A7, S0-S7
+         CON     0                       ; DBA = 0, cluster 0; A4 = 0
+         CON     T$LAMAX*T$P2_29         ; DLA; A5 = 0
+         BSSZ    D'10                    ; A6, A7, S0-S7
 *
 * package 1: the test.  XA = 1 brings its exit back to these same words.
          ORG     20
          CON     T$ENTRY*4*T$P2_24       ; P = entry parcel; A0 = 0
-         CON     0                       ; BA = 0; A1 = 0
-         CON     T$LAMAX*T$P2_28+1*T$P2_24 ; LA; M = monitor mode; A2 = 0
+         CON     0                       ; IBA = 0; A1 = 0
+         CON     T$LAMAX*T$P2_29+T$MM*T$P2_24 ; ILA; monitor mode; A2 = 0
          CON     1*T$P2_40               ; XA = 1, VL = 0, F = 0; A3 = 0
-         BSSZ    D'12                    ; A4-A7, S0-S7
+         CON     0                       ; DBA = 0, cluster 0; A4 = 0
+         CON     T$LAMAX*T$P2_29         ; DLA; A5 = 0
+         BSSZ    D'10                    ; A6, A7, S0-S7
 *
          ORG     40
-T$MON    S1      21,0                    ; BA of the test's package
-         S1      S1>D'28
-         S1      S1<4
+T$MON    S1      21,0                    ; IBA of the test's package
+         S1      S1>D'29
+         S1      S1<5
          A1      S1                      ; base word address of the test
          A0      A1
          JAZ     T$MGO                   ; 0: the test runs where it is
@@ -102,8 +107,10 @@ T$MCDN   CON     'CRAYDONE'
 *
          MACRO   TUSER %BA
          ORG     21
-         CON     (%BA)*T$P2_28           ; BA; A1 = 0
-         CON     T$LAMAX*T$P2_28         ; LA; M = 0: a user program; A2 = 0
+         CON     (%BA)*T$P2_29           ; IBA; A1 = 0
+         CON     T$LAMAX*T$P2_29+T$IOR*T$P2_24 ; ILA; a user program; A2 = 0
+         ORG     24
+         CON     (%BA)*T$P2_29           ; DBA, cluster 0; A4 = 0
          ENDM
 *
          MACRO   TBEGIN

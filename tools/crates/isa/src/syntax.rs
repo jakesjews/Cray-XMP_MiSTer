@@ -397,22 +397,11 @@ fn register_number(text: RegText, limit: i64, what: &str, eval: &mut Eval) -> Re
 /// encoding (`Ai exp`, `Si exp`, masks and shifts by 0 or 64) the choice
 /// follows `Sel`.
 pub fn assemble(result: &str, operand: &str, eval: &mut Eval) -> Result<Assembled, String> {
-    assemble_cpu(Cpu::Cray1, result, operand, eval)
-}
-
-/// `assemble` for the given machine: `Cpu::Xmp` adds the spellings of the
-/// rows with `flag::XMP`.
-pub fn assemble_cpu(
-    cpu: Cpu,
-    result: &str,
-    operand: &str,
-    eval: &mut Eval,
-) -> Result<Assembled, String> {
     let all = templates();
     for want_exp in [false, true] {
         for (n, t) in all.iter().enumerate() {
             let form = &FORMS[n];
-            if t.has_exp != want_exp || !form.has_syntax() || !form.on(cpu) {
+            if t.has_exp != want_exp || !form.has_syntax() {
                 continue;
             }
             if !first_byte_fits(&t.result, result) || !first_byte_fits(&t.operand, operand) {
@@ -603,12 +592,7 @@ pub fn eval_number(text: &str) -> Option<i64> {
 
 /// `assemble` for operands whose expressions are plain numbers.
 pub fn assemble_numeric(result: &str, operand: &str) -> Result<Assembled, String> {
-    assemble_numeric_cpu(Cpu::Cray1, result, operand)
-}
-
-/// `assemble_numeric` for the given machine.
-pub fn assemble_numeric_cpu(cpu: Cpu, result: &str, operand: &str) -> Result<Assembled, String> {
-    assemble_cpu(cpu, result, operand, &mut |text: &str, _| {
+    assemble(result, operand, &mut |text: &str, _| {
         eval_number(text)
             .map(|value| ExpValue {
                 value,
@@ -670,12 +654,6 @@ pub fn disassemble_fields(d: &Decoded) -> (String, String) {
     let fields = d.fields();
     let gh = d.gh();
     let p1 = Some(d.m);
-    // an X-MP instruction is spelled the X-MP way
-    let cpu = if d.form.on(Cpu::Cray1) {
-        Cpu::Cray1
-    } else {
-        Cpu::Xmp
-    };
     for target in [original, canonical] {
         for kind in [Kind::Special, Kind::Base, Kind::Alt] {
             for (n, form) in rows_for_gh(gh) {
@@ -686,7 +664,7 @@ pub fn disassemble_fields(d: &Decoded) -> (String, String) {
                     continue;
                 }
                 let (result, operand) = render_row(n, &fields);
-                if let Ok(a) = assemble_numeric_cpu(cpu, &result, &operand) {
+                if let Ok(a) = assemble_numeric(&result, &operand) {
                     if a.encoding == target {
                         return (result, operand);
                     }
@@ -737,33 +715,21 @@ impl Form {
             f.set_exp(self.exp, v).expect("example value fits");
         }
         // The catch-all rows (001ixx, 002ixx) only own the larger values of i,
-        // and 0014xk some values of k.  Prefer fields that mean this row on
-        // both machines.  Then keep only what the pattern lets vary, so the
-        // fields equal a decode.
-        let cpu = if self.on(Cpu::Cray1) {
-            Cpu::Cray1
-        } else {
-            Cpu::Xmp
-        };
-        let mut fallback = None;
+        // and 0014xk some values of k.  Take the first fields that mean this
+        // row, and keep only what the pattern lets vary, so the fields equal
+        // a decode.
         for i in f.i..=7 {
             for k in [f.k, 1, 2, 4, 5, 6, 7, 0] {
                 let g = Fields { i, k, ..f };
                 let e = encode(self, g);
-                let d = decode_cpu(cpu, e.parcel0, e.parcel1);
-                if d.op != self.op {
-                    continue;
-                }
-                if decode_cpu(Cpu::Xmp, e.parcel0, e.parcel1).op == self.op {
+                let d = decode(e.parcel0, e.parcel1);
+                if d.op == self.op {
                     return d.fields();
                 }
-                fallback.get_or_insert(d.fields());
             }
         }
-        fallback.unwrap_or_else(|| {
-            let e = encode(self, f);
-            decode_cpu(cpu, e.parcel0, e.parcel1).fields()
-        })
+        let e = encode(self, f);
+        decode(e.parcel0, e.parcel1).fields()
     }
     /// An example of this row in CAL: result and operand fields.  `None` for
     /// the rows CAL cannot spell.

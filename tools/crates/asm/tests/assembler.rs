@@ -110,24 +110,13 @@ END1     A5        5
             word([0o022303, P, P, P]),
             0,
             word([0o022404, 0, 0, 0]),
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            word([0o022505, 0, 0, 0]),
         ]
+        .into_iter()
+        .chain([0; 23])
+        .chain([word([0o022505, 0, 0, 0])])
+        .collect::<Vec<_>>()
     );
-    assert_eq!(sym(&a, "END1"), (0o20 * 4, 'P'));
-    // 40 octal words on an X-MP
-    let x = ok("         MACHINE   XMP
-         A1        1
-         ALIGN
-HERE     A2        2
-");
-    assert_eq!(sym(&x, "HERE"), (0o40 * 4, 'P'));
+    assert_eq!(sym(&a, "END1"), (0o40 * 4, 'P'));
     // raw parcels are data: zero behind them
     let v = ok("         VWD       D'16/O'123456
 T        CON       7

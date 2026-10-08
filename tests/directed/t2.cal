@@ -1,14 +1,16 @@
          IDENT     T2
 * Scalar stress: dependent chains across the A, S, B and T registers, shifts,
 * branches and memory.  Results are dumped to words 1000 onward.
-TEXIT    =         O'3777762
+TEXIT    =         O'17777762
 DUMP     =         O'1000
          ORG       0
          CON       P.START*O'100000000
          CON       0
-         CON       O'1777776100000000
+         CON       O'7777774100000000
          CON       O'0000000030000000000000
-         BSSZ      D'12
+         CON       0
+         CON       O'7777774000000000
+         BSSZ      D'10
          ORG       O'40
 START    A1        5
          A2        7

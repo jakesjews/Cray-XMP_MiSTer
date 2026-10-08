@@ -17,5 +17,5 @@ ECHO     S0      T$CSTA,0                ; bit 2**0: an input character waits
          J       ECHO
 DONE     TPASS
          TEND
-MSG      DATA    'HELLO, CRAY-1'
+MSG      DATA    'HELLO, CRAY X-MP',0
          END

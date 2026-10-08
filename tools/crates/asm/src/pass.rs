@@ -3,7 +3,7 @@
 use crate::expr::{self, Val};
 use crate::source::{split_list, Line, Msg};
 use crate::{Attr, Severity};
-use cray_xmp_isa::{is_reserved_name, is_symbol_char, Cpu, ExpUse, ExpValue};
+use cray_xmp_isa::{is_reserved_name, is_symbol_char, ExpUse, ExpValue};
 
 /// `S1 S1&S1`, the pass instruction CAL fills unused parcels with (CAL reference manual
 /// SR-0000, "unused parcels are filled with pass instructions").
@@ -63,8 +63,6 @@ pub(crate) struct Engine<'a> {
     pub entries: Vec<String>,
     listing_on: bool,
     overflow: bool,
-    /// The machine whose instructions are accepted (`MACHINE`).
-    pub cpu: Cpu,
     /// The parcels just assembled are instructions, not data.
     code_last: bool,
 }
@@ -91,7 +89,6 @@ impl<'a> Engine<'a> {
             entries: Vec::new(),
             listing_on: true,
             overflow: false,
-            cpu: Cpu::Cray1,
             code_last: false,
         }
     }
@@ -101,7 +98,6 @@ impl<'a> Engine<'a> {
             self.pass = pass;
             self.loc = 0;
             self.listing_on = true;
-            self.cpu = Cpu::Cray1;
             self.code_last = false;
             self.waiting.clear();
             for idx in 0..self.lines.len() {
@@ -343,17 +339,6 @@ impl<'a> Engine<'a> {
             "END" | "ABS" | "EJECT" | "SPACE" | "TITLE" | "SUBTITLE" | "COMMENT" => {
                 self.no_label(idx, label, result)
             }
-            "MACHINE" => {
-                self.no_label(idx, label, result);
-                match Cpu::from_name(operand) {
-                    Some(cpu) => self.cpu = cpu,
-                    None if self.pass == 1 => self.error(
-                        idx,
-                        format!("MACHINE `{}` is not known: CRAY1 or XMP", operand),
-                    ),
-                    None => {}
-                }
-            }
             "LIST" => {
                 self.no_label(idx, label, result);
                 self.listing_on = true;
@@ -445,10 +430,10 @@ impl<'a> Engine<'a> {
             }
             "ALIGN" => {
                 // zero parcels to the word boundary, then on to the next
-                // instruction buffer boundary: 20 octal words, 40 on an X-MP
+                // instruction buffer boundary: 40 octal words
                 self.code_last = false;
                 self.align(idx);
-                let block = if self.cpu == Cpu::Xmp { 128 } else { 64 };
+                let block = 128;
                 self.advance(idx, (block - self.loc % block) % block);
                 self.reserve();
                 self.begin(idx, label, Attr::Word);
@@ -651,7 +636,6 @@ impl<'a> Engine<'a> {
     fn instruction(&mut self, idx: usize, label: &str, result: &str, operand: &str) {
         self.begin(idx, label, Attr::Parcel);
         self.code_last = true;
-        let cpu = self.cpu;
         let pass = self.pass;
         let mut warnings = Vec::new();
         let assembled = {
@@ -678,7 +662,7 @@ impl<'a> Engine<'a> {
                     forward: v.forward,
                 })
             };
-            cray_xmp_isa::assemble_cpu(cpu, result, operand, &mut eval)
+            cray_xmp_isa::assemble(result, operand, &mut eval)
         };
         for w in warnings {
             self.warning(idx, w);

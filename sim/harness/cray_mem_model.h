@@ -4,16 +4,13 @@
 //   word, never in the clock req first rises; burst = 16-word read.
 // Latency is configurable so no CPU path can come to depend on it.
 //
-// Built with CRAY_XMP defined the memory has four million words, for the CPU
-// with the X-MP features, and the I/O page is at 0x3FFFF0.
-//
-// The top 16 words of the 1M-word space are the core's invented I/O page:
-//   0xFFFF0 CON_STAT  read: bit 0 input available, bit 1 output ready, bit 2
-//                     console interrupt enabled, bit 3 requested; write: bit 0
-//                     enables the console interrupt and clears a request
-//   0xFFFF1 CON_DATA  read: next input character; write: print character
-//   0xFFFF2 TEST_EXIT write: end of test, value is the exit code
-//   0xFFFF3 CYCLES    read: clock counter
+// The top 16 of the four million words are the test bench's I/O page:
+//   0x3FFFF0 CON_STAT  read: bit 0 input available, bit 1 output ready, bit 2
+//                      console interrupt enabled, bit 3 requested; write: bit 0
+//                      enables the console interrupt and clears a request
+//   0x3FFFF1 CON_DATA  read: next input character; write: print character
+//   0x3FFFF2 TEST_EXIT write: end of test, value is the exit code
+//   0x3FFFF3 CYCLES    read: clock counter
 #pragma once
 #include <cstdint>
 #include <cstdio>
@@ -44,11 +41,7 @@ struct MemProfile {
 
 class CrayMemModel {
 public:
-#ifdef CRAY_XMP
     static constexpr uint32_t WORDS = 1u << 22;
-#else
-    static constexpr uint32_t WORDS = 1u << 20;
-#endif
     static constexpr uint32_t IO_BASE = WORDS - 16;
     std::vector<uint64_t> mem;
     MemProfile prof;

@@ -1,8 +1,8 @@
 //! A two-pass assembler for a subset of CAL, the Cray Assembly Language,
-//! producing raw memory images for the Cray-1.
+//! producing raw memory images for the CRAY X-MP.
 //!
-//! Instruction syntax comes from the table in `cray-xmp-isa` (Appendix D of the
-//! CRAY-1 Hardware Reference Manual); this crate adds source handling,
+//! Instruction syntax comes from the table in `cray-xmp-isa`; this crate adds
+//! source handling,
 //! expressions, symbols, directives, macros and the output files.
 //!
 //! # Source lines
@@ -75,11 +75,9 @@
 //!                                justified, zero filled ('..'H blank filled,
 //!                                '..'R right justified); or CON-style words
 //!          ALIGN                 go on at the next instruction buffer
-//!                                boundary: a multiple of 20 octal words (40
-//!                                under MACHINE XMP); zero parcels fill the
-//!                                rest of the current word
-//!          MACHINE CRAY1 | XMP   the machine whose instructions follow; XMP
-//!                                adds the X-MP forms (see `cray-xmp isa`)
+//!                                boundary: a multiple of 40 octal words;
+//!                                zero parcels fill the rest of the current
+//!                                word
 //! sym      VWD     D'16/exp,...  raw parcels in the code stream; widths 16,
 //!                                32, 48 or 64 bits
 //!          INCLUDE "file"
@@ -231,8 +229,6 @@ pub struct ListLine {
 pub struct Assembly {
     /// The operand of `IDENT`.
     pub ident: Option<String>,
-    /// The machine the program is for: that of its last `MACHINE` line.
-    pub machine: cray_xmp_isa::Cpu,
     /// The memory image from word 0 to the highest word used.  Empty if
     /// there were errors.
     pub words: Vec<u64>,
@@ -380,7 +376,6 @@ pub fn assemble(name: &str, source: &str, include: &mut IncludeResolver) -> Asse
 
     let mut out = Assembly {
         ident: engine.ident.take(),
-        machine: engine.cpu,
         entries: std::mem::take(&mut engine.entries),
         ..Assembly::default()
     };

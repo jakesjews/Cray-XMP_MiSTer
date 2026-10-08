@@ -1,6 +1,6 @@
 [package]
 name = "cray-xmp-asm"
-description = "Two-pass CAL-subset assembler for the Cray-1 producing raw memory images"
+description = "Two-pass CAL-subset assembler for the CRAY X-MP producing raw memory images"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Constrained-random CAL test programs for differential testing.
 
-    randprog.py SEED [-n INSTRUCTIONS] [-o OUT.cal] [--no-vector] [--no-float] [--no-mem] [--xmp]
+    randprog.py SEED [-n INSTRUCTIONS] [-o OUT.cal] [--no-vector] [--no-float] [--no-mem]
 
-A program loads every register from a seeded data pool, runs a random body and
-then stores all registers to a dump area, so the whole machine state ends up in
-memory where the reference model and the hardware simulation can be compared.
+A program loads every register from a seeded data pool, the shared registers
+of cluster 1 among them, runs a random body and then stores all registers to
+a dump area, so the whole machine state ends up in memory where the reference
+model and the hardware simulation can be compared.
 
 Constraints that keep a program meaningful:
   - it terminates: branches go forward, and loops count down a reserved register
@@ -14,14 +15,10 @@ Constraints that keep a program meaningful:
   - no monitor instructions, channel status or real-time clock (the model cannot
     predict a clock), and nothing is stored into code
   - floating point interrupts are left off, so any bit pattern may be an operand
+  - a test and set only ever follows the clearing of its semaphore: the
+    program runs in monitor mode, where a set semaphore would hold it for good
 
 Reserved registers: A6 loop counter, A7 sandbox base.
-
---xmp writes a program for the machine with the X-MP features (MACHINE XMP):
-the X-MP exchange package, cluster 1, and in the body the shared registers,
-semaphores and status register as well.  A test and set only ever follows
-the clearing of its semaphore: the program runs in monitor mode, where a set
-semaphore would hold it for good.
 """
 import random
 import sys
@@ -34,10 +31,10 @@ MASK64 = (1 << 64) - 1
 
 
 class Gen:
-    def __init__(self, seed, n, vector=True, floating=True, memory=True, xmp=False):
+    def __init__(self, seed, n, vector=True, floating=True, memory=True):
         self.r = random.Random(seed)
         self.n = n
-        self.vector, self.floating, self.memory, self.xmp = vector, floating, memory, xmp
+        self.vector, self.floating, self.memory = vector, floating, memory
         self.lines = []
         self.label_n = 0
         self.pending_label = ''
@@ -104,36 +101,25 @@ class Gen:
     def preamble(self):
         e = self.emit
         e('IDENT', 'RAND')
-        if self.xmp:
-            e('MACHINE', 'XMP')
-            self.lines.append("TEXIT    =         O'17777762")
-            e('ORG', '0')
-            e('CON', "P.START*O'100000000")
-            e('CON', '0')
-            e('CON', "O'7777774100000000")           # the largest ILA, monitor mode
-            e('CON', "O'0000000030000000000000")
-            e('CON', "O'100000000")                  # DBA 0, cluster 1
-            e('CON', "O'7777774000000000")           # the largest DLA
-            e('BSSZ', "D'10")
-        else:
-            self.lines.append("TEXIT    =         O'3777762")
-            e('ORG', '0')
-            e('CON', "P.START*O'100000000")
-            e('CON', '0')
-            e('CON', "O'1777776100000000")
-            e('CON', "O'0000000030000000000000")
-            e('BSSZ', "D'12")
+        self.lines.append("TEXIT    =         O'17777762")
+        e('ORG', '0')
+        e('CON', "P.START*O'100000000")
+        e('CON', '0')
+        e('CON', "O'7777774100000000")           # the largest ILA, monitor mode
+        e('CON', "O'0000000030000000000000")
+        e('CON', "O'100000000")                  # DBA 0, cluster 1
+        e('CON', "O'7777774000000000")           # the largest DLA
+        e('BSSZ', "D'10")
         e('ORG', "O'40")
         first = True
-        if self.xmp:
-            # the shared registers of cluster 1, through S1 and A1
-            for j in range(8):
-                e('S1', "O'%o,0" % self.pool(), 'START' if first else ''); first = False
-                e('ST%d' % j, 'S1')
-                e('A1', "O'%o,0" % self.pool())
-                e('SB%d' % j, 'A1')
-            e('S1', "O'%o,0" % self.pool())
-            e('SM', 'S1')
+        # the shared registers of cluster 1, through S1 and A1
+        for j in range(8):
+            e('S1', "O'%o,0" % self.pool(), 'START' if first else ''); first = False
+            e('ST%d' % j, 'S1')
+            e('A1', "O'%o,0" % self.pool())
+            e('SB%d' % j, 'A1')
+        e('S1', "O'%o,0" % self.pool())
+        e('SM', 'S1')
         # every register from the pool
         for i in range(8):
             e('S%d' % i, "O'%o,0" % self.pool(), 'START' if first else ''); first = False
@@ -292,8 +278,8 @@ class Gen:
         elif c == 1: parcel(0o026, self.areg(), self.sreg(), x())          # Ai PSj
         elif c == 2: parcel(0o027, self.areg(), self.sreg(), x())          # Ai ZSj
         elif c == 3: parcel(0o073, self.sreg(), x(), x())                  # Si VM
-        elif c == 4:                                                       # VM Sj: not the X-MP's 0034, 0036, 0037
-            parcel(0o003, r.choice([0, 1, 2, 3, 5]) if self.xmp else x(), self.sreg(), x())
+        elif c == 4:                                                       # VM Sj: not 0034, 0036, 0037
+            parcel(0o003, r.choice([0, 1, 2, 3, 5]), self.sreg(), x())
         elif c == 5:                                                       # VL Ak
             a = r.randrange(1, 6)
             self.emit('A%d' % a, "D'%d" % r.choice([0, 1, 5, 63, 64, 65, r.randrange(128)]))
@@ -327,7 +313,7 @@ class Gen:
 
     def one(self):
         w = self.r.randrange(100)
-        if self.xmp and self.r.randrange(8) == 0: return self.op_x()
+        if self.r.randrange(8) == 0: return self.op_x()
         if w < 28: self.op_a()
         elif w < 58: self.op_s()
         elif w < 68 and self.floating: self.op_f()
@@ -383,12 +369,11 @@ class Gen:
         for i in range(8): e("O'%o,0" % (DUMP + i), 'A%d' % i)
         for i in range(8): e("O'%o,0" % (DUMP + 0o10 + i), 'S%d' % i)
         e('S1', 'VM'); e("O'%o,0" % (DUMP + 0o20), 'S1')
-        if self.xmp:
-            for j in range(8):
-                e('A1', 'SB%d' % j); e("O'%o,0" % (DUMP + 0o30 + j), 'A1')
-                e('S1', 'ST%d' % j); e("O'%o,0" % (DUMP + 0o40 + j), 'S1')
-            e('S1', 'SM'); e("O'%o,0" % (DUMP + 0o50), 'S1')
-            e('S1', 'SR0'); e("O'%o,0" % (DUMP + 0o51), 'S1')
+        for j in range(8):
+            e('A1', 'SB%d' % j); e("O'%o,0" % (DUMP + 0o30 + j), 'A1')
+            e('S1', 'ST%d' % j); e("O'%o,0" % (DUMP + 0o40 + j), 'S1')
+        e('S1', 'SM'); e("O'%o,0" % (DUMP + 0o50), 'S1')
+        e('S1', 'SR0'); e("O'%o,0" % (DUMP + 0o51), 'S1')
         e('A1', "D'64")
         e('A0', "O'%o" % (DUMP + 0o100)); e('0,A0', 'B00,A1')
         e('A0', "O'%o" % (DUMP + 0o200)); e('0,A0', 'T00,A1')
@@ -416,8 +401,7 @@ def main():
         sys.exit(__doc__)
     seed = int(a[0])
     n = int(a[a.index('-n') + 1]) if '-n' in a else 200
-    g = Gen(seed, n, vector='--no-vector' not in a, floating='--no-float' not in a, memory='--no-mem' not in a,
-            xmp='--xmp' in a)
+    g = Gen(seed, n, vector='--no-vector' not in a, floating='--no-float' not in a, memory='--no-mem' not in a)
     text = g.program()
     if '-o' in a:
         open(a[a.index('-o') + 1], 'w').write(text)

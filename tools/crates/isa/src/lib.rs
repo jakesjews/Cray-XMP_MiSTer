@@ -1,18 +1,22 @@
-//! The Cray-1 instruction set as one table.
+//! The instruction set of a one-processor CRAY X-MP as one table.
 //!
-//! Authority: CRAY-1 Hardware Reference Manual 2240004 rev C, section 4 and
-//! Appendix D (serial 3 onward), and for the two options of the 1982 machine
-//! revision F of the same manual (HR-0004, May 1982): the programmable clock
-//! (0014j4 to 0014j7) and the vector population instructions (026ij1,
-//! 174ij1, 174ij2).  Rows of an option carry `flag::OPTION` and a page
-//! reference that starts with `F`.  This is the Cray-1, not the X-MP: a
-//! field the manual marks `x` is ignored whatever it holds, so for example
-//! 003xjx is always `VM Sj`.
+//! Authority: for the instructions the X-MP shares with the CRAY-1, the
+//! CRAY-1 Hardware Reference Manual 2240004 rev C, section 4 and Appendix D
+//! (serial 3 onward), whose page numbers the rows carry bare.  The
+//! programmable clock (0014j4 to 0014j7) and the vector population
+//! instructions (026ij1, 174ij1, 174ij2) came as options of the CRAY-1 of
+//! 1982: their rows carry `flag::OPTION` and a page of revision F of that
+//! manual (HR-0004, May 1982), starting with `F`.  What the X-MP added
+//! (channel master clear, the cluster number, the mode switches 0023 to
+//! 0027, the semaphores, the shared registers and the status register)
+//! carries `flag::XMP` and a page of the CRAY X-MP Series Model 14 mainframe
+//! reference manual CSM-0111000, starting with `X`.
 //!
-//! Where rev F leaves an encoding of an option undefined the table keeps the
-//! meaning the encoding has without the option: 026ijk with k = 2 to 7 is the
-//! population count, 174ijk with k = 3 to 7 the reciprocal.  0014jk with k =
-//! 1, 2 or 3 is a pass.
+//! A field the manual marks `x` is ignored whatever it holds.  Where an
+//! encoding is left undefined the table keeps the meaning of its
+//! neighbours: 026ijk with k = 2 to 6 is the population count, 174ijk with
+//! k = 3 to 7 the reciprocal, 003 with i other than 4, 6 and 7 is `VM Sj`.
+//! 0014jk with k = 1 or 2 is a pass.
 //!
 //! # Instruction format
 //!
@@ -36,10 +40,9 @@
 //! * `Alt`: another spelling the assembler accepts, such as `ERR exp`.
 //!
 //! Rows that are not in Appendix D carry `flag::NOT_IN_APPENDIX_D`.  Two
-//! exist so that every parcel decodes: 0014jk for k = 1 to 3
-//! ([`Op::ClockPass`]), 001ixx for i = 5 to 7
-//! ([`Op::MonitorPass`], a pass per section 4) and 002ixx for i = 3 to 7
-//! ([`Op::Undefined`], which the manual does not define).  The others are
+//! exist so that every parcel decodes: 0014jk for k = 1 and 2
+//! ([`Op::ClockPass`]) and 001ixx for i = 5 to 7 ([`Op::MonitorPass`], a
+//! pass per section 4).  The others are
 //! spellings from the CAL manual examples (`Ai #exp`, `Si #exp`, `Bjk,Ai ,`
 //! and `Vi ,,Ak`) and `PASS` for 001000.
 //!
@@ -60,8 +63,8 @@
 //! [`Decoded`] has `op: Op`, `form: &'static Form` (the base row),
 //! `parcels` (1 or 2), `parcel0`, the raw fields `g h i j k m`, and
 //! `exp: Option<i64>`, the expression operand as CAL would write it: the
-//! 24-bit parcel address of a branch (the low two bits of i and jkm; 2**22
-//! or more is a program range error because P has 22 bits), the constant of
+//! 24-bit parcel address of a branch (the low two bits of i and jkm), the
+//! constant of
 //! 020/040 (negative for 021/041), the signed displacement of 10h to 13h,
 //! the constant of 022, or the count of a mask or shift.  The raw fields are
 //! also combined by `jk()`, `jkm()` and `ijkm()`.  `reads()` and `writes()`
@@ -107,16 +110,12 @@ mod code;
 mod syntax;
 mod table;
 
-pub use code::{
-    base_form, decode, decode_cpu, encode, length, length_cpu, signed_octal, Decoded, Encoding,
-    Fields, Reg,
-};
+pub use code::{base_form, decode, encode, length, signed_octal, Decoded, Encoding, Fields, Reg};
 pub use syntax::{
-    assemble, assemble_cpu, assemble_numeric, assemble_numeric_cpu, disassemble,
-    disassemble_fields, eval_number, is_register_name, is_reserved_name, is_symbol_char,
-    quoted_mask, Assembled, ExpUse, ExpValue,
+    assemble, assemble_numeric, disassemble, disassemble_fields, eval_number, is_register_name,
+    is_reserved_name, is_symbol_char, quoted_mask, Assembled, ExpUse, ExpValue,
 };
-pub use table::{flag, Cpu, ExpKind, Form, Kind, Op, RegRef, Sel, Unit, FORMS, OP_COUNT};
+pub use table::{flag, ExpKind, Form, Kind, Op, RegRef, Sel, Unit, FORMS, OP_COUNT};
 
 #[cfg(test)]
 mod tests;

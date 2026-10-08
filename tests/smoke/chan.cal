@@ -1,6 +1,8 @@
-* chan: the channel instructions with no channels attached.
-* 033 reads zero for the interrupting channel, a channel address and a
-* channel error flag.  0010 to 0012 change no register in any mode.
+* chan: the channel instructions on a channel number the machine does not
+* have (3), with no channel asking.  033 reads zero for the interrupting
+* channel, the channel address and the channel error flag.  0010 to 0012
+* change no register in any mode.  The channels themselves are tested by
+* tests/directed/channels.cal.
 * RUNTIMES: direct exch user
          INCLUDE "rt_direct.cal"
          TBEGIN

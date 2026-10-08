@@ -22,7 +22,6 @@ use crate::expander::{Clock, Expander};
 use crate::image::{Image, Tape};
 use crate::iop::{Channels, Iop};
 use crate::replay::Recorder;
-use cray_xmp_isa::Cpu;
 use cray_xmp_model::{Machine, StepResult};
 use std::io::Write;
 
@@ -771,7 +770,7 @@ impl System {
         for (n, channel) in config.without {
             local[n].kind[channel as usize] = Kind::Empty;
         }
-        let mut cpu = Machine::for_cpu(Cpu::Xmp);
+        let mut cpu = Machine::new();
         cpu.set_system();
         cpu.set_timing(config.timing.cpu_step);
         let clock = config.clock.map(|(date, time)| Clock::new(&date, &time));

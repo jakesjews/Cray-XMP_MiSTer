@@ -14,5 +14,4 @@ name = "cray-xmp-sys"
 path = "src/bin/cray-xmp-sys.rs"
 
 [dependencies]
-cray-xmp-isa = { path = "../isa" }
 cray-xmp-model = { path = "../model" }
