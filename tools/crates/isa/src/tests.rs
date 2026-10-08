@@ -334,14 +334,20 @@ fn ignored_fields_follow_the_manual() {
     assert_eq!(op(0o033126), Op::ChanAddr);
     assert_eq!(op(0o033121), Op::ChanErr);
     assert_eq!(op(0o033127), Op::ChanErr);
-    // 175xjk: only the low two bits of k select the test
+    // 175xjk: the low two bits of k select the test, the high one the compress index
     assert_eq!(op(0o175020), Op::VmZero);
-    assert_eq!(op(0o175724), Op::VmZero);
-    assert_eq!(op(0o175027), Op::VmNegative);
-    assert_eq!(disassemble(&decode(0o175726, None)), "VM        V2,P");
-    // 176ixk ignores j, 177xjk ignores i (no gather or scatter on this machine)
+    assert_eq!(op(0o175724), Op::VmZeroIdx);
+    assert_eq!(op(0o175027), Op::VmNegativeIdx);
+    assert_eq!(disassemble(&decode(0o175722, None)), "VM        V2,P");
+    assert_eq!(disassemble(&decode(0o175726, None)), "V7,VM     V2,P");
+    // 176i1k is the gather and 1771jk the scatter; any other j of 176 and i of 177
+    // is ignored
     assert_eq!(disassemble(&decode(0o176173, None)), "V1        ,A0,A3");
     assert_eq!(disassemble(&decode(0o177723, None)), ",A0,A3    V2");
+    assert_eq!(disassemble(&decode(0o176113, None)), "V1        ,A0,V3");
+    assert_eq!(disassemble(&decode(0o177123, None)), ",A0,V3    V2");
+    assert_eq!(op(0o176113), Op::VGather);
+    assert_eq!(op(0o177123), Op::VScatter);
     assert_eq!(disassemble(&decode(0o176170, None)), "V1        ,A0,1");
     // branches: the top bit of i is ignored, the low two are address bits
     let d = decode(0o006400, Some(0o100));

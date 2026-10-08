@@ -8,7 +8,8 @@
 //   034-037   (Ai) words between memory and the B or T registers, starting at
 //             address (A0) and register jk, registers wrapping from 77 to 00
 //   176, 177  VL words between memory and a V register, starting at address
-//             (A0) and stepping by (Ak)
+//             (A0) and stepping by (Ak); or, for the gather 176i1k and the
+//             scatter 1771jk, at the addresses (A0) + (Vk element)
 //
 // A scalar reference or a block transfer stays the current instruction until
 // its last word is done, and issues in the DONE clock.  A vector transfer
@@ -17,8 +18,11 @@
 // register stays reserved and other memory instructions wait.  A register
 // being loaded can be the operand of an instruction behind the load, and a
 // store can be of a register that is still receiving its result: both take
-// the elements as they come (chaining, CSM-0111000 page 4-12).  The exception
-// is a vector transfer whose first or last address is outside the field: it
+// the elements as they come (chaining, CSM-0111000 page 4-12).  A gather or a
+// scatter takes its addresses from a register the same way, one element
+// after the other, each as its own request to memory.  The exception
+// is a vector transfer whose first or last address is outside the field, and
+// every gather and scatter, whose addresses are not known beforehand: it
 // stays the current instruction to its end, so that the range error
 // interrupt is taken right behind it.  Nothing here assumes how long memory
 // takes: a read word is handed to its register the clock after the
@@ -71,9 +75,11 @@ module mem_fu (
 	i_v6_data,
 	i_v7_data,
 	o_v_wr,
+	o_v_last,
 	o_v_wr_idx,
 	o_v_rd_idx,
 	i_v_avail,
+	i_vk_avail,
 	//interface to B rf
 	o_b_rd_addr,
 	i_b_rd_data,
@@ -98,6 +104,7 @@ module mem_fu (
 	o_mem_issue,
 	i_issue,
 	o_v_num,
+	o_vk_num,
 	o_v_reads,
 	o_mem_busy,
 	o_range_err
@@ -138,9 +145,11 @@ module mem_fu (
 	input wire [63:0] i_v6_data;
 	input wire [63:0] i_v7_data;
 	output reg o_v_wr;  //176: o_mem_data holds element o_v_wr_idx
+	output reg o_v_last;  //176: the last element is delivered with this clock
 	output wire [5:0] o_v_wr_idx;
 	output wire [5:0] o_v_rd_idx;  //177: the element about to be stored
 	input wire i_v_avail;  //and it is in its register
+	input wire i_vk_avail;  //176i1k, 1771jk: so is the element of Vk with its address
 	output wire [5:0] o_b_rd_addr;
 	input wire [23:0] i_b_rd_data;
 	output wire [5:0] o_b_wr_addr;
@@ -164,18 +173,20 @@ module mem_fu (
 	output wire o_mem_issue;
 	input wire i_issue;  //the current instruction issues this clock
 	output wire [2:0] o_v_num;  //the V register of the vector transfer under way
-	output wire [7:0] o_v_reads;  //the V register a vector store reads, one bit a register
+	output wire [2:0] o_vk_num;  //the V register with the addresses of a gather or scatter
+	output wire [7:0] o_v_reads;  //the V registers a vector transfer reads, one bit a register
 	output wire o_mem_busy;
 	output reg o_range_err;  //a reference outside the field was dropped
 
-	localparam IDLE = 3'd0, PREP = 3'd3,  // the first address is formed
-	RD = 3'd1,  // read request outstanding
-	RD_PUT = 3'd2,  // hand the word to its register
-	WR = 3'd4,  // a store: words are read from the register and written
-	DONE = 3'd5, RD_SEL = 3'd6,  // a vector load chooses between one word and a line
-	RD_BURST = 3'd7;  // a line is arriving
+	localparam IDLE = 4'd0, PREP = 4'd3,  // the first address is formed
+	RD = 4'd1,  // read request outstanding
+	RD_PUT = 4'd2,  // hand the word to its register
+	WR = 4'd4,  // a store: words are read from the register and written
+	DONE = 4'd5, RD_SEL = 4'd6,  // a vector load chooses between one word and a line
+	RD_BURST = 4'd7,  // a line is arriving
+	RD_IDX = 4'd8;  // a gather waits for the element of Vk with its next address
 
-	reg [ 2:0] state;
+	reg [ 3:0] state;
 	reg [23:0] address;
 	reg [23:0] stride;
 	reg [ 6:0] remaining;
@@ -199,6 +210,8 @@ module mem_fu (
 	wire        b_t_type = (ins[15:11] == 5'b00111);  //034-037, 1 parcel
 	wire        a_s_type = (ins[15:14] == 2'b10);  //100-137, 2 parcels
 	wire        v_type = (op == 7'o176) || (op == 7'o177);  //1 parcel
+	wire        gather = (op == 7'o176) && (ins[5:3] == 3'd1);  //176i1k
+	wire        scatter = (op == 7'o177) && (ins[8:6] == 3'd1);  //1771jk
 	wire [23:0] jkm = {{2{ins[5]}}, ins[5:0], i_lip[15:0]};  //signed displacement
 
 	wire is_read = b_t_type ? !ins[9] : a_s_type ? !ins[12] : (op == 7'o176);
@@ -232,12 +245,12 @@ module mem_fu (
 			reg_conflict = !ins[12] ? (ins[13] ? (|{i_a_res_mask,i_s_res_mask}) : (|i_a_res_mask))
 								   : (ins[13] ? (i_a_res_mask[ins[11:9]] || i_s_res_mask[ins[8:6]])
 												: (i_a_res_mask[ins[11:9]] || i_a_res_mask[ins[8:6]]));
-		end else begin  //VL words from (A0), stepping by (Ak)
+		end else begin  //VL words from (A0), stepping by (Ak) or at (A0) + (Vk element)
 			start_addr   = i_a0_data;
 			start_offset = 24'd0;
 			start_stride = i_ak_data;
 			start_count  = vl_count;
-			reg_conflict = i_a_res_mask[0] || i_a_res_mask[ins[2:0]];
+			reg_conflict = i_a_res_mask[0] || (!gather && !scatter && i_a_res_mask[ins[2:0]]);
 		end
 
 	wire start = (state==IDLE) &&
@@ -254,6 +267,7 @@ module mem_fu (
 		o_b_wr_en   <= 1'b0;
 		o_t_wr_en   <= 1'b0;
 		o_v_wr      <= 1'b0;
+		o_v_last    <= 1'b0;
 		o_range_err <= 1'b0;
 
 		if (rst) begin
@@ -266,27 +280,32 @@ module mem_fu (
 				//the state, and the mark on the V register a store reads, wait for the
 				//decision to start; nothing wide does.
 				IDLE: begin
-					r_v        <= v_type;
-					r_to_b     <= to_b;
-					r_to_t     <= to_t;
-					r_from_b   <= from_b;
-					r_from_t   <= from_t;
-					r_scalar   <= a_s_type;
-					r_from_s   <= ins[13];
-					r_vnum     <= is_read ? ins[8:6] : ins[5:3];
-					r_wait     <= src_wait;
-					address    <= start_addr;
-					offset     <= start_offset;
-					stride     <= start_stride;
-					remaining  <= start_count;
-					reg_idx    <= v_type ? 6'd0 : ins[5:0];
-					wait_cnt   <= src_wait;
+					r_v <= v_type;
+					r_to_b <= to_b;
+					r_to_t <= to_t;
+					r_from_b <= from_b;
+					r_from_t <= from_t;
+					r_scalar <= a_s_type;
+					r_from_s <= ins[13];
+					r_vnum <= is_read ? ins[8:6] : ins[5:3];
+					r_knum <= ins[2:0];
+					r_gather <= gather;
+					r_scatter <= scatter;
+					r_own <= (ins[8:6] == ins[2:0]);
+					gbase <= start_addr;
+					r_wait <= src_wait;
+					address <= start_addr;
+					offset <= start_offset;
+					stride <= start_stride;
+					remaining <= start_count;
+					reg_idx <= v_type ? 6'd0 : ins[5:0];
+					wait_cnt <= src_wait;
 					fetch_left <= start_count;
-					wr_valid   <= 1'b0;
-					after      <= (start_count == 7'd0) ? DONE : (is_read ? (v_type ? RD_SEL : RD) : WR);
+					wr_valid <= 1'b0;
+					after <= (start_count == 7'd0) ? DONE : (is_read ? (gather ? RD_IDX : v_type ? RD_SEL : RD) : WR);
 					if (start) begin
-						r_vreads <= (v_type && !is_read) ? (8'd1 << ins[5:3]) : 8'b0;
-						state    <= PREP;
+						r_vreads <= ((v_type && !is_read) ? (8'd1 << ins[5:3]) : 8'b0) | ((gather || scatter) ? (8'd1 << ins[2:0]) : 8'b0);
+						state <= PREP;
 					end
 				end
 
@@ -303,12 +322,25 @@ module mem_fu (
 					state      <= want_burst ? RD_BURST : RD;
 				end
 
+				//A gather: the element of Vk for reg_idx is ready when wait_cnt reaches
+				//zero, and is taken when it is in (Vk may still be receiving a result;
+				//when it is the register being loaded, an element is its address before
+				//the word read there takes its place).
+				RD_IDX: begin
+					if (wait_cnt != 4'd0) wait_cnt <= wait_cnt - 4'd1;
+					else if (r_own || i_vk_avail) begin
+						address <= gbase + idx_word;
+						state   <= RD;
+					end
+				end
+
 				//the elements in the line go to the register as their words pass
 				RD_BURST:
 				if (i_mem_ack) begin
 					bcnt <= bcnt + 4'd1;
 					if (burst_hit) begin
 						o_v_wr    <= 1'b1;
+						o_v_last  <= last;
 						put_idx   <= reg_idx;
 						reg_idx   <= reg_idx + 6'd1;
 						remaining <= remaining - 7'd1;
@@ -328,11 +360,13 @@ module mem_fu (
 					o_b_wr_en <= r_to_b;
 					o_t_wr_en <= r_to_t;
 					o_v_wr    <= r_v;
+					o_v_last  <= r_v && last;
 					put_idx   <= reg_idx;
 					reg_idx   <= reg_idx + 6'd1;
 					remaining <= remaining - 7'd1;
 					address   <= address + stride;
-					state     <= last ? DONE : (r_v ? RD_SEL : RD);
+					wait_cnt  <= r_wait;
+					state     <= last ? DONE : (r_gather ? RD_IDX : r_v ? RD_SEL : RD);
 				end
 
 				//A store.  The register word for reg_idx is ready when wait_cnt
@@ -340,14 +374,16 @@ module mem_fu (
 				//taken, and the register is asked for the word after it.  `remaining`
 				//counts the words not yet written or dropped.  The V register a 177
 				//stores may still be receiving a result (chaining): its element is
-				//taken when it is in.
+				//taken when it is in.  A scatter takes the element of Vk with the
+				//word's address at the same time.
 				WR: begin
 					if (wait_cnt != 4'd0) wait_cnt <= wait_cnt - 4'd1;
 					if (wr_gone) begin
 						address  <= address + stride;
 						wr_valid <= 1'b0;
 					end
-					if ((wait_cnt == 4'd0) && (fetch_left != 7'd0) && (!wr_valid || wr_gone) && (!r_v || i_v_avail)) begin
+					if ((wait_cnt == 4'd0) && (fetch_left != 7'd0) && (!wr_valid || wr_gone) && (!r_v || i_v_avail) && (!r_scatter || i_vk_avail)) begin
+						if (r_scatter) address <= gbase + idx_word;
 						wr_word    <= src_word;
 						wr_valid   <= 1'b1;
 						reg_idx    <= reg_idx + 6'd1;
@@ -381,10 +417,14 @@ module mem_fu (
 
 	//What the transfer under way is, latched when it started.
 	reg r_v, r_to_b, r_to_t, r_from_b, r_from_t, r_scalar, r_from_s;
+	reg r_gather, r_scatter;
+	reg        r_own;  // a gather into the register its addresses come from
 	reg [ 2:0] r_vnum;  // the V register of a vector transfer
+	reg [ 2:0] r_knum;  // the one with the addresses of a gather or scatter
 	reg [ 7:0] r_vreads;
 	reg [23:0] offset;
-	reg [ 2:0] after;  // the state that follows PREP
+	reg [23:0] gbase;  // (A0) of a gather or scatter
+	reg [ 3:0] after;  // the state that follows PREP
 	reg [ 3:0] r_wait;
 
 	//The register word for reg_idx, valid src_wait clocks after reg_idx is set.
@@ -406,6 +446,21 @@ module mem_fu (
 				3'd6: src_word = i_v6_data;
 				3'd7: src_word = i_v7_data;
 			endcase
+
+	//The address of an element of a gather or scatter: the low 24 bits of the
+	//element of Vk, to be added to (A0) (CSM-0111000 page 5-91).
+	reg [23:0] idx_word;
+	always @*
+		case (r_knum)
+			3'd0: idx_word = i_v0_data[23:0];
+			3'd1: idx_word = i_v1_data[23:0];
+			3'd2: idx_word = i_v2_data[23:0];
+			3'd3: idx_word = i_v3_data[23:0];
+			3'd4: idx_word = i_v4_data[23:0];
+			3'd5: idx_word = i_v5_data[23:0];
+			3'd6: idx_word = i_v6_data[23:0];
+			3'd7: idx_word = i_v7_data[23:0];
+		endcase
 
 	//The word being stored is held here, so the registers can move on to the next.
 	always @* o_mem_wr_data = wr_word;
@@ -469,13 +524,14 @@ module mem_fu (
 		end else begin
 			if (age != 2'd3) age <= age + 2'd1;
 			if (age == 2'd0) span <= $signed({1'b0, remaining} - 8'sd1) * $signed(stride);
-			if (age == 2'd1) fits <= r_v && !out_of_field && last_in;
+			if (age == 2'd1) fits <= r_v && !r_gather && !r_scatter && !out_of_field && last_in;
 			if (o_mem_issue && i_issue) released <= 1'b1;
 		end
 
 	assign o_mem_issue = ((state == DONE) || fits) && !released;
 	assign o_mem_busy  = (state != IDLE);
 	assign o_v_num     = r_vnum;
+	assign o_vk_num    = r_knum;
 	assign o_v_reads   = r_vreads;
 
 endmodule

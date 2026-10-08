@@ -10,7 +10,8 @@ runs on the MiSTer: there the machine runs COS.
 instruction syntax of Appendix D of the CRAY-1 manual, the forms of its 1982
 options (`Ai QSj`, `Vi PVj`, `Vi QVj`, `PCI Sj`, `CCI`, `ECI` and `DCI`) and
 the X-MP's forms for the shared registers, the semaphores, the modes, the
-cluster number and the channels' master clear. Build it with `make tools`.
+cluster number, the channels' master clear, the gather `Vi ,A0,Vk`, the
+scatter `,A0,Vk Vj` and the compress index `Vi,VM Vj,Z`. Build it with `make tools`.
 
 ```sh
 tools/target/release/cray-xmp asm prog.cal -o prog.img -l prog.lst

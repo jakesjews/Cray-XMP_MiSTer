@@ -1,6 +1,6 @@
 * timing_esvl: clock periods of instructions against the X-MP manual, with the second vector logical unit enabled.
 * Written by gen_timing.py; see there.  10 cases; a wrong one fails check 2
-* and leaves its number in word 6400 and its clock periods in word 6401.
+* and leaves its number in word 10400 and its clock periods in word 10401.
 * NOSTEP: issue held to one instruction at a time changes every time measured here.
          INCLUDE "rt_direct.cal"
          ORG     3
@@ -40,7 +40,7 @@ C0       A4      D'1
          S1      V2,A2
 L0       S7      RT
          S7      S7-S6
-         6000,0  S7
+         10000,0 S7
          J       C1
 * 15 clock periods: 141 in the second unit, VL 5, and an element read back
          ORG     440
@@ -71,7 +71,7 @@ C1       A4      D'5
          S1      V2,A2
 L1       S7      RT
          S7      S7-S6
-         6001,0  S7
+         10001,0 S7
          J       C2
 * 9 clock periods: 147 in the full unit, VL 1, and its element read back
          ORG     500
@@ -102,7 +102,7 @@ C2       A4      D'1
          S1      V2,A2
 L2       S7      RT
          S7      S7-S6
-         6002,0  S7
+         10002,0 S7
          J       C3
 * 14 clock periods: two 141, VL 5, and an element of the second read back
          ORG     540
@@ -134,7 +134,7 @@ C3       A4      D'5
          S1      V5,A2
 L3       S7      RT
          S7      S7-S6
-         6003,0  S7
+         10003,0 S7
          J       C4
 * 24 clock periods: three 141, VL 5, and an element of the third read back
          ORG     600
@@ -167,7 +167,7 @@ C4       A4      D'5
          S1      V7,A2
 L4       S7      RT
          S7      S7-S6
-         6004,0  S7
+         10004,0 S7
          J       C5
 * 27 clock periods: 141 in the second unit, VL 5, then 161
          ORG     640
@@ -199,7 +199,7 @@ C5       A4      D'5
          S1      V5,A2
 L5       S7      RT
          S7      S7-S6
-         6005,0  S7
+         10005,0 S7
          J       C6
 * 17 clock periods: 141 in the second unit, VL 5, then 064
          ORG     700
@@ -231,7 +231,7 @@ C6       A4      D'5
          S4      S1&S1
 L6       S7      RT
          S7      S7-S6
-         6006,0  S7
+         10006,0 S7
          J       C7
 * 14 clock periods: 161, VL 5, then 141 in the full unit
          ORG     740
@@ -263,7 +263,7 @@ C7       A4      D'5
          S1      V2,A2
 L7       S7      RT
          S7      S7-S6
-         6007,0  S7
+         10007,0 S7
          J       C8
 * 23 clock periods: 155, VL 5, a 141 in the second unit chained to it
          ORG     1000
@@ -295,7 +295,7 @@ C8       A4      D'5
          S1      V4,A2
 L8       S7      RT
          S7      S7-S6
-         6010,0  S7
+         10010,0 S7
          J       C9
 * 20 clock periods: 141 in the second unit, VL 5, a 175 chained to it, then 073
          ORG     1040
@@ -327,12 +327,12 @@ C9       A4      D'5
          S1      VM
 L9       S7      RT
          S7      S7-S6
-         6011,0  S7
+         10011,0 S7
          J       FIN
          ORG     1240
 FIN      A1      0
          A2      D'10
-FL       S1      6000,A1
+FL       S1      10000,A1
          S2      KEXP,A1
          S0      S1\S2
          JSN     FBAD
@@ -341,10 +341,10 @@ FL       S1      6000,A1
          JAN     FL
          TPASS
          J       T$END
-FBAD     6400,0  A1
+FBAD     10400,0 A1
          S2      1
          S1      S1-S2
-         6401,0  S1
+         10401,0 S1
          TFAIL   2
          TEND
 KEXP     CON     D'12

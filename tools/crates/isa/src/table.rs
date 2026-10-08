@@ -290,16 +290,28 @@ pub enum Op {
     PopV,
     /// 174ij2 Vi <- population count parities of (Vj)
     ParityV,
-    /// 175xjk, k low bits 0: VM bit set where (Vj) = 0
+    /// 175xj0: VM bit set where (Vj) = 0
     VmZero,
-    /// 175xjk, k low bits 1: VM bit set where (Vj) != 0
+    /// 175xj1: VM bit set where (Vj) != 0
     VmNonzero,
-    /// 175xjk, k low bits 2: VM bit set where (Vj) positive
+    /// 175xj2: VM bit set where (Vj) positive
     VmPositive,
-    /// 175xjk, k low bits 3: VM bit set where (Vj) negative
+    /// 175xj3: VM bit set where (Vj) negative
     VmNegative,
+    /// 175ij4: as 175xj0, and Vi <- the numbers of the elements that are 0
+    VmZeroIdx,
+    /// 175ij5: as 175xj1, and Vi <- the numbers of those that are not
+    VmNonzeroIdx,
+    /// 175ij6: as 175xj2, and Vi <- the numbers of the positive ones
+    VmPositiveIdx,
+    /// 175ij7: as 175xj3, and Vi <- the numbers of the negative ones
+    VmNegativeIdx,
+    /// 176i1k Vi <- (VL) words of memory at (A0) + (Vk elements)
+    VGather,
     /// 176ixk Vi <- (VL) words of memory from (A0) stepping by (Ak)
     VLoad,
+    /// 1771jk memory at (A0) + (Vk elements) <- (VL) words of Vj
+    VScatter,
     /// 177xjk memory from (A0) stepping by (Ak) <- (VL) words of Vj
     VStore,
 }
@@ -931,10 +943,17 @@ pub static FORMS: &[Form] = &[
     base(ParityV, "174ij2", "Vi", "QVj", "F 4-70", "Population count parities of (Vj) to Vi").u(U::VecPop).f(VEC | OPT).r(&[Vj, Vl]).w(&[Vi]),
     base(RecipV, "174ijx", "Vi", "/HVj", "4-63", "Floating reciprocal approximations of (Vj) to Vi").u(U::FpRecip).f(VEC).r(&[Vj, Vl]).w(&[Vi]),
     // ---- 175 to 177: vector mask and vector memory references
-    base(VmZero, "175xj0", "VM", "Vj,Z", "4-65", "VM = 1 where (Vj) = 0").dc(4).u(U::VecLogical).f(VEC).r(&[Vj, Vl]).w(&[Vm]),
-    base(VmNonzero, "175xj1", "VM", "Vj,N", "4-65", "VM = 1 where (Vj) not 0").dc(4).u(U::VecLogical).f(VEC).r(&[Vj, Vl]).w(&[Vm]),
-    base(VmPositive, "175xj2", "VM", "Vj,P", "4-65", "VM = 1 where (Vj) positive").dc(4).u(U::VecLogical).f(VEC).r(&[Vj, Vl]).w(&[Vm]),
-    base(VmNegative, "175xj3", "VM", "Vj,M", "4-65", "VM = 1 where (Vj) negative").dc(4).u(U::VecLogical).f(VEC).r(&[Vj, Vl]).w(&[Vm]),
+    base(VmZero, "175xj0", "VM", "Vj,Z", "4-65", "VM = 1 where (Vj) = 0").u(U::VecLogical).f(VEC).r(&[Vj, Vl]).w(&[Vm]),
+    base(VmNonzero, "175xj1", "VM", "Vj,N", "4-65", "VM = 1 where (Vj) not 0").u(U::VecLogical).f(VEC).r(&[Vj, Vl]).w(&[Vm]),
+    base(VmPositive, "175xj2", "VM", "Vj,P", "4-65", "VM = 1 where (Vj) positive").u(U::VecLogical).f(VEC).r(&[Vj, Vl]).w(&[Vm]),
+    base(VmNegative, "175xj3", "VM", "Vj,M", "4-65", "VM = 1 where (Vj) negative").u(U::VecLogical).f(VEC).r(&[Vj, Vl]).w(&[Vm]),
+    // the compress index forms, the gather and the scatter: X-MP from November 1985
+    base(VmZeroIdx, "175ij4", "Vi,VM", "Vj,Z", "X 5-87", "VM = 1 and Vi = the element numbers where (Vj) = 0").u(U::VecLogical).f(VEC | XM).r(&[Vj, Vl]).w(&[Vi, Vm]),
+    base(VmNonzeroIdx, "175ij5", "Vi,VM", "Vj,N", "X 5-87", "VM = 1 and Vi = the element numbers where (Vj) not 0").u(U::VecLogical).f(VEC | XM).r(&[Vj, Vl]).w(&[Vi, Vm]),
+    base(VmPositiveIdx, "175ij6", "Vi,VM", "Vj,P", "X 5-87", "VM = 1 and Vi = the element numbers where (Vj) positive").u(U::VecLogical).f(VEC | XM).r(&[Vj, Vl]).w(&[Vi, Vm]),
+    base(VmNegativeIdx, "175ij7", "Vi,VM", "Vj,M", "X 5-87", "VM = 1 and Vi = the element numbers where (Vj) negative").u(U::VecLogical).f(VEC | XM).r(&[Vj, Vl]).w(&[Vi, Vm]),
+    base(VGather, "176i1k", "Vi", ",A0,Vk", "X 5-91", "Read (VL) words to Vi from (A0) + (Vk elements)").u(U::Memory).f(VEC | MEM_READ | XM).r(&[A0, Vk, Vl]).w(&[Vi]),
+    base(VScatter, "1771jk", ",A0,Vk", "Vj", "X 5-91", "Store (VL) words from Vj to (A0) + (Vk elements)").u(U::Memory).f(VEC | MEM_WRITE | XM).r(&[A0, Vk, Vj, Vl]),
     base(VLoad, "176ixk", "Vi", ",A0,Ak", "4-67", "Read (VL) words to Vi from (A0) incremented by (Ak)").u(U::Memory).f(VEC | MEM_READ).r(&[A0, Ak, Vl]).w(&[Vi]),
     spec(VLoad, "176ix0", "Vi", ",A0,1", "4-67", "Read (VL) words to Vi from (A0) incremented by 1"),
     alt(VLoad, "176ixk", "Vi", ",,Ak", "4-67", "Read (VL) words to Vi from (A0) incremented by (Ak)").f(X),

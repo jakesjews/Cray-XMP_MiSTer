@@ -83,7 +83,10 @@ module cray_opnd (
 			7'o140, 7'o142, 7'o144, 7'o146, 7'o154, 7'o156, 7'o160, 7'o162, 7'o164, 7'o166, 7'o170, 7'o172:
 			o_rd_s = rj;  // scalar operand of a vector operation
 			7'o150, 7'o151, 7'o152, 7'o153: o_rd_a = rk;  // vector shift count
-			7'o176, 7'o177: o_rd_a = R0 | rk;  // vector load and store: address A0, stride Ak
+			// vector load and store: address A0 and stride Ak; the gather 176i1k and the
+			// scatter 1771jk have a V register for the k
+			7'o176: o_rd_a = (j == 3'd1) ? R0 : (R0 | rk);
+			7'o177: o_rd_a = (i == 3'd1) ? R0 : (R0 | rk);
 			default: ;
 		endcase
 	end

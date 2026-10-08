@@ -176,8 +176,15 @@ Subsystem dead starts COS 1.17 and runs batch jobs.
   sets the I/O interrupt flag outside monitor mode. The first pair, 10 and
   11, leads to the MIOP of the I/O Subsystem; the other three lead nowhere.
 
-Not there: gather and scatter, the 100 Mbyte channels of the CPU and channel
-parity.
+- **Gather, scatter and compress index** (CSM-0111000 pages 5-87 to 5-92),
+  which the X-MP got in 1985 and COS 1.17 does not use: 176i1k `Vi ,A0,Vk`
+  reads the words at (A0) + (Vk element), 1771jk `,A0,Vk Vj` writes them, and
+  175ijk with k from 4 to 7, `Vi,VM Vj,Z` and so on, makes the mask and puts
+  the numbers of the elements that pass into Vi. The low 24 bits of an
+  element of Vk are a signed number. Any other j of 176 and i of 177 is
+  ignored, as before.
+
+Not there: the 100 Mbyte channels of the CPU and channel parity.
 
 ## Differences from a real X-MP
 
@@ -195,6 +202,9 @@ parity.
   (`tests/rtl_only/timing.cal` measures all of these). What is not the real
   machine's: memory references take longer and vary, and with them everything
   that waits for memory, such as a branch to an address that is in no buffer.
+  A gather or a scatter is done before the instruction behind it issues,
+  where the real machine lets it run on: its addresses are not known
+  beforehand, and a range error has to interrupt right behind it.
   Programs get the same results but not always in the same number of clock
   periods.
 - **Chaining.** As on the X-MP (CSM-0111000 page 4-12), a register that is

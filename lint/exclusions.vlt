@@ -74,12 +74,10 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal 
 // The vector unit trackers have the same outputs.  Only the shift unit needs
 // to know the first and the last operand, and the logical unit the last (for
 // the VM test of 175); the integer add, second logical and population count
-// units have no use for the operands' valid flag, and no unit for the mark of
-// the last result.
+// units have no use for the operands' valid flag.
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_valid'[7:6,2]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_first'[7:2,0]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'tk_in_last'[7:2]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'tk_out_last'*"
 // The second vector logical unit is the full unit's module; it has no element test.
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'v_log2_test'*"
 

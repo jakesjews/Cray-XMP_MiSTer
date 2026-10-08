@@ -80,6 +80,12 @@ ONE_BUFFER = [
     (5, '175, VL 1, then its operand register written', ['VM V1,Z', 'V1 V4+V4']),
     (10, '175, VL 5, then a merge', ['VM V1,Z', 'V2 V3!V4&VM'], 5),
     (11, '175, VL 5, then 073', ['VM V1,Z', 'S1 VM'], 5),
+    # the compress index 175ijk, k from 4 to 7: Vi is ready (VL) + 10 CPs after issue,
+    # the mask as for the plain 175
+    (12, '175ij4, VL 1, and an element of its Vi read back', ['V2,VM V1,Z', 'S1 V2,A2']),
+    (16, '175ij5, VL 5, and an element of its Vi read back', ['V2,VM V1,N', 'S1 V2,A2'], 5),
+    (11, '175ij4, VL 5, then 073', ['V2,VM V1,Z', 'S1 VM'], 5),
+    (10, '175ij4, VL 5, then a merge', ['V2,VM V1,Z', 'V5 V3!V4&VM'], 5),
     # 076: Si ready in 4 CPs (X 5-63)
     (5, '076, then its result used', ['S1 V2,A2', 'S2 S1&S1']),
     # Chaining, X 4-12.  A register that is still to receive the result of an earlier
@@ -149,7 +155,7 @@ ESVL = [
     (20, '141 in the second unit, VL 5, a 175 chained to it, then 073', ['V2 V1&V3', 'VM V2,Z', 'S1 VM'], 5),
 ]
 FIRST = {'A1': 0o020100, 'J': 0o006000, 'JAN': 0o011000, 'JAZ': 0o010000}   # first parcels, for 'straddle'
-BASE, OUT = 0o400, 0o6000
+BASE, OUT = 0o400, 0o10000        # the cases from BASE on, their times from OUT on
 BLOCK = 0o40                      # words in an instruction buffer
 
 
@@ -219,7 +225,9 @@ def main():
         src += [line('Y%d' % n, 'S7', 'RT'), line('', 'S7', 'S7-S6'), line('', '%o,0' % (OUT + len(ONE_BUFFER) + n), 'S7'),
                 line('', 'J', 'P%d' % (n + 1) if n + 1 < len(TWO_BUFFERS) else 'FIN'),
                 line('YP%d' % n, 'J', 'XM%d' % n)]
-    src.append(line('', 'ORG', '%o' % (pbase + 2 * BLOCK * len(TWO_BUFFERS) + BLOCK)))
+    last = pbase + 2 * BLOCK * len(TWO_BUFFERS) + BLOCK
+    assert last + 0o100 + count < OUT, 'the cases reach the words their times are kept in'
+    src.append(line('', 'ORG', '%o' % last))
     # compare every time with what it should be
     src += [line('FIN', 'A1', '0'), line('', 'A2', "D'%d" % count),
             line('FL', 'S1', '%o,A1' % OUT), line('', 'S2', 'KEXP,A1'), line('', 'S0', 'S1\\S2'), line('', 'JSN', 'FBAD'),

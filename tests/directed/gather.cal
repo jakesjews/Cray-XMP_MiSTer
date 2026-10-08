@@ -1,0 +1,291 @@
+* gather: the compress index 175ijk with k from 4 to 7, the gather 176i1k
+* and the scatter 1771jk (CSM-0111000 pages 5-87 to 5-92).
+*
+* A compress index makes the mask of 175 and puts the numbers of the
+* elements that pass into Vi, one behind the other; the elements of Vi behind
+* them stay.  A gather reads the words at (A0) + (Vk element), a scatter
+* writes them; the low 24 bits of an element are a signed number.  Then the
+* same in a chain, where a register is used while it still receives its
+* result, and in a user field too short for them.
+         INCLUDE "rt_direct.cal"
+UBASE    =       10000                   ; absolute word address of the user's field
+UPKG     =       3000                    ; and its exchange package
+TAB      =       6000                    ; a table of words 1000, 1001, ...
+OUT      =       6400                    ; where scatters go
+*
+         TBEGIN
+* ---- the example of page 5-90: eleven elements, zero in 0, 2, 5, 6 and 12
+         A1      D'11
+         VL      A1
+         A0      KZN
+         V2      ,A0,1
+         A0      KFILL
+         V1      ,A0,1                   ; V1 = 70, 71, ... before
+         V1,VM   V2,Z
+         S1      VM
+         CHKS    S1,X'A620000000000000,2
+         A2      0
+         S1      V1,A2
+         CHKS    S1,0,3
+         A2      1
+         S1      V1,A2
+         CHKS    S1,2,4
+         A2      4
+         S1      V1,A2
+         CHKS    S1,12,5
+         A2      5
+         S1      V1,A2
+         CHKS    S1,75,6                 ; unchanged
+* the other three tests: not zero, positive, negative
+         V3,VM   V2,N
+         V4,VM   V2,P
+         V5,VM   V2,M
+         S1      VM
+         CHKS    S1,X'1080000000000000,7
+         A2      2
+         S1      V3,A2
+         CHKS    S1,4,10                 ; elements 1, 3, 4, 7, 10 and 11 are not zero
+         A2      1
+         S1      V5,A2
+         CHKS    S1,10,11                ; elements 3 and 10 are negative
+* nothing passes: no element is written and the mask is zero
+         V6      V2\V2
+         V7      ,A0,1
+         V7,VM   V6,N
+         S1      VM
+         CHKS    S1,0,12
+         A2      0
+         S1      V7,A2
+         CHKS    S1,70,13
+* all pass, and the register tested is the one written
+         V6,VM   V6,Z
+         A2      D'10
+         S1      V6,A2
+         CHKS    S1,D'10,14
+*
+* ---- gather: V1 = the words at TAB + 5, TAB + 0, TAB + 77, TAB - 1, ...
+         A1      10
+         VL      A1
+         A0      KIDX
+         V2      ,A0,1
+         A0      TAB
+         V1      ,A0,V2
+         A2      0
+         S1      V1,A2
+         CHKS    S1,1005,15
+         A2      2
+         S1      V1,A2
+         CHKS    S1,1077,16
+         A2      3
+         S1      V1,A2
+         CHKS    S1,777,17               ; the word before the table: index -1
+         A2      7
+         S1      V1,A2
+         CHKS    S1,1020,20              ; bits above the low 24 do not count
+* the indices come from the register that is loaded
+         A0      KIDX
+         V3      ,A0,1
+         A0      TAB
+         V3      ,A0,V3
+         A2      2
+         S1      V3,A2
+         CHKS    S1,1077,21
+*
+* ---- scatter: V1 to OUT + the same indices; of two with one index the
+* later element stays
+         A0      OUT
+         ,A0,V2  V1
+         S1      OUT+5,0
+         CHKS    S1,1005,22
+         S1      OUT-1,0
+         CHKS    S1,777,23
+         S1      OUT+20,0
+         CHKS    S1,1020,24
+         A0      KSAME
+         V4      ,A0,1
+         A0      KFILL
+         V5      ,A0,1
+         A0      OUT+100
+         ,A0,V4  V5
+         S1      OUT+103,0
+         CHKS    S1,77,25                ; elements 0, 3 and 7 all go to index 3
+         S1      OUT+101,0
+         CHKS    S1,71,26
+* data and indices from one register
+         A0      OUT+200
+         ,A0,V2  V2
+         S1      OUT+205,0
+         CHKS    S1,5,27
+*
+* ---- in chains: the indices, the words and the numbers still on their way
+         A1      D'40
+         VL      A1
+         A0      TAB
+         V1      ,A0,1                   ; 1000, 1001, ...
+         S1      1000
+         V2      V1-V1
+         V2      V1+V1                   ; 2000, 2002, ...
+         V3      S1-V2
+         A0      TAB+200
+         V4      ,A0,V3                  ; the words at TAB + 200 - 1000 - 2n ...
+         V5      V4+V1
+         A0      OUT+300
+         ,A0,V1  V5                      ; ... to OUT + 300 + 1000 + n
+         S2      77
+         V6      S2&V1
+         V7      V1\V1                   ; zeros where the compress index leaves it alone
+         V7,VM   V6,N
+         V0      V7+V7
+         A0      OUT+2000
+         A1      1
+         ,A0,A1  V0
+         ,A0,V7  V6
+*
+* ---- a user field of 100 words: a gather and a scatter that leave it.
+* The words outside are read as zero and not written, and the operand range
+* flag interrupts right behind the instruction.
+         A1      UPKG
+         XA      A1
+         EX
+         S2      UPKG+3,0
+         CHKS    S2,UPKG/20*T$P2_40+4*T$P2_33+40*T$P2_24,30
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,UAFTG-UBASE*4,31
+         S2      UBASE+70,0              ; the program stored its V1 before
+         CHKS    S2,D'501,32
+         S2      UBASE+64,0              ; what the first gather read
+         CHKS    S2,D'501,33
+         S2      UBASE+67,0
+         CHKS    S2,D'504,34
+* clear the flag and let it go on to the scatter
+         S2      UPKG+3,0
+         S3      KFLAGS,0
+         S2      S2\S3
+         UPKG+3,0 S2
+         A1      UPKG
+         XA      A1
+         EX
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,UAFTS-UBASE*4,35
+         S2      UBASE+60,0              ; the gather out of the field: the word inside,
+         CHKS    S2,D'504,36
+         S2      UBASE+61,0              ; and zero for one outside
+         CHKS    S2,0,37
+         S2      UBASE+76,0              ; the scatter: inside
+         CHKS    S2,D'501,40
+         S2      UBASE+100,0             ; and the word beyond the field
+         CHKS    S2,D'123456,41
+         TPASS
+         TEND    DUMPALL
+*
+KZN      CON     0
+         CON     1
+         CON     0
+         CON     X'8000000000000001
+         CON     5
+         CON     0
+         CON     0
+         CON     7
+         CON     X'FFFFFFFFFFFFFFFF
+         CON     11
+         CON     0
+KFILL    CON     70
+         CON     71
+         CON     72
+         CON     73
+         CON     74
+         CON     75
+         CON     76
+         CON     77
+         CON     100
+         CON     101
+         CON     102
+KIDX     CON     5
+         CON     0
+         CON     77
+         CON     X'0000000000FFFFFF
+         CON     1
+         CON     X'FFFFFFFFFFFFFFFE
+         CON     3
+         CON     X'1234567ABC000010
+KSAME    CON     3
+         CON     1
+         CON     2
+         CON     3
+         CON     4
+         CON     5
+         CON     6
+         CON     3
+KFLAGS   CON     40*T$P2_24
+*
+         ORG     TAB-2
+         CON     776
+         CON     777
+         VWD     D'64/1000,D'64/1001,D'64/1002,D'64/1003,D'64/1004,D'64/1005,D'64/1006,D'64/1007
+         VWD     D'64/1010,D'64/1011,D'64/1012,D'64/1013,D'64/1014,D'64/1015,D'64/1016,D'64/1017
+         VWD     D'64/1020,D'64/1021,D'64/1022,D'64/1023,D'64/1024,D'64/1025,D'64/1026,D'64/1027
+         VWD     D'64/1030,D'64/1031,D'64/1032,D'64/1033,D'64/1034,D'64/1035,D'64/1036,D'64/1037
+         VWD     D'64/1040,D'64/1041,D'64/1042,D'64/1043,D'64/1044,D'64/1045,D'64/1046,D'64/1047
+         VWD     D'64/1050,D'64/1051,D'64/1052,D'64/1053,D'64/1054,D'64/1055,D'64/1056,D'64/1057
+         VWD     D'64/1060,D'64/1061,D'64/1062,D'64/1063,D'64/1064,D'64/1065,D'64/1066,D'64/1067
+         VWD     D'64/1070,D'64/1071,D'64/1072,D'64/1073,D'64/1074,D'64/1075,D'64/1076,D'64/1077
+         BSSZ    300
+*
+         ORG     UPKG
+         CON     (UCODE-UBASE*4)*T$P2_24 ; P, relative to the base
+         CON     UBASE/40*T$P2_29        ; IBA
+         CON     (UBASE+100)/40*T$P2_29+T$IOR*T$P2_24 ; ILA: the field is 10000-10077
+         CON     UPKG/20*T$P2_40         ; XA back to this package
+         CON     UBASE/40*T$P2_29        ; DBA: the same field for data
+         CON     (UBASE+100)/40*T$P2_29  ; DLA
+         BSSZ    D'10                    ; A6, A7, S0-S7
+*
+* the user program; its addresses are relative to UBASE
+         ORG     UBASE+10
+UCODE    A1      4
+         VL      A1
+         A0      40
+         V1      ,A0,1                   ; 501 to 504
+         A0      70
+         ,A0,1   V1
+         A0      44
+         V2      ,A0,1                   ; indices 0, 1, 2, 3
+         A0      40
+         V3      ,A0,V2                  ; inside the field
+         A0      64
+         ,A0,1   V3
+         A0      44+4
+         V4      ,A0,1                   ; indices 3, 100, 2, 77777777
+         A0      40
+         V5      ,A0,V4                  ; one inside, one beyond the limit, one inside, one below
+UAFTG    A0      60
+         ,A0,1   V5
+         A0      44+10
+         V6      ,A0,1                   ; indices 76, 100, 77, 101
+         A0      0
+         ,A0,V6  V1
+UAFTS    A2      5
+         EX
+         ORG     UBASE+40
+         CON     D'501
+         CON     D'502
+         CON     D'503
+         CON     D'504
+         CON     0
+         CON     1
+         CON     2
+         CON     3
+         CON     3
+         CON     100
+         CON     2
+         CON     X'FFFFFF
+         CON     76
+         CON     100
+         CON     77
+         CON     101
+         ORG     UBASE+100
+         CON     D'123456
+         CON     D'123456
+         END

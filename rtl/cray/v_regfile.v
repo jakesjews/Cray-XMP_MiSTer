@@ -11,9 +11,10 @@
 // earliest two clocks later and then one a clock, so the register is busy for
 // (VL) + 3 clocks from issue: the X-MP's "Vj or Vk ready" (CSM-0111000 section 5).
 //
-// As a result (i_wr_start) it is reserved until i_len elements have been
-// written.  The write port itself is driven from outside, by whichever unit,
-// memory transfer or 077 instruction has data for this register.
+// As a result (i_wr_start) it is reserved until whatever delivers the result
+// says it has delivered the last of it (i_wr_last).  The write port itself is
+// driven from outside, by whichever unit, memory transfer or 077 instruction
+// has data for this register.
 //
 // A register that is a result may be an operand of a later instruction at the
 // same time (chaining, CSM-0111000 page 4-12): that instruction takes each
@@ -52,6 +53,7 @@ module v_regfile (
 
 	// result reservation and write port
 	input wire        i_wr_start,
+	input wire        i_wr_last,   // the result is complete with this clock
 	input wire        i_wr_en,
 	input wire [ 5:0] i_wr_idx,
 	input wire [63:0] i_wr_data,
@@ -73,7 +75,6 @@ module v_regfile (
 	reg [5:0] raddr;
 
 	reg       res_busy;
-	reg [6:0] wr_left;
 	reg [6:0] wr_done;
 
 	assign o_busy    = rd_active | res_busy | i_mem_rd;
@@ -105,12 +106,10 @@ module v_regfile (
 			// result reservation
 			if (i_wr_start) begin
 				res_busy <= 1'b1;
-				wr_left  <= i_len;
 				wr_done  <= 7'd0;
-			end else if (res_busy && i_wr_en) begin
-				wr_left <= wr_left - 7'd1;
-				wr_done <= wr_done + 7'd1;
-				if (wr_left == 7'd1) res_busy <= 1'b0;
+			end else if (res_busy) begin
+				if (i_wr_en) wr_done <= wr_done + 7'd1;
+				if (i_wr_last) res_busy <= 1'b0;
 			end
 		end
 		o_coming  <= !rst && res_busy;

@@ -238,18 +238,19 @@ module cray_predecode (
 				vk_en = 1'b0;
 			end
 			//175xj0-175xj3 - create vector mask based on the results of testing the Vj register
+			//175ij4-175ij7 - and the numbers of the elements that pass, to Vi
 			16'b1111101?????????: begin
 				fu    = VLOG;
-				vi_en = 1'b0;
+				vi_en = i_parcel[2];
 				vj_en = 1'b1;
 				vk_en = 1'b0;
 			end
-			//176ixk-177xj0
+			//176ixk-177xj0; 176i1k and 1771jk take the addresses from Vk
 			16'b111111??????????: begin
 				fu    = MEM;
 				vi_en = !i_parcel[9];  //write to Vi for 176
 				vj_en = i_parcel[9];  //read from Vj for 177
-				vk_en = 1'b0;
+				vk_en = i_parcel[9] ? (i_parcel[8:6] == 3'd1) : (i_parcel[5:3] == 3'd1);
 			end
 			default: begin
 				fu    = 3'b0;

@@ -15,7 +15,9 @@ their way: chains of functional units, vector loads and vector stores.
 Constraints that keep a program meaningful:
   - it terminates: branches go forward, and loops count down a reserved register
   - memory references stay inside a sandbox that the image initialises; the
-    address registers they use (A0 to A5, A7) are set immediately beforehand
+    address registers they use (A0 to A5, A7) are set immediately beforehand,
+    and the index vector of a gather or scatter is loaded just before it from
+    a table of offsets that stay inside
   - no monitor instructions, channel status or real-time clock (the model cannot
     predict a clock), and nothing is stored into code
   - floating point interrupts are left off, so any bit pattern may be an operand
@@ -147,6 +149,17 @@ class Gen:
         e('A0', "O'%o,0" % self.pool())
         e('A7', "O'%o" % (SAND + SAND_WORDS // 2))
         e('A6', '0')
+        # Offsets for gathers and scatters, 64 to a table.  Only the low 24 bits of
+        # an element count; half the tables are of negative offsets, used from the
+        # end of the sandbox.
+        self.tables = []
+        for t in range(4):
+            a = DATA + len(self.data)
+            for _ in range(64):
+                o = self.r.randrange(SAND_WORDS)
+                low = o if t < 2 else (-(o + 1)) & 0xffffff
+                self.pool(self.r.getrandbits(40) << 24 | low)
+            self.tables.append((a, SAND if t < 2 else SAND + SAND_WORDS))
 
     def op_a(self):
         r, e = self.r, self.emit
@@ -260,7 +273,9 @@ class Gen:
         elif c == 14 and self.floating: e('V%d' % i, 'S%d%sV%d' % (s, r.choice(['+F', '-F', '*F', '*H', '*R', '*I']), k))
         elif c == 15 and self.floating: e('V%d' % i, 'V%d%sV%d' % (j, r.choice(['+F', '-F', '*F', '*H', '*R', '*I']), k))
         elif c == 16: e('V%d' % i, r.choice(['/HV%d', 'PV%d', 'QV%d'] if self.floating else ['PV%d', 'QV%d']) % j)
-        elif c == 17: e('VM', 'V%d,%s' % (j, r.choice('ZNPM')))
+        elif c == 17:
+            # a mask, or a mask and the compress index; the tests see what is there
+            e(r.choice(['VM', 'V%d,VM' % i]), 'V%d,%s' % (j, r.choice('ZNPM')))
         elif c in (18, 19):
             a = r.randrange(1, 6)
             e('A%d' % a, "D'%d" % r.choice([0, 1, 63, 64, 100, r.randrange(64)]))
@@ -272,7 +287,14 @@ class Gen:
             a = r.randrange(1, 6)
             e('A%d' % a, ("-O'%o" % -stride) if stride < 0 else "O'%o" % stride)
             e('A0', "O'%o" % (SAND + base))
-            if c < 22: e('V%d' % i, ',A0,A%d' % a)
+            if r.randrange(4) == 0:
+                # a gather or scatter through an index vector loaded just before it
+                table, base = r.choice(self.tables)
+                e('A0', "O'%o" % table); e('V%d' % k, ',A0,1')
+                e('A0', "O'%o" % base)
+                if c < 22: e('V%d' % i, ',A0,V%d' % k)
+                else: e(',A0,V%d' % k, 'V%d' % r.choice([j, k]))
+            elif c < 22: e('V%d' % i, ',A0,A%d' % a)
             else: e(',A0,A%d' % a, 'V%d' % j)
         else: e('V%d' % i, 'V%d+V%d' % (j, k))
 

@@ -142,17 +142,41 @@ impl Machine {
     }
 
     /// 175: VM bit e is the result of testing element e of Vj for e below
-    /// the vector length; the other bits are zero (page 4-68).
+    /// the vector length; the other bits are zero (page 4-68).  With the
+    /// high bit of k (X 5-87) the numbers of the elements that pass also go
+    /// to Vi, one behind the other from element 0; the elements of Vi
+    /// behind them stay.  Which elements those are cannot be known once
+    /// an element tested is undefined.
     fn vector_mask(&mut self, d: &Decoded) -> Result<(), TestError> {
         let count = self.vector_count()?;
+        let compress = matches!(
+            d.op,
+            Op::VmZeroIdx | Op::VmNonzeroIdx | Op::VmPositiveIdx | Op::VmNegativeIdx
+        );
         let mut mask = Some(0u64);
+        let mut next = 0;
         for e in 0..count {
             let hit = self.v[d.j as usize][e].map(|x| match d.op {
-                Op::VmZero => x == 0,
-                Op::VmNonzero => x != 0,
-                Op::VmPositive => x >> 63 == 0,
+                Op::VmZero | Op::VmZeroIdx => x == 0,
+                Op::VmNonzero | Op::VmNonzeroIdx => x != 0,
+                Op::VmPositive | Op::VmPositiveIdx => x >> 63 == 0,
                 _ => x >> 63 != 0,
             });
+            if compress {
+                match hit {
+                    Some(true) => {
+                        self.set_v(d.i as usize, next, Some(e as u64));
+                        next += 1;
+                    }
+                    Some(false) => {}
+                    None => {
+                        return Err(self.error(
+                            crate::ErrorKind::UndefinedValue,
+                            format!("element {} of V{} (tested by a compress index)", e, d.j),
+                        ))
+                    }
+                }
+            }
             mask = match (mask, hit) {
                 (Some(m), Some(hit)) => Some(m | (hit as u64) << (63 - e)),
                 _ => None,
@@ -185,6 +209,42 @@ impl Machine {
         let (count, a0, step) = self.vector_addresses(d)?;
         for e in 0..count {
             let rel = a0.wrapping_add(step.wrapping_mul(e as u32)) & A_MASK;
+            let value = self.v[d.j as usize][e];
+            self.transfer_write(rel, value)?;
+        }
+        Ok(())
+    }
+
+    /// The address of element e of a gather or scatter: (A0) plus the low
+    /// 24 bits of element e of Vk (X 5-91).
+    fn indexed_address(&self, d: &Decoded, a0: u32, e: usize) -> Result<u32, TestError> {
+        let index = self.need(
+            self.v[d.k as usize][e],
+            "an element of Vk (the index of a gather or scatter)",
+        )?;
+        Ok(a0.wrapping_add(index as u32) & A_MASK)
+    }
+
+    /// 176i1k.  Vi may be Vk: an element is read as an index before the
+    /// word it names is put in its place.
+    fn vector_gather(&mut self, d: &Decoded) -> Result<(), TestError> {
+        let count = self.vector_count()?;
+        let a0 = self.need(self.a[0], "A0 (vector memory address)")?;
+        for e in 0..count {
+            let rel = self.indexed_address(d, a0, e)?;
+            let value = self.read_data(rel);
+            self.set_v(d.i as usize, e, value);
+        }
+        Ok(())
+    }
+
+    /// 1771jk.  The words are stored in the order of the elements, so of
+    /// two with the same index the later one stays.
+    fn vector_scatter(&mut self, d: &Decoded) -> Result<(), TestError> {
+        let count = self.vector_count()?;
+        let a0 = self.need(self.a[0], "A0 (vector memory address)")?;
+        for e in 0..count {
+            let rel = self.indexed_address(d, a0, e)?;
             let value = self.v[d.j as usize][e];
             self.transfer_write(rel, value)?;
         }
@@ -270,9 +330,18 @@ impl Machine {
                 Ok(())
             }
             // ---- 175 to 177
-            Op::VmZero | Op::VmNonzero | Op::VmPositive | Op::VmNegative => self.vector_mask(d),
+            Op::VmZero
+            | Op::VmNonzero
+            | Op::VmPositive
+            | Op::VmNegative
+            | Op::VmZeroIdx
+            | Op::VmNonzeroIdx
+            | Op::VmPositiveIdx
+            | Op::VmNegativeIdx => self.vector_mask(d),
             Op::VLoad => self.vector_load(d),
             Op::VStore => self.vector_store(d),
+            Op::VGather => self.vector_gather(d),
+            Op::VScatter => self.vector_scatter(d),
             _ => unreachable!("{:?} is not a vector instruction", d.op),
         }
     }

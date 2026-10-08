@@ -1075,7 +1075,7 @@ localparam VLOG      = 3'b000,   //vector logical
 				.i_cip(cip),
 				.i_sj(s_j_data),
 				.i_ak(a_k_data),
-				.i_wr_v(|pd[PD_V_I+:8]),
+				.i_wr_v((|pd[PD_V_I+:8]) && (cip_instr != 7'o175)),  //a compress index writes Vi by itself
 				.i_short((gu == 1) && (cip[10:9] != 2'd2)),  //the shifts but 152
 				.i_vj(pd[PD_V_J+:8]),
 				.i_vk(pd[PD_V_K+:8]),
@@ -1121,10 +1121,12 @@ localparam VLOG      = 3'b000,   //vector logical
 	//a vector load (176) writes one element per word read; a vector store (177) reads
 	//the element the memory unit is about to write
 	wire       vmem_wr;  //o_mem_data holds element vmem_wr_idx of a 176
+	wire       vmem_wr_last;  //and it is the last
 	wire [5:0] vmem_wr_idx;
 	wire [5:0] vmem_rd_idx;
-	wire [7:0] vmem_reads;  //a 177 is storing this V register
+	wire [7:0] vmem_reads;  //a vector transfer is reading this V register
 	wire [2:0] vmem_num;  //the V register of the vector transfer under way
+	wire [2:0] vmem_knum;  //the one with the addresses of a gather or scatter
 
 	//077 writes its element in the clock after it issues.  Nothing can tell: the
 	//register is free when a 077 issues, and whatever issues next reads a V
@@ -1143,12 +1145,61 @@ localparam VLOG      = 3'b000,   //vector logical
 		sw_data  <= s_j_data;
 	end
 
+	//The compress index of 175ijk with k from 4 to 7 (CSM-0111000 page 5-87): the
+	//number of every element that passes the test goes to Vi, one behind the other
+	//from element 0, and the elements of Vi behind them stay.  A number is written
+	//five clocks after its element was tested, so Vi is ready (VL) + 10 clocks after
+	//issue; the reservation of Vi ends with the last element tested, written or not.
+	localparam NCI = 4;
+	wire              v_test_out;  //the logical unit's test of the element it took in
+	reg               vm_test_out;  //that test is of element vm_test_idx of a 175,
+	reg               vm_test_last;  //the last one,
+	reg     [    5:0] vm_test_idx;
+	reg               vm_test_ci;  //of a compress index,
+	reg     [    2:0] vm_test_dest;  //for this register
+	reg     [NCI-1:0] ci_valid;
+	reg     [NCI-1:0] ci_hit;
+	reg     [NCI-1:0] ci_last;
+	reg     [    5:0] ci_idx                                                                          [0:NCI-1];
+	reg     [    2:0] ci_dest                                                                         [0:NCI-1];
+	reg     [    5:0] ci_ptr;  //the element of Vi the next number goes to
+	reg               ci_wr_valid;
+	reg               ci_wr_en;
+	reg               ci_wr_last;
+	reg     [    5:0] ci_wr_ptr;
+	reg     [    5:0] ci_wr_num;
+	reg     [    2:0] ci_wr_dest;
+	wire    [    5:0] ci_ptr_now = (ci_idx[NCI-1] == 6'd0) ? 6'd0 : ci_ptr;  //element 0 starts a list
+	integer           ci;
+	always @(posedge clk) begin
+		ci_valid[0] <= !rst && vm_test_out && vm_test_ci;
+		ci_hit[0]   <= v_test_out;
+		ci_last[0]  <= vm_test_last;
+		ci_idx[0]   <= vm_test_idx;
+		ci_dest[0]  <= vm_test_dest;
+		for (ci = 1; ci < NCI; ci = ci + 1) begin
+			ci_valid[ci] <= !rst && ci_valid[ci-1];
+			ci_hit[ci]   <= ci_hit[ci-1];
+			ci_last[ci]  <= ci_last[ci-1];
+			ci_idx[ci]   <= ci_idx[ci-1];
+			ci_dest[ci]  <= ci_dest[ci-1];
+		end
+		ci_wr_valid <= !rst && ci_valid[NCI-1];
+		ci_wr_en    <= ci_valid[NCI-1] && ci_hit[NCI-1];
+		ci_wr_last  <= ci_last[NCI-1];
+		ci_wr_ptr   <= ci_ptr_now;
+		ci_wr_num   <= ci_idx[NCI-1];
+		ci_wr_dest  <= ci_dest[NCI-1];
+		if (ci_valid[NCI-1]) ci_ptr <= ci_ptr_now + {5'd0, ci_hit[NCI-1]};
+	end
+
 	//A result is a clock on its way from its unit to the V register: with it the
 	//register is free (VL) + unit time + 5 clocks after issue, as the X-MP's is
 	//(CSM-0111000 section 5).  The population count unit, the last of the units,
 	//has that clock in itself.
 	localparam NVW = NTK - 1;
 	reg     [NVW-1:0] vw_valid;
+	reg     [NVW-1:0] vw_last;
 	reg     [    5:0] vw_idx   [0:NVW-1];
 	reg     [    2:0] vw_dest  [0:NVW-1];
 	reg     [   63:0] vw_data  [0:NVW-1];
@@ -1156,6 +1207,7 @@ localparam VLOG      = 3'b000,   //vector logical
 	always @(posedge clk)
 		for (w = 0; w < NVW; w = w + 1) begin
 			vw_valid[w] <= !rst && tk_out_valid[w] && tk_out_wr_v[w];
+			vw_last[w]  <= tk_out_last[w];
 			vw_idx[w]   <= tk_out_idx[w];
 			vw_dest[w]  <= tk_out_dest[w];
 			vw_data[w]  <= fu_out[w];
@@ -1165,32 +1217,44 @@ localparam VLOG      = 3'b000,   //vector logical
 	genvar gr;
 	generate
 		for (gr = 0; gr < 8; gr = gr + 1) begin : g_vreg
-			//who writes this register now: a functional unit, a vector load or a 077
+			//who writes this register now: a functional unit, a vector load, a compress
+			//index or a 077; and whether that is the last of a result (wr_last)
 			reg            wr_en;
+			reg            wr_last;
 			reg     [ 5:0] wr_idx;
 			reg     [63:0] wr_data;
 			integer        u;
 			always @* begin
 				wr_en   = 1'b0;
+				wr_last = 1'b0;
 				wr_idx  = sw_idx;
 				wr_data = sw_data;
 				if (sw_en[gr])  //077: (Sj) to element (Ak), issued in the clock before
 					wr_en = 1'b1;
 				if (vmem_wr && (vmem_num == gr)) begin
 					wr_en   = 1'b1;
+					wr_last = vmem_wr_last;
 					wr_idx  = vmem_wr_idx;
 					wr_data = data_from_mem_to_regs;
 				end
 				for (u = 0; u < NVW; u = u + 1)
 				if (vw_valid[u] && (vw_dest[u] == gr)) begin
 					wr_en   = 1'b1;
+					wr_last = vw_last[u];
 					wr_idx  = vw_idx[u];
 					wr_data = vw_data[u];
 				end
 				if (pop_valid && (tk_out_dest[NVW] == gr)) begin
 					wr_en   = 1'b1;
+					wr_last = tk_out_last[NVW];
 					wr_idx  = tk_out_idx[NVW];
 					wr_data = fu_out[NVW];
+				end
+				if (ci_wr_valid && (ci_wr_dest == gr)) begin
+					wr_en   = ci_wr_en;
+					wr_last = ci_wr_last;
+					wr_idx  = ci_wr_ptr;
+					wr_data = {58'b0, ci_wr_num};
 				end
 			end
 
@@ -1205,6 +1269,7 @@ localparam VLOG      = 3'b000,   //vector logical
 				.i_mem_idx (vmem_rd_idx),
 				.o_rd_data (v_rd_data[64*gr+:64]),
 				.i_wr_start(vwrite_start[gr]),
+				.i_wr_last (wr_last),
 				.i_wr_en   (wr_en),
 				.i_wr_idx  (wr_idx),
 				.i_wr_data (wr_data),
@@ -1365,7 +1430,6 @@ localparam VLOG      = 3'b000,   //vector logical
 	//instructions and the Vj element for the odd ones; the second is the Vk element.
 
 	//Vector Logical unit (140-147) and the element test of 175
-	wire v_test_out;
 	vector_logical vlog (
 		.clk     (clk),
 		.i_op    (tk_instr[0][11:9]),
@@ -1437,14 +1501,13 @@ localparam VLOG      = 3'b000,   //vector logical
 	//element is made in the clock after the logical unit has taken it in, a clock
 	//before a result would leave the unit.  Element 0 is mask bit 63; elements not
 	//tested are zero.
-	reg       vm_pending;  //a 175 has issued and its last test is not in yet
-	reg       vm_test_out;  //the test of element vm_test_idx is at the unit's test output
-	reg       vm_test_last;
-	reg [5:0] vm_test_idx;
+	reg vm_pending;  //a 175 has issued and its last test is not in yet
 	always @(posedge clk) begin
 		vm_test_out  <= !rst && tk_in_valid[0] && (tk_instr[0][15:9] == 7'o175);
 		vm_test_last <= tk_in_last[0];
 		vm_test_idx  <= tk_in_idx[0];
+		vm_test_ci   <= tk_instr[0][2];
+		vm_test_dest <= tk_instr[0][8:6];
 	end
 	always @(posedge clk)
 		if (rst) vm_pending <= 1'b0;
@@ -1625,9 +1688,11 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_v6_data        (v_rd_data[447:384]),
 		.i_v7_data        (v_rd_data[511:448]),
 		.o_v_wr           (vmem_wr),
+		.o_v_last         (vmem_wr_last),
 		.o_v_wr_idx       (vmem_wr_idx),
 		.o_v_rd_idx       (vmem_rd_idx),
 		.i_v_avail        (!vreg_filling[vmem_num] || ({1'b0, vmem_rd_idx} < vreg_filled[7*vmem_num+:7])),
+		.i_vk_avail       (!vreg_filling[vmem_knum] || ({1'b0, vmem_rd_idx} < vreg_filled[7*vmem_knum+:7])),
 		//interface to A rf
 		.i_a0_data        (a_a0_data),
 		.i_ai_data        (a_i_data),
@@ -1663,6 +1728,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_mem_issue      (mem_issue),
 		.i_issue          (cip_issue),
 		.o_v_num          (vmem_num),
+		.o_vk_num         (vmem_knum),
 		.o_v_reads        (vmem_reads)
 	);
 
