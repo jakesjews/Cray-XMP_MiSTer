@@ -5,6 +5,11 @@
 > [cray-sim](https://github.com/andrastantos/cray-sim) project, `system/` its ready-to-run
 > COS 1.17; `cos-cray1/` and directories of experiments are working material that is not in
 > this repository.
+>
+> The floating-point library then had two profiles and a module `cray1_pyramid`, an
+> experimental reconstruction of the first CRAY-1's multiply pyramid, with tests in
+> `tests/pyramid.rs`. They were removed with the CPU's CRAY-1 setting: `fmul` is what this text
+> calls `Profile::Xmp`, which `Profile::Cray1` equalled.
 
 Written 2026-10-05. Question: is the CRAY-1's floating-point multiply bit-for-bit the
 same as the CRAY X-MP's, and is our reciprocal approximation Cray's? Paths name the

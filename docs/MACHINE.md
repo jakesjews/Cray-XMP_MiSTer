@@ -5,16 +5,17 @@ differs from the real thing.
 
 The machine is a CRAY X-MP with one processor and its I/O Subsystem, as far as
 the operating system COS 1.17 needs one: that is the only operating system
-that survives for these machines, and it is a build for the X-MP. The CPU is
-the CRAY-1 as sold in 1982, with its two instruction set options, plus the
-X-MP features COS was found to use. The I/O Subsystem is three I/O Processors
+that survives for these machines, and it is a build for the X-MP. The CPU has
+the instruction set the X-MP shares with the CRAY-1 of 1982 and the X-MP
+features COS was found to use. The I/O Subsystem is three I/O Processors
 with the devices COS and the subsystem's own software work with.
 
-The references are the CRAY-1 Hardware Reference Manual, publication 2240004
-revision C, whose page numbers are used below, and revision F of May 1982
-(HR-0004) where the two differ (pages marked "rev F"); the CRAY X-MP Series
-Model 14 mainframe reference manual, CSM-0111000; and the I/O Subsystem
-hardware reference manual, HR-0030.
+The references are the CRAY X-MP Series Model 14 mainframe reference manual,
+CSM-0111000; for the instructions the X-MP shares with the CRAY-1, the CRAY-1
+Hardware Reference Manual, publication 2240004 revision C, whose page numbers
+are used below, and revision F of May 1982 (HR-0004) where the two differ
+(pages marked "rev F"); and the I/O Subsystem hardware reference manual,
+HR-0030.
 
 ## Where the CPU came from
 
@@ -54,14 +55,14 @@ Repairs to the upstream files:
   that started the operation, not by one that issued later.
 - `brancher`: the wait for a branch's second parcel no longer reads parcels
   that are not valid.
-- `s_res_lut`, `v_scheduler`: delivery time of 076, and the CRAY-1 meaning of 174.
+- `s_res_lut`, `v_scheduler`: delivery time of 076, and 174 as the reciprocal.
 - `i_buf`: 16-word burst fills, and no fill starts during an exchange.
 - `func_top`: the exchange sequence and saved P, holding issue for operands
   another unit is still producing, second parcels no longer decoded as
   instructions, exact decoding of 0020 to 0022, the T register write of 075,
   monitor-mode gating of the clock and XA instructions, the floating-point
-  mode flag, field protection and the range flags, a 22-bit P, the console
-  interrupt, and a new vector section.
+  mode flag, field protection and the range flags, the console interrupt,
+  and a new vector section.
 - `i_buf`: a buffer that is being filled again no longer answers for the
   block it held before. A jump taken after a fetch ahead could otherwise run
   parcels of the wrong block.
@@ -69,145 +70,62 @@ Repairs to the upstream files:
   removed and operand widths made explicit. Each module was proven equivalent
   to its form before the clean-up with `tools/py/equiv.py`.
 
-A parameter `XMP` selects the CPU. `XMP = 1` is what the core is built with:
-it adds what a one-processor CRAY X-MP has that COS needs; see "The X-MP
-setting" below. `XMP = 0` is the CRAY-1 of 1982. No core is built from it any
-more, but the CPU was developed and verified as a CRAY-1 first, and most of
-its tests still run on that setting. The upstream source's own X-MP code
-(channels and the registers shared by four CPUs) did not work and has been
-removed.
+The CPU was first brought up and verified as the CRAY-1 of 1982, which is
+what the upstream sources set out to be, with the X-MP's features behind a
+parameter. The core has only ever been released as the X-MP, and that
+parameter and the CRAY-1 it selected are gone; the history of this repository
+has them. The upstream source's own X-MP code (channels and the registers
+shared by four CPUs) did not work and was removed earlier.
 
 ## What the CPU implements
 
-At the CRAY-1 setting:
+The instructions and registers the X-MP has in common with the CRAY-1, and
+what a one-processor X-MP has beyond them that COS 1.17 needs. That was found
+by running COS on the cray-sim simulator with one feature after another taken
+out; the specification is [spec/machine-spec.md](spec/machine-spec.md). The
+CPU is tested against the reference model, which with a model of the I/O
+Subsystem dead starts COS 1.17 and runs batch jobs.
 
-- All CRAY-1 instructions of the manual's Appendix D.
-- The vector population instructions option (rev F pages 4-25 and 4-70):
-  026ij1 `Ai QSj`, the parity of the one bits of (Sj); 174ij1 `Vi PVj`, the
+- All instructions of Appendix D of the CRAY-1 manual.
+- The vector population instructions (rev F pages 4-25 and 4-70): 026ij1
+  `Ai QSj`, the parity of the one bits of (Sj); 174ij1 `Vi PVj`, the
   population counts of the elements of Vj; 174ij2 `Vi QVj`, their parities.
   The vector unit takes 6 clock periods and runs one operation at a time
   together with the reciprocal unit.
-- The programmable clock option (rev F pages 4-10 and 6-23): 0014j4 `PCI Sj`
-  enters the interrupt interval, 0014j5 `CCI` clears the interrupt request,
-  0014j6 `ECI` enables it and 0014j7 `DCI` disables it, all in monitor mode
-  only. The countdown runs all the time, one count per clock period; a
-  request comes every interval + 1 clock periods.
-- A, S, B, T and V registers, VL, VM, the real-time clock, P, BA, LA, XA, M and F.
-- The exchange sequence with the CRAY-1 exchange package layout, dead start,
-  normal and error exits.
-- Memory field protection: an address is valid when the relative address plus
-  16 times BA is below 16 times LA and below 2^20. A store outside the field
-  does not change memory.
-- Interrupt flags: normal exit, error exit, program range, operand range,
-  floating-point error, the programmable clock interrupt (bit 31) and the MCU
-  interrupt (bit 32). They set only outside monitor mode. A clock or MCU
-  request made in monitor mode waits and is taken when a user program runs.
-  The two bits are named as in revision F; revision C called them console
-  interrupt and real-time clock interrupt.
-- Floating-point range errors as on manual page 3-21. For the add unit that
-  is an incoming exponent of 60000 octal or more; a carry that takes in-range
-  operands to 60000 is delivered without the error.
-- Vector operations with the result register also an operand behave as the
-  manual describes on pages 3-14 to 3-16.
-- 1,048,576 words of memory.
-
-## Differences from a real CRAY-1
-
-- **Timing.** One clock period is one cycle of the CPU's own clock: 105 MHz,
-  9.52 ns against the X-MP's 9.5 and the CRAY-1's 12.5. An instruction that
-  needs the result of another in an A or S register issues in the clock
-  period that result arrives, as on the real machine, and the scalar
-  functional units take the clock periods the manuals give (at the X-MP
-  setting those of HR-0032: the address multiply and 076 four, 072 one).
-  What is not the real machine's: memory references take longer and vary;
-  the vector shifts 150, 151 and 153 take four clock periods where the X-MP
-  has three; a branch on A0 or S0 issues one clock period after its register
-  is free, where the CRAY-1 waits two and the X-MP three; and a branch and a
-  change of instruction buffer take other numbers of clock periods than
-  theirs. Programs get the same results but not in the same number of clock
-  periods.
-- **Chaining is looser than on the real machine.** An operation may start on
-  a register that a functional unit is still filling as soon as the first
-  element is in, and at any time after that, not only in the one chain slot
-  clock. A register being filled by a vector load is never chained, because
-  memory does not deliver at a steady rate. Results are the same.
-- **Floating-point multiply.** The CRAY-1 had two multiply units. Machines
-  up to about 1980 had a pyramid that was not commutative (revisions C and E
-  of the manual). Change packet E-01 of May 1980 documents a symmetric unit,
-  in the same words as the later CRAY-1 S and X-MP manuals. This core has the
-  symmetric unit. About one product in five differs in its last bit from
-  what the original unit would give; which machines had which is not known.
-- **The multiply and the reciprocal match Cray's own simulation of them.**
-  Cray's floating-point diagnostic contains a simulation of each unit (the
-  listing found is the 1997 edition for the J90; the code goes back to 1980).
-  The core's units give the same bits as a transcription of it on millions of
-  operands, for 064 to 067 and 070. The complement step of 067 follows it
-  too; with it the statistics W. Kahan published from real machines in 1990
-  come out, which they do not with the rule the cray-sim project guessed.
-  [spec/fp-multiply.md](spec/fp-multiply.md) has the evidence.
-- **Half-precision products** keep 29 bits, as that simulation and the
-  CRAY-1 S and X-MP manuals have it. The 1980 change packet says 30.
-- **Interrupts are precise.** The exchange happens right after the instruction
-  that raised the flag. The manual allows a few more parcels to issue.
-- **No I/O channels on the CRAY-1 setting.** 0010 to 0012 do nothing. 033
-  reads zero. The I/O interrupt flag never sets. The X-MP setting has them.
-- **No memory errors.** The memory error flag and the error fields of the
-  exchange package are always zero.
-- **Encodings the 1982 manual leaves undefined.** 0014jk with k = 1, 2 or 3
-  is a pass. 026ijk with k = 2 to 7 is the population count. 174ijk with
-  k = 3 to 7 is the reciprocal. Dead start clears the programmable clock's
-  enable and request; on the real machine they are undefined then.
-- **A fetch outside the field in monitor mode** is not checked, since the
-  program range flag cannot set there.
-- **A store into an instruction** that is already in an instruction buffer
-  does not change what runs, as on the real machine (manual page 3-33): the
-  buffer keeps the old parcels until it is filled again or an exchange voids
-  it. Which blocks are in the four buffers at a given moment follows this
-  core's fetch sequence, not necessarily the real machine's. The reference
-  model has no buffers and runs the new parcel at once, so the two can differ
-  on a program that modifies code it is about to run.
-
-## Compared with Cray-on-FPGA
-
-Zorislav Shoyat's Cray-on-FPGA is another rework of the same cray-1x sources,
-for a Xilinx board. Every behavioural change it makes was checked against this
-core. It turned up no fault here at the CRAY-1 setting beyond one in the
-simulator's single-step mode, where an exit with a result still in flight was
-taken before its flag was set; that is fixed. Several of its changes differ
-from the manual (exit flags set in monitor mode, a vector length of 64 for
-`VL 1`, a result register that is also an operand read element by element),
-and it still has upstream faults repaired here, so no code was taken from it.
-One idea was: its memory instructions issue at once and transfer in the
-background. For vector loads and stores that is what the real machine does
-(manual page 4-70), and this core now does it too. Its other additions are not
-CRAY-1 behaviour (eight instruction buffers, a two-clock address multiply) or
-belong to the X-MP.
-
-## The X-MP setting
-
-The only operating system that survives for these machines, COS 1.17, is a
-build for the X-MP. `XMP = 1` gives the CPU what that build was found to need
-beyond a CRAY-1 (found by running it on the cray-sim simulator with one
-feature after another taken out; the specification is
-[spec/machine-spec.md](spec/machine-spec.md)). The reference is the CRAY X-MP Series
-Model 14 mainframe reference manual, CSM-0111000. It is tested against the
-reference model, which with a model of the I/O Subsystem dead starts COS 1.17
-and runs batch jobs.
-
-What changes with `XMP = 1`:
-
+- The programmable clock (rev F pages 4-10 and 6-23): 0014j4 `PCI Sj` enters
+  the interrupt interval, 0014j5 `CCI` clears the interrupt request, 0014j6
+  `ECI` enables it and 0014j7 `DCI` disables it, all in monitor mode only.
+  The countdown runs all the time, one count per clock period; a request
+  comes every interval + 1 clock periods.
+- A, S, B, T and V registers, VL, VM, the real-time clock, XA and a 24-bit P.
 - **Memory** has four million words.
 - **The exchange package** has the X-MP layout: a 24-bit P, an instruction
   base and limit and a data base and limit of 19 bits each in units of 32
-  words, the mode bits of words 1 and 2, the deadlock flag, the program state
-  bit and the cluster number. The processor number, the memory error fields
-  and the VNU, ESVL and EAM bits are stored as zero.
+  words, the mode bits of words 1 and 2, the flags, the program state bit and
+  the cluster number. The processor number, the memory error fields and the
+  VNU, ESVL and EAM bits are stored as zero. Dead start, normal and error
+  exits use it.
 - **Fields.** Instructions are fetched through the instruction pair, operands
-  through the data pair. Only the low 22 bits of an operand address count. A
-  load from outside the data field delivers zero and a store is dropped; the
-  operand range flag also needs its mode bit, which 0023 sets and 0024 clears.
-  A block or vector transfer goes on after such a reference.
-- **Branches** take 24 bits and raise no flag themselves.
+  through the data pair. An address is valid when it plus 32 times the base
+  is below 32 times the limit and below four million. Only the low 22 bits of
+  an operand address count. A load from outside the data field delivers zero
+  and a store is dropped; the operand range flag also needs its mode bit,
+  which 0023 sets and 0024 clears. A block or vector transfer goes on after
+  such a reference.
+- **Branches** take 24 bits and raise no flag themselves. A fetch outside the
+  instruction field is the program range error.
+- **Interrupt flags**: normal exit, error exit, I/O interrupt, program range,
+  operand range, floating-point error, the MCU interrupt (bit 32), the
+  programmable clock interrupt (bit 31) and deadlock. They set only outside
+  monitor mode. A clock or MCU request made in monitor mode waits and is
+  taken when a user program runs.
+- **Floating-point range errors** as on manual page 3-21. For the add unit
+  that is an incoming exponent of 60000 octal or more; a carry that takes
+  in-range operands to 60000 is delivered without the error.
+- **A vector register used as operand and result** of one instruction is read
+  element by element before it is written: the operation sees what the
+  register held before. The CRAY-1's recursive use of such a register is not
+  the X-MP's.
 - **The cluster number** is set from the package or by 0014j3 in monitor mode.
   Clusters 1 to 3 each have eight SB registers (026ij7, 027ij7), eight ST
   registers (072ij3, 073ij3) and 32 semaphores (0034, 0036, 0037, 072i02,
@@ -218,12 +136,12 @@ What changes with `XMP = 1`:
   monitor mode the instruction waits for good.
 - **The status register** (073i01) as the manual has it: ones in the low
   half, the cluster number only in monitor mode.
-- **Modes.** 0025 and 0026 switch the bidirectional memory bit, which is only
-  carried. 0027 waits for memory references to finish. The floating-point
-  error status bit sets on any floating-point error and is cleared by 0021
-  and 0022.
-- **No recursion.** A vector register used as operand and result of one
-  instruction is read element by element before it is written.
+- **Modes.** 0021 and 0022 switch the floating-point interrupt mode. 0025 and
+  0026 switch the bidirectional memory bit, which is only carried. 0027 waits
+  for memory references to finish. The floating-point error status bit sets
+  on any floating-point error and is cleared by 0021 and 0022. 0021 to 0027
+  and 073i01 wait for results still on their way, so that a floating-point
+  error is counted under the modes its instruction saw.
 - **Channels.** Four pairs of 6 Mbyte channels, 10 to 17 octal, the even
   ones input and the odd ones output (`rtl/cray/xmp_channels.v`). In monitor
   mode 0011 enters a limit address, 0010 a current address and starts the
@@ -237,14 +155,71 @@ What changes with `XMP = 1`:
   Disconnect and holds a Ready that finds it stopped. A channel that asks
   sets the I/O interrupt flag outside monitor mode. The first pair, 10 and
   11, leads to the MIOP of the I/O Subsystem; the other three lead nowhere.
-- 0021 to 0027 and 073i01 wait for results still on their way, so that a
-  floating-point error is counted under the modes its instruction saw. This
-  holds for 0021 and 0022 on the CRAY-1 setting as well.
 
-Not there: the X-MP's 24-bit constant `Ah exp` (01hijkm with the high bit of
-i), `Ai VL` (023i01), the second vector logical unit, gather and scatter, the
-interrupt monitor mode, the X-MP's rule for VL, the 100 Mbyte channels and
-channel parity.
+Not there: the 24-bit constant `Ah exp` (01hijkm with the high bit of i),
+`Ai VL` (023i01), the second vector logical unit, gather and scatter, the
+interrupt monitor mode, the X-MP's rule for VL, the 100 Mbyte channels of the
+CPU and channel parity.
+
+## Differences from a real X-MP
+
+- **Timing.** One clock period is one cycle of the CPU's own clock: 105 MHz,
+  9.52 ns against the X-MP's 9.5. An instruction that needs the result of
+  another in an A or S register issues in the clock period that result
+  arrives, as on the real machine, and the scalar functional units take the
+  clock periods of HR-0032 (the address multiply and 076 four, 072 one).
+  What is not the real machine's: memory references take longer and vary;
+  the vector shifts 150, 151 and 153 take four clock periods where the X-MP
+  has three; a branch on A0 or S0 issues one clock period after its register
+  is free, where the X-MP waits three; and a branch and a change of
+  instruction buffer take other numbers of clock periods than the X-MP's.
+  Programs get the same results but not in the same number of clock periods.
+- **Chaining is looser than on the real machine.** An operation may start on
+  a register that a functional unit is still filling as soon as the first
+  element is in, and at any time after that, not only in the one chain slot
+  clock. A register being filled by a vector load is never chained, because
+  memory does not deliver at a steady rate. Results are the same.
+- **The multiply and the reciprocal match Cray's own simulation of them.**
+  Cray's floating-point diagnostic contains a simulation of each unit (the
+  listing found is the 1997 edition for the J90; the code goes back to 1980).
+  The core's units give the same bits as a transcription of it on millions of
+  operands, for 064 to 067 and 070. The complement step of 067 follows it
+  too; with it the statistics W. Kahan published from real machines in 1990
+  come out, which they do not with the rule the cray-sim project guessed.
+  [spec/fp-multiply.md](spec/fp-multiply.md) has the evidence.
+- **Half-precision products** keep 29 bits, as that simulation and the
+  CRAY-1 S and X-MP manuals have it. The 1980 change packet to the CRAY-1
+  manual says 30.
+- **Interrupts are precise.** The exchange happens right after the instruction
+  that raised the flag. The manual allows a few more parcels to issue.
+- **No memory errors.** The memory error flag and the error fields of the
+  exchange package are always zero.
+- **Encodings the manuals leave undefined.** 0014jk with k = 1 or 2 is a
+  pass. 026ijk with k = 2 to 6 is the population count. 174ijk with k = 3 to
+  7 is the reciprocal. Dead start clears the programmable clock's enable and
+  request; on the real machine they are undefined then.
+- **A fetch outside the field in monitor mode** is not checked, since the
+  program range flag cannot set there.
+- **A store into an instruction** that is already in an instruction buffer
+  does not change what runs, as on the real machine (manual page 3-33): the
+  buffer keeps the old parcels until it is filled again or an exchange voids
+  it. The four buffers hold 16 words each, and which blocks are in them at a
+  given moment follows this core's fetch sequence, not the real machine's.
+  The reference model has no buffers and runs the new parcel at once, so the
+  two can differ on a program that modifies code it is about to run.
+
+## Compared with Cray-on-FPGA
+
+Zorislav Shoyat's Cray-on-FPGA is another rework of the same cray-1x sources,
+for a Xilinx board. Every behavioural change it makes was checked against this
+core while it was still a CRAY-1. It turned up no fault here beyond one in the
+simulator's single-step mode, where an exit with a result still in flight was
+taken before its flag was set; that is fixed. Several of its changes differ
+from the manual (exit flags set in monitor mode, a vector length of 64 for
+`VL 1`), and it still has upstream faults repaired here, so no code was taken
+from it. One idea was: its memory instructions issue at once and transfer in
+the background. For vector loads and stores that is what the real machine does
+(manual page 4-70), and this core now does it too.
 
 ## The I/O Subsystem
 
@@ -487,10 +462,9 @@ The CPU:
 
 - An instruction-level reference model was written from the manuals, separately
   from the RTL (`tools/crates/model`). Tests compare end states.
-- The smoke and directed tests agree with the model in five run modes, at both
-  settings of the CPU.
-- 10,000 random programs of up to 250 instructions agree with the model in five
-  run modes each, and 2,000 more at the X-MP setting.
+- The smoke and directed tests agree with the model in five run modes.
+- 12,000 random programs of up to 250 instructions agree with the model in five
+  run modes each.
 - The floating-point units match the reference arithmetic on 200,000 random
   cases per operation, streamed and with gaps, and on 79 cases from cray-sim.
 - On a real MiSTer, with the CRAY-1 build this core began as, 547 programs

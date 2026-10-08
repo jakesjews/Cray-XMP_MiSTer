@@ -77,18 +77,17 @@ tools/target/release/cray-xmp isa                 # the instruction table
 tools/target/release/cray-xmp-run prog.img --input 'text\r' --max 1000000
 ```
 
-`cray-xmp-run` is the reference model of the CPU: an instruction-level CRAY-1,
-and with `--machine XMP` the X-MP features, written from the hardware
-reference manuals, independent of the RTL. The programs it runs are test
-programs: they print and stop through a page of memory that only the model and
-the CPU's test bench have ([ASSEMBLER.md](ASSEMBLER.md)). It keeps track of
-values a program has no right to rely on, such as registers at power-up or a
-load from outside the program's field, and stops if one decides a branch, an
-address or console output.
+`cray-xmp-run` is the reference model of the CPU: the CPU of a one-processor
+CRAY X-MP at instruction level, written from the hardware reference manuals,
+independent of the RTL. The programs it runs are test programs: they print
+and stop through a page of memory that only the model and the CPU's test
+bench have ([ASSEMBLER.md](ASSEMBLER.md)). It keeps track of values a program
+has no right to rely on, such as registers at power-up or the real-time
+clock, and stops if one decides a branch, an address or console output.
 
 ### The system model
 
-`cray-xmp-sys` joins that CPU model, with the X-MP features, to a model of the
+`cray-xmp-sys` joins that CPU model to a model of the
 I/O Subsystem: three I/O Processors with their channels, Buffer Memory, the
 Peripheral Expander with its tape, disk and printer, nine DD-29 disk drives,
 the consoles, and the two links to the mainframe. It runs the I/O Subsystem's
@@ -149,11 +148,10 @@ sim/build/fp/Vfp_tb tests/fp/xmp_ref.vec
 sim/build/core/Vemu BOOTFILE --disk 0=exp_disk.img --until 'ENTER DATE'
 ```
 
-- `Vcray_cpu` is the CPU in its CRAY-1 setting with a memory model. `--mem`
-  picks the memory timing: `0`, `fixed:N`, `rand:A-B`, `ddr3` or `slow`.
-  `--step` holds each instruction until the one before has finished.
-  `sim/build/cpu_xmp/Vcray_cpu` is the same with `XMP = 1` and four million
-  words of memory.
+- `Vcray_cpu` is the CPU with a memory model of four million words, and with
+  each output channel cabled to the input channel of its pair. `--mem` picks
+  the memory timing: `0`, `fixed:N`, `rand:A-B`, `ddr3` or `slow`. `--step`
+  holds each instruction until the one before has finished.
 - `Vfp_tb` checks the floating-point units against vector files.
 - `sim/build/iop/Viop_cpu RECORD` is the I/O Processor following a record of
   the reference model's steps; `tools/py/ioptest.py` makes the records.
@@ -214,8 +212,11 @@ time, and a second random seed. All five must agree with the model.
   under up to four start-ups from `tests/rt/`: direct, through an exchange, in
   user mode, and in user mode at a non-zero base address.
 - `tests/directed/` are the bring-up tests for exchange, floating point and
-  vectors, and `vload.cal`, vector loads at every alignment, step and length
-  (written by `gen_vload.py`).
+  vectors; `vload.cal`, vector loads at every alignment, step and length
+  (written by `gen_vload.py`); and the tests of what the X-MP added:
+  `xpkg.cal` for the exchange package and the two fields, `shared.cal` for
+  the shared registers, semaphores and status register, `channels.cal` for
+  the 6 Mbyte channels.
 - `tests/rtl_only/` holds programs that check themselves, for what the model
   cannot predict: the real-time clock, the programmable clock and its
   interrupt, and the console interrupt. They run on the RTL alone. A line
@@ -223,14 +224,9 @@ time, and a second random seed. All five must agree with the model.
   `--ctrl-c 30000,400000` makes the console ask for its interrupt in those
   clocks. `tests/rt/rt_user.cal` has the macros these tests use to send off
   short user programs and look at the flags they come back with.
-- `tests/xmp/` are programs for the X-MP setting, on the start-up
-  `tests/rt/rt_xmp.cal`. A program says which machine it is for with a line
-  `MACHINE XMP`; the assembler then accepts the X-MP forms, and `difftest.py`
-  runs it on the model with `--machine XMP` and on the `XMP = 1` simulation.
-- `tools/py/randprog.py` writes random programs. `tools/py/difftest.py rand FIRST LAST`
-  runs a range of seeds and keeps failing cases in `build/diff`. With `--xmp`
-  both do the same for the X-MP setting, shared registers and semaphores
-  included.
+- `tools/py/randprog.py` writes random programs, shared registers and
+  semaphores included. `tools/py/difftest.py rand FIRST LAST` runs a range of
+  seeds and keeps failing cases in `build/diff`.
 - `tests/fp/xmp_ref.vec` holds 79 floating-point cases whose results come from
   the cray-sim project's test program.
 
@@ -415,11 +411,8 @@ With Verilator on `PATH`:
 make lint
 ```
 
-This writes a fixed build ID to `lint/gen/` and runs Verilator twice with
-`--lint-only -Wall -f lint/rtl.f`:
-
-- the `emu` top, as built for the MiSTer
-- `cray_cpu` with `XMP=0`, the CRAY-1 setting that most of the CPU's tests run on
+This writes a fixed build ID to `lint/gen/` and runs Verilator with
+`--lint-only -Wall -f lint/rtl.f` on the `emu` top, as built for the MiSTer.
 
 `lint/rtl.f` lists the sources from `files.qip`; update both when adding a
 synthesis source. `.v` files are parsed as Verilog 2005, as Quartus does.
@@ -432,9 +425,8 @@ Warnings are fatal. The policy and the waivers are in `lint/exclusions.vlt`:
   checked, but their own diagnostics are suppressed.
 - Everything else, the cray-1x sources included, has waivers only for
   reviewed cases, each with its reason: the `hps_io` ports this core does not
-  use, named one by one; signals only one setting of the CPU uses; bits the
-  floating-point arithmetic forms and then drops; ports and instruction
-  fields a module takes but does not need.
+  use, named one by one; bits the floating-point arithmetic forms and then
+  drops; ports and instruction fields a module takes but does not need.
 
 Lint uses a port-only PLL stub, so it does not check Intel primitives or
 timing. Validated with Verilator 5.052.
@@ -452,9 +444,8 @@ python3 tools/py/equiv.py --rev HEAD~1 rtl/cray/cray-1x/func_top.v
 
 For each module in a changed file, Yosys compares the working tree with the
 named revision: the same outputs, the same next state of every register and
-the same values sent to every submodule, for all inputs. A module with an
-`XMP` parameter is checked for both settings. Use it after reformatting or a
-lint clean-up, to cover what the simulations do not reach.
+the same values sent to every submodule, for all inputs. Use it after
+reformatting or a lint clean-up, to cover what the simulations do not reach.
 
 It needs ports, registers and submodule instances to keep their names, and it
 does not look inside submodules; their files are checked on their own.

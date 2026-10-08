@@ -5,6 +5,11 @@
 > [cray-sim](https://github.com/andrastantos/cray-sim) project, `system/` its ready-to-run
 > COS 1.17; `cos-cray1/` and directories of experiments are working material that is not in
 > this repository.
+>
+> When this was written the CPU could also be built as a CRAY-1: a parameter `XMP` chose, the
+> reference model had `Cpu::Xmp`, the assembler `MACHINE XMP`, and the X-MP's tests were in
+> `tests/xmp`. All of that is gone. The CPU is what this text calls `XMP = 1`, the tests are in
+> `tests/directed`, and nothing is built as `XMP = 0`.
 
 Written 2026-10-05 from the Cray manuals. RTL line numbers are for commit `5b73aab`.
 
