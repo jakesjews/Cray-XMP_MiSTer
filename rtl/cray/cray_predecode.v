@@ -91,7 +91,6 @@ module cray_predecode (
 	wire [6:0] d_op = dec[15:9];
 	wire [7:0] di = 8'd1 << dec[8:6];
 	wire [7:0] dj = 8'd1 << dec[5:3];
-	wire [7:0] dk = 8'd1 << dec[2:0];
 
 	//------------------------------------------------------------------
 	// S scheduler

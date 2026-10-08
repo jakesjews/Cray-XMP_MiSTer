@@ -141,6 +141,35 @@ OUT      =       6400                    ; where scatters go
          ,A0,A1  V0
          ,A0,V7  V6
 *
+* ---- the addresses three units away when they are wanted: V5 holds n, and
+* is to receive 2n by way of the add, the logical and the shift unit; the
+* gather behind it has to wait for each element.  The same for a scatter.
+         A2      0                       ; a shift by none
+         S1      77
+         A0      TAB
+         V1      ,A0,1
+         V5      S1&V1
+         V2      V1+V1
+         V3      S1&V2
+         V5      V3>A2
+         A0      TAB
+         V6      ,A0,V5
+         A2      1
+         S2      V6,A2
+         CHKS    S2,1002,42              ; the word at TAB + 2, not the one at TAB + 1
+         A2      0
+         S1      177                     ; no two elements to one word this time
+         V7      S1&V1
+         V2      V1+V1
+         V3      S1&V2
+         V7      V3>A2
+         A0      TAB+100                 ; into words that are zero
+         ,A0,V7  V1
+         S2      TAB+102,0
+         CHKS    S2,1001,43              ; element 1 at TAB + 100 + 2
+         S2      TAB+101,0
+         CHKS    S2,0,44                 ; and nothing between
+*
 * ---- a user field of 100 words: a gather and a scatter that leave it.
 * The words outside are read as zero and not written, and the operand range
 * flag interrupts right behind the instruction.
