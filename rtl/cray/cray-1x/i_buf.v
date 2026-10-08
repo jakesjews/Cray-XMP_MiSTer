@@ -15,6 +15,8 @@ module i_buf (
 	clk,
 	rst,
 	i_p_addr,
+	i_jump,
+	i_jump_addr,
 	o_nip_nxt,
 	o_word_nxt,
 	o_nip_vld,
@@ -30,6 +32,8 @@ module i_buf (
 	input wire clk;
 	input wire rst;
 	input wire [23:0] i_p_addr;
+	input wire i_jump;  // a branch is taken this clock: i_p_addr is its address in the next
+	input wire [23:0] i_jump_addr;
 	output reg [15:0] o_nip_nxt;
 	output reg [63:0] o_word_nxt;
 	output wire o_nip_vld;
@@ -89,10 +93,26 @@ module i_buf (
 	//this by delaying the 'buffer address' lines by  2 cycles, and then
 	//ANDing (i_buf_addr==cur_buf_addr) with the o_nip_vld signal to get the
 	//expected behavior
-	always @(posedge clk) begin
-		buf_delay <= i_p_addr[23:7];
-		cur_buf   <= buf_delay;
-	end
+	//
+	//That is the X-MP's 2-CP delay when a program runs on from one buffer into
+	//another.  A branch that is taken costs two clocks as well, but the same two
+	//whichever buffer its address is in (CSM-0111000 section 5: 5 CPs with the
+	//branch address in a buffer): the buffers are asked for it at once, and answer
+	//two clocks later.
+	reg [1:0] jump_wait;
+	always @(posedge clk)
+		if (i_jump) begin
+			buf_delay <= i_jump_addr[23:7];
+			cur_buf   <= i_jump_addr[23:7];
+		end else begin
+			buf_delay <= i_p_addr[23:7];
+			cur_buf   <= buf_delay;
+		end
+
+	always @(posedge clk)
+		if (rst) jump_wait <= 2'd0;
+		else if (i_jump) jump_wait <= 2'd2;
+		else if (jump_wait != 2'd0) jump_wait <= jump_wait - 2'd1;
 
 	wire same_block = (cur_buf == i_p_addr[23:7]);
 
@@ -106,7 +126,7 @@ module i_buf (
 	assign o_mem_burst = 1'b1;
 
 	//tell the main block if the next instruction parcel is valid or not
-	assign o_nip_vld = (buf0_match || buf1_match || buf2_match || buf3_match) && same_block;
+	assign o_nip_vld = (buf0_match || buf1_match || buf2_match || buf3_match) && same_block && (jump_wait == 2'd0);
 
 	//Let's check if the incoming address matches any beginning addresses
 	assign buf0_match = buf_vld[{2'd0, i_p_addr[6]}] && (cur_buf == beg_addr0);

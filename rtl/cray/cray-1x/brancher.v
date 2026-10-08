@@ -28,6 +28,7 @@ module brancher (
 	i_s0_nzero,
 	i_s0_busy,
 	i_bjk,
+	i_b_written,
 	o_branch_type,
 	o_branch_issue,
 	o_take_branch,
@@ -58,6 +59,7 @@ module brancher (
 	input wire i_s0_nzero;
 	input wire i_s0_busy;
 	input wire [23:0] i_bjk;
+	input wire i_b_written;  //a 025 issued in the clock before
 	output wire o_branch_type;
 	output wire o_branch_issue;
 	output wire o_rtn_jump;
@@ -74,7 +76,23 @@ module brancher (
 	//detect if it's a branch instruction
 	assign o_branch_type = i_type;
 
-	assign o_branch_issue = o_branch_type && delay && i_cip_vld && (i_005 || (i_lip_vld && ((i_on_a0 && !i_a0_busy) || (i_on_s0 && !i_s0_busy) || i_jump)));
+	//A branch on A0 or S0 holds issue while the register is busy or was "in any one
+	//of the previous 3 CPs" (CSM-0111000 pages 5-23 and 5-25).  Busy there is from
+	//the clock the instruction that sets the register issues; here it is the
+	//clocks its result is on its way, one later, so the two clocks before count.
+	reg [1:0] a0_was, s0_was;
+	always @(posedge clk) begin
+		a0_was <= {a0_was[0], i_a0_busy};
+		s0_was <= {s0_was[0], i_s0_busy};
+	end
+	wire a0_quiet = !i_a0_busy && !(|a0_was);
+	wire s0_quiet = !i_s0_busy && !(|s0_was);
+
+	//A branch issues as soon as both its parcels are here and its register is quiet,
+	//taken or not.  One that is not taken then costs what any two-parcel instruction
+	//does; one that is taken waits two more clocks for the buffers (i_buf).  005 has
+	//its own wait, below.
+	assign o_branch_issue = o_branch_type && i_cip_vld && (i_005 ? delay : (i_lip_vld && ((i_on_a0 && a0_quiet) || (i_on_s0 && s0_quiet) || i_jump)));
 
 	assign o_take_branch = o_branch_issue && branch_condition;
 
@@ -85,14 +103,16 @@ module brancher (
 	assign ijkm = {i_cip[7:0], i_lip};  //the low 24 bits of the 25-bit ijkm field are the address that we branch to
 
 
-	//A branch issues in its third clock as the current instruction.  The wait gives a
-	//(Bjk) read time to come out of the B register file and matches the original
-	//pacing.  It is counted on the instruction itself: CIP only changes when an
-	//instruction issues, and a parcel that is not a valid instruction does not count.
+	//005 issues in its third clock as the current instruction.  The wait gives (Bjk)
+	//time to come out of the B register file, and with it the instruction takes the
+	//X-MP's seven clocks to the others' five.  It is counted on the instruction
+	//itself: CIP only changes when an instruction issues, and a parcel that is not a
+	//valid instruction does not count.  Nor does the clock after a 025 has issued,
+	//which is the X-MP's "instruction 025 issued in the previous CP".
 	reg [1:0] held;
 	always @(posedge clk)
 		if (!i_cip_vld || i_issue_vld) held <= 2'd0;
-		else if (held != 2'd3) held <= held + 2'd1;
+		else if ((held != 2'd3) && !i_b_written) held <= held + 2'd1;
 
 	assign delay = (held >= 2'd2);
 

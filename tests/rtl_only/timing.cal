@@ -1,0 +1,1670 @@
+* timing: clock periods of instructions against the X-MP manual.
+* Written by gen_timing.py; see there.  39 cases; a wrong one fails check 2
+* and leaves its number in word 6400 and its clock periods in word 6401.
+* NOSTEP: issue held to one instruction at a time changes every time measured here.
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+         A1      1
+         VL      A1
+         A2      0
+         A3      3
+         J       C0
+* 0 clock periods: nothing
+         ORG     400
+C0       A4      L0
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+L0       S7      RT
+         S7      S7-S6
+         6000,0  S7
+         J       C1
+* 1 clock periods: a one-parcel instruction
+         ORG     440
+C1       A4      L1
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         PASS
+L1       S7      RT
+         S7      S7-S6
+         6001,0  S7
+         J       C2
+* 2 clock periods: a two-parcel instruction (020)
+         ORG     500
+C2       A4      L2
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A1      12345
+L2       S7      RT
+         S7      S7-S6
+         6002,0  S7
+         J       C3
+* 2 clock periods: the 24-bit constant (01h)
+         ORG     540
+C3       A4      L3
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A1      40000000
+L3       S7      RT
+         S7      S7-S6
+         6003,0  S7
+         J       C4
+* 5 clock periods: 006 J
+         ORG     600
+C4       A4      L4
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         J       L4
+L4       S7      RT
+         S7      S7-S6
+         6004,0  S7
+         J       C5
+* 5 clock periods: 007 R
+         ORG     640
+C5       A4      L5
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         R       L5
+L5       S7      RT
+         S7      S7-S6
+         6005,0  S7
+         J       C6
+* 7 clock periods: 005 J Bjk
+         ORG     700
+C6       A4      L6
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         J       B02
+L6       S7      RT
+         S7      S7-S6
+         6006,0  S7
+         J       C7
+* 5 clock periods: 010 taken
+         ORG     740
+C7       A4      L7
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         JAZ     L7
+L7       S7      RT
+         S7      S7-S6
+         6007,0  S7
+         J       C8
+* 2 clock periods: 011 not taken
+         ORG     1000
+C8       A4      L8
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         JAN     L8
+L8       S7      RT
+         S7      S7-S6
+         6010,0  S7
+         J       C9
+* 5 clock periods: 014 taken
+         ORG     1040
+C9       A4      L9
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         JSZ     L9
+L9       S7      RT
+         S7      S7-S6
+         6011,0  S7
+         J       C10
+* 2 clock periods: 015 not taken
+         ORG     1100
+C10      A4      L10
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         JSN     L10
+L10      S7      RT
+         S7      S7-S6
+         6012,0  S7
+         J       C11
+* 9 clock periods: 022 to A0, then 010 taken
+         ORG     1140
+C11      A4      L11
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A0      0
+         JAZ     L11
+L11      S7      RT
+         S7      S7-S6
+         6013,0  S7
+         J       C12
+* 9 clock periods: 022 to A0, 1 CP, 010 taken
+         ORG     1200
+C12      A4      L12
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A0      0
+         PASS
+         JAZ     L12
+L12      S7      RT
+         S7      S7-S6
+         6014,0  S7
+         J       C13
+* 9 clock periods: 022 to A0, 2 CPs, 010 taken
+         ORG     1240
+C13      A4      L13
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A0      0
+         PASS
+         PASS
+         JAZ     L13
+L13      S7      RT
+         S7      S7-S6
+         6015,0  S7
+         J       C14
+* 9 clock periods: 022 to A0, 3 CPs, 010 taken
+         ORG     1300
+C14      A4      L14
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A0      0
+         PASS
+         PASS
+         PASS
+         JAZ     L14
+L14      S7      RT
+         S7      S7-S6
+         6016,0  S7
+         J       C15
+* 10 clock periods: 022 to A0, 4 CPs, 010 taken
+         ORG     1340
+C15      A4      L15
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         JAZ     L15
+L15      S7      RT
+         S7      S7-S6
+         6017,0  S7
+         J       C16
+* 6 clock periods: 022 to A0, then 011 not taken
+         ORG     1400
+C16      A4      L16
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A0      0
+         JAN     L16
+L16      S7      RT
+         S7      S7-S6
+         6020,0  S7
+         J       C17
+* 6 clock periods: 022 to A0, 3 CPs, 011 not taken
+         ORG     1440
+C17      A4      L17
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A0      0
+         PASS
+         PASS
+         PASS
+         JAN     L17
+L17      S7      RT
+         S7      S7-S6
+         6021,0  S7
+         J       C18
+* 10 clock periods: 030 to A0, then 011 taken
+         ORG     1500
+C18      A4      L18
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A0      A3+A3
+         JAN     L18
+L18      S7      RT
+         S7      S7-S6
+         6022,0  S7
+         J       C19
+* 10 clock periods: 030 to A0, 4 CPs, 011 taken
+         ORG     1540
+C19      A4      L19
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A0      A3+A3
+         PASS
+         PASS
+         PASS
+         PASS
+         JAN     L19
+L19      S7      RT
+         S7      S7-S6
+         6023,0  S7
+         J       C20
+* 9 clock periods: 044 to S0, then 014 taken
+         ORG     1600
+C20      A4      L20
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         S0      S4&S5
+         JSZ     L20
+L20      S7      RT
+         S7      S7-S6
+         6024,0  S7
+         J       C21
+* 9 clock periods: 044 to S0, 3 CPs, 014 taken
+         ORG     1640
+C21      A4      L21
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         S0      S4&S5
+         PASS
+         PASS
+         PASS
+         JSZ     L21
+L21      S7      RT
+         S7      S7-S6
+         6025,0  S7
+         J       C22
+* 11 clock periods: 060 to S0, then 014 taken
+         ORG     1700
+C22      A4      L22
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         S0      S4+S5
+         JSZ     L22
+L22      S7      RT
+         S7      S7-S6
+         6026,0  S7
+         J       C23
+* 11 clock periods: 060 to S0, 5 CPs, 014 taken
+         ORG     1740
+C23      A4      L23
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         S0      S4+S5
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         JSZ     L23
+L23      S7      RT
+         S7      S7-S6
+         6027,0  S7
+         J       C24
+* 9 clock periods: 025, then 005
+         ORG     2000
+C24      A4      L24
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         B02     A4
+         J       B02
+L24      S7      RT
+         S7      S7-S6
+         6030,0  S7
+         J       C25
+* 6 clock periods: 141 and its element read back
+         ORG     2040
+C25      A4      L25
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         V2      V1&V3
+         S1      V2,A2
+L25      S7      RT
+         S7      S7-S6
+         6031,0  S7
+         J       C26
+* 7 clock periods: 155 and its element read back
+         ORG     2100
+C26      A4      L26
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         V2      V1+V3
+         S1      V2,A2
+L26      S7      RT
+         S7      S7-S6
+         6032,0  S7
+         J       C27
+* 7 clock periods: 150 and its element read back
+         ORG     2140
+C27      A4      L27
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         V2      V1<A1
+         S1      V2,A2
+L27      S7      RT
+         S7      S7-S6
+         6033,0  S7
+         J       C28
+* 7 clock periods: 151 and its element read back
+         ORG     2200
+C28      A4      L28
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         V2      V1>A1
+         S1      V2,A2
+L28      S7      RT
+         S7      S7-S6
+         6034,0  S7
+         J       C29
+* 8 clock periods: 152 and its element read back
+         ORG     2240
+C29      A4      L29
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         V2      V1,V1<A1
+         S1      V2,A2
+L29      S7      RT
+         S7      S7-S6
+         6035,0  S7
+         J       C30
+* 7 clock periods: 153 and its element read back
+         ORG     2300
+C30      A4      L30
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         V2      V1,V1>A1
+         S1      V2,A2
+L30      S7      RT
+         S7      S7-S6
+         6036,0  S7
+         J       P0
+* 6 clock periods: four one-parcel instructions, then on into another buffer
+         ORG     2440
+P0       J       YP0
+XM0      A7      D'400
+W0       A7      A7-1
+         A0      A7
+         JAN     W0
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         PASS
+         PASS
+         PASS
+         PASS
+         ORG     2500
+Y0       S7      RT
+         S7      S7-S6
+         6037,0  S7
+         J       P1
+YP0      J       XM0
+* 4 clock periods: a two-parcel instruction across two buffers
+         ORG     2540
+P1       J       YP1
+XM1      A7      D'400
+W1       A7      A7-1
+         A0      A7
+         JAN     W1
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         VWD     D'16/O'020100
+         ORG     2600
+         VWD     D'16/O'012345
+Y1       S7      RT
+         S7      S7-S6
+         6040,0  S7
+         J       P2
+YP1      J       XM1
+* 5 clock periods: 006 to another buffer
+         ORG     2640
+P2       J       YP2
+XM2      A7      D'400
+W2       A7      A7-1
+         A0      A7
+         JAN     W2
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         J       Y2
+         ORG     2700
+Y2       S7      RT
+         S7      S7-S6
+         6041,0  S7
+         J       P3
+YP2      J       XM2
+* 5 clock periods: 010 taken to another buffer
+         ORG     2740
+P3       J       YP3
+XM3      A7      D'400
+W3       A7      A7-1
+         A0      A7
+         JAN     W3
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         JAZ     Y3
+         ORG     3000
+Y3       S7      RT
+         S7      S7-S6
+         6042,0  S7
+         J       P4
+YP3      J       XM3
+* 4 clock periods: 011 not taken, next instruction in another buffer
+         ORG     3040
+P4       J       YP4
+XM4      A7      D'400
+W4       A7      A7-1
+         A0      A7
+         JAN     W4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         JAN     Y4
+         ORG     3100
+Y4       S7      RT
+         S7      S7-S6
+         6043,0  S7
+         J       P5
+YP4      J       XM4
+* 7 clock periods: 006 across two buffers
+         ORG     3140
+P5       J       YP5
+XM5      A7      D'400
+W5       A7      A7-1
+         A0      A7
+         JAN     W5
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         VWD     D'16/O'006000
+         ORG     3200
+         VWD     D'16/O'015001
+Y5       S7      RT
+         S7      S7-S6
+         6044,0  S7
+         J       P6
+YP5      J       XM5
+* 4 clock periods: 011 across two buffers, not taken
+         ORG     3240
+P6       J       YP6
+XM6      A7      D'400
+W6       A7      A7-1
+         A0      A7
+         JAN     W6
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         VWD     D'16/O'011000
+         ORG     3300
+         VWD     D'16/O'015401
+Y6       S7      RT
+         S7      S7-S6
+         6045,0  S7
+         J       P7
+YP6      J       XM6
+* 7 clock periods: 010 across two buffers, taken
+         ORG     3340
+P7       J       YP7
+XM7      A7      D'400
+W7       A7      A7-1
+         A0      A7
+         JAN     W7
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         VWD     D'16/O'010000
+         ORG     3400
+         VWD     D'16/O'016001
+Y7       S7      RT
+         S7      S7-S6
+         6046,0  S7
+         J       FIN
+YP7      J       XM7
+         ORG     3500
+FIN      A1      0
+         A2      D'39
+FL       S1      6000,A1
+         S2      KEXP,A1
+         S0      S1\S2
+         JSN     FBAD
+         A1      A1+1
+         A0      A2-A1
+         JAN     FL
+         TPASS
+         J       T$END
+FBAD     6400,0  A1
+         S2      1
+         S1      S1-S2
+         6401,0  S1
+         TFAIL   2
+         TEND
+KEXP     CON     D'1
+         CON     D'2
+         CON     D'3
+         CON     D'3
+         CON     D'6
+         CON     D'6
+         CON     D'8
+         CON     D'6
+         CON     D'3
+         CON     D'6
+         CON     D'3
+         CON     D'10
+         CON     D'10
+         CON     D'10
+         CON     D'10
+         CON     D'11
+         CON     D'7
+         CON     D'7
+         CON     D'11
+         CON     D'11
+         CON     D'10
+         CON     D'10
+         CON     D'12
+         CON     D'12
+         CON     D'10
+         CON     D'7
+         CON     D'8
+         CON     D'8
+         CON     D'8
+         CON     D'9
+         CON     D'8
+         CON     D'7
+         CON     D'5
+         CON     D'6
+         CON     D'6
+         CON     D'5
+         CON     D'8
+         CON     D'5
+         CON     D'8
+         END

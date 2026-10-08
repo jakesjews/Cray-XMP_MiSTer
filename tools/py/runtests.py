@@ -72,9 +72,13 @@ def rtl_only():
     for cal in sorted(glob.glob(os.path.join(ROOT, 'tests/rtl_only/*.cal'))):
         img = os.path.join(ROOT, 'build', os.path.basename(cal)[:-4] + '.img')
         subprocess.run([asm, 'asm', cal, '-I', 'tests/rt', '-o', img], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
-        m = re.search(r'^\* SIM:(.*)$', open(cal).read(), re.M)      # more simulator arguments for this test
+        text = open(cal).read()
+        m = re.search(r'^\* SIM:(.*)$', text, re.M)                  # more simulator arguments for this test
         extra = m.group(1).split() if m else []
+        nostep = re.search(r'^\* NOSTEP', text, re.M) is not None    # a test of times runs free only
         for mode in (['--mem', '0'], ['--mem', 'rand:1-9'], ['--mem', 'slow'], ['--mem', 'ddr3', '--step']):
+            if nostep and '--step' in mode:
+                mode = ['--mem', 'ddr3']
             total += 1
             r = subprocess.run([cpu, '--image', img, '--cycles', '2000000', '--quiet'] + mode + extra, cwd=ROOT,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -16,6 +16,8 @@ module func_top (
 	i_word_nxt,
 	i_nip_vld,
 	o_p_addr,
+	o_jump,
+	o_jump_addr,
 	o_clear_ibufs,
 	o_mem_ce,
 	o_mem_burst,
@@ -65,6 +67,8 @@ module func_top (
 	input wire [63:0] i_word_nxt;
 	input wire i_nip_vld;
 	output wire [23:0] o_p_addr;
+	output wire o_jump;  // a branch is taken this clock
+	output wire [23:0] o_jump_addr;  // to this address, as o_p_addr gives one
 	output wire o_clear_ibufs;
 	//memory interface
 	output wire o_mem_ce;
@@ -450,12 +454,12 @@ module func_top (
 	endfunction
 
 	wire [23:0] p_behind = p_addr + 24'b1;
-	// A branch issues in its third clock as the current instruction at the earliest,
-	// so its target, which for 005 comes out of the B registers, is taken from a
-	// register a clock old.
+	// 005 issues in its third clock as the current instruction, so its target, which
+	// comes out of the B registers, is taken from a register a clock old.  The other
+	// branches can issue in their first: their target is in CIP and LIP.
 	reg  [23:0] branch_dest_r;
 	always @(posedge clk) branch_dest_r <= branch_dest;
-	wire [23:0] p_target = branch_dest_r;
+	wire [23:0] p_target = pd[PD_BR_005] ? branch_dest_r : {cip[7:0], lip};
 	reg         p_outside;
 	always @(posedge clk)
 		p_outside <= (!x_swap && issue_vld && (nip_in_vld || take_branch)) ? (take_branch ? outside(
@@ -504,7 +508,10 @@ module func_top (
 	assign s_ex_addr = x_cnt[2:0];
 
 	//The instruction buffers always follow the program counter
-	assign o_p_addr = p_addr + {instr_base_addr[21:0], 2'b0};
+	assign o_p_addr    = p_addr + {instr_base_addr[21:0], 2'b0};
+	//and are told of a branch in the clock it is taken, with where it goes
+	assign o_jump      = !x_swap && issue_vld && take_branch;
+	assign o_jump_addr = p_target + {instr_base_addr[21:0], 2'b0};
 
 	// Outgoing package word (CSM-0111000 figure 3-3):
 	//   word 0  P [47:24]                                             A0 [23:0]
@@ -1757,6 +1764,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_s0_nzero    (s0_nzero),
 		.i_s0_busy     (s0_busy),
 		.i_bjk         (b_jk_data),
+		.i_b_written   (bw_en),
 		.o_branch_type (branch_type),
 		.o_branch_issue(branch_issue),
 		.o_take_branch (take_branch),

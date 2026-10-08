@@ -177,19 +177,23 @@ channels of the CPU and channel parity.
 - **Timing.** One clock period is one cycle of the CPU's own clock: 105 MHz,
   9.52 ns against the X-MP's 9.5. An instruction that needs the result of
   another in an A or S register issues in the clock period that result
-  arrives, as on the real machine, and the scalar functional units take the
-  clock periods of HR-0032 (the address multiply and 076 four, 072 one).
-  What is not the real machine's: memory references take longer and vary;
-  the vector shifts 150, 151 and 153 take four clock periods where the X-MP
-  has three; a branch on A0 or S0 issues one clock period after its register
-  is free, where the X-MP waits three; and a branch and a change of
-  instruction buffer take other numbers of clock periods than the X-MP's.
-  Programs get the same results but not in the same number of clock periods.
-- **Chaining is looser than on the real machine.** An operation may start on
-  a register that a functional unit is still filling as soon as the first
-  element is in, and at any time after that, not only in the one chain slot
-  clock. A register being filled by a vector load is never chained, because
-  memory does not deliver at a steady rate. Results are the same.
+  arrives, as on the real machine, and the scalar functional units and the
+  vector shift unit take the clock periods of the manual. So do the branches
+  while their address is in an instruction buffer: 5 clock periods taken, 2
+  not taken, 7 for 005, 2 more across two buffers, and a branch on A0 or S0
+  waits until its register has not been busy for three clock periods
+  (`tests/rtl_only/timing.cal` measures all of these). What is not the real
+  machine's: memory references take longer and vary, and with them everything
+  that waits for memory, such as a branch to an address that is in no buffer.
+  Programs get the same results but not always in the same number of clock
+  periods.
+- **Chaining.** The X-MP chains at any point of a result's stream (CSM-0111000
+  page 4-12), and so does this core: an operation may take as its operand a
+  register that a functional unit is still filling. Two things differ. The
+  operation that chains issues when the first element is in, where the X-MP
+  lets it issue before that and wait. And a register being filled by a vector
+  load is never chained, because memory does not deliver at a steady rate.
+  Results are the same.
 - **The multiply and the reciprocal match Cray's own simulation of them.**
   Cray's floating-point diagnostic contains a simulation of each unit (the
   listing found is the 1997 edition for the J90; the code goes back to 1980).

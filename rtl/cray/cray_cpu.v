@@ -55,6 +55,8 @@ module cray_cpu (
 	wire [63:0] mem_read_data;
 
 	wire [23:0] p_addr;
+	wire        jump;
+	wire [23:0] jump_addr;
 	wire [15:0] nip_nxt;
 	wire [63:0] word_nxt;
 	wire        nip_vld;
@@ -130,6 +132,8 @@ module cray_cpu (
 		.clk        (clk),
 		.rst        (rst || clear_ibufs),
 		.i_p_addr   (p_addr),
+		.i_jump     (jump),
+		.i_jump_addr(jump_addr),
 		.o_nip_nxt  (nip_nxt),
 		.o_word_nxt (word_nxt),
 		.o_nip_vld  (nip_vld),
@@ -155,6 +159,8 @@ module cray_cpu (
 		.i_nip_vld      (nip_vld),
 		.o_clear_ibufs  (clear_ibufs),
 		.o_p_addr       (p_addr),
+		.o_jump         (jump),
+		.o_jump_addr    (jump_addr),
 		// memory interface
 		.o_mem_addr     (fu_mem_addr),
 		.i_data_from_mem(mem_read_data),

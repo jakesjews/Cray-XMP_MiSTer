@@ -221,7 +221,10 @@ time, and a second random seed. All five must agree with the model.
   register and the 24-bit constant, `imm.cal` for interrupt monitor mode.
 - `tests/rtl_only/` holds programs that check themselves, for what the model
   cannot predict: the real-time clock, the programmable clock and its
-  interrupt, and the console interrupt. They run on the RTL alone. A line
+  interrupt, the console interrupt, and how many clock periods instructions
+  take (`timing.cal`, written by `gen_timing.py`). They run on the RTL
+  alone. A line `* NOSTEP` keeps a program out of the run that holds issue
+  to one instruction at a time. A line
   `* SIM: arguments` in such a program gives the simulator more arguments;
   `--ctrl-c 30000,400000` makes the console ask for its interrupt in those
   clocks. `tests/rt/rt_user.cal` has the macros these tests use to send off
