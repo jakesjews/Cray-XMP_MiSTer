@@ -604,8 +604,8 @@ The I/O Subsystem and the core:
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: 28,290 ALMs (68%), 528 of 553 memory blocks,
-37 DSP blocks, 4 of 6 PLLs. The Local Memories of the three I/O Processors
+Quartus 17.0 for the DE10-Nano: 30,522 ALMs (73%), 530 of 553 memory blocks,
+38 DSP blocks, 4 of 6 PLLs. The Local Memories of the three I/O Processors
 take 384 of the memory blocks, the line buffers of the framework's
-scandoubler 26. Timing is met with the CPU at 105 MHz, with 0.54 ns to spare,
-the I/O Subsystem at 80 MHz and the video side at 58.8 MHz.
+scandoubler 26. Timing is met with the CPU at 105 MHz, with 0.04 ns to spare,
+the I/O Subsystem at 80 MHz with 0.9 ns and the video side at 58.8 MHz.
