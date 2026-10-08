@@ -11,6 +11,11 @@
 // gone in.  A new operation can then follow straight behind the old one in the
 // pipeline, which is why the output side is a shift register and not a counter.
 //
+// An operation that issues with i_short takes one clock less than L: three of
+// the four shifts do.  The first operands of an operation are at the unit at
+// least three clocks after the last of the one before, so a short operation
+// behind a long one does not catch up with it.
+//
 // It also keeps what the instruction supplied once at issue and the unit needs
 // for every element: the instruction itself and the scalar operands (Sj) and
 // (Ak), which the program may change straight after issue (manual 3-5).
@@ -27,6 +32,7 @@ module v_optrack #(
 	input wire [63:0] i_sj,
 	input wire [23:0] i_ak,
 	input wire        i_wr_v,   // the instruction in CIP sends results to a V register (175 does not)
+	input wire        i_short,  // the unit takes L - 1 clocks for it
 
 	output wire o_busy,
 
@@ -53,6 +59,7 @@ module v_optrack #(
 	reg [6:0] len;
 	reg [2:0] dest;
 	reg       wr_v;
+	reg       short;
 
 	assign o_busy     = (state != IDLE);
 	assign o_in_valid = (state == RUN);
@@ -71,6 +78,7 @@ module v_optrack #(
 					len     <= i_len;
 					dest    <= i_cip[8:6];
 					wr_v    <= i_wr_v;
+					short   <= i_short;
 					o_instr <= i_cip;
 					o_sj    <= i_sj;
 					o_ak    <= i_ak;
@@ -88,15 +96,19 @@ module v_optrack #(
 			endcase
 	end
 
-	// the same marks, L clocks later, beside the results
+	// the same marks, L clocks later, beside the results; those of a short operation
+	// leave a stage early
 	localparam W = 1 + 1 + 6 + 3 + 1;
-	reg     [W-1:0] pipe[0:L-1];
-	integer         n;
+	reg     [W:0] pipe[0:L-1];
+	integer       n;
 	always @(posedge clk) begin
-		pipe[0] <= rst ? {W{1'b0}} : {o_in_valid, o_in_last, idx, dest, wr_v};
-		for (n = 1; n < L; n = n + 1) pipe[n] <= rst ? {W{1'b0}} : pipe[n-1];
+		pipe[0] <= rst ? {(W + 1) {1'b0}} : {short, o_in_valid, o_in_last, idx, dest, wr_v};
+		for (n = 1; n < L; n = n + 1) pipe[n] <= rst ? {(W + 1) {1'b0}} : pipe[n-1];
 	end
 
-	assign {o_out_valid, o_out_last, o_out_idx, o_out_dest, o_out_wr_v} = pipe[L-1];
+	wire [W:0] early = pipe[L-2];
+	wire [W:0] late = pipe[L-1];
+	assign {o_out_valid, o_out_last, o_out_idx, o_out_dest, o_out_wr_v} =
+		(early[W] && early[W-1]) ? early[W-1:0] : late[W] ? {W{1'b0}} : late[W-1:0];
 
 endmodule

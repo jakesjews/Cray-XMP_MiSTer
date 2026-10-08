@@ -3,8 +3,9 @@
 //******************************************
 //
 // Shifts of vector elements by (Ak) places for instructions 150 to 153.  A pure
-// pipeline with a unit time of four clocks.  All shifts are end-off with zero
-// fill (manual 4-53 to 4-56).
+// pipeline with the X-MP's unit times: four clocks for 152, three for 150, 151
+// and 153 (CSM-0111000 page 4-17).  All shifts are end-off with zero fill
+// (manual 4-53 to 4-56).
 //
 //   i_op 0  150  single left shift of each element; zero if the count is over 63
 //        1  151  single right shift
@@ -16,8 +17,9 @@
 //                with zeros
 //
 // The double shifts need a neighbouring element.  Elements arrive one per
-// clock, so the unit holds each for a clock: by then the next one is at the
-// input (for 152) and the previous one is still in hand (for 153).
+// clock.  For 153 the previous one is still in hand when an element has been
+// taken in.  For 152 the unit holds the element a clock longer, until the next
+// one is at the input: that is its fourth clock.
 
 module vector_shift (
 	input  wire        clk,
@@ -44,35 +46,36 @@ module vector_shift (
 		cnt1      <= i_cnt;
 	end
 
-	// stage 2: join it with its neighbour.  While cur holds element n the input
-	// carries element n+1, unless cur is the last one.
+	// stage 2, for 152 only: join the element with the next one.  While cur holds
+	// element n the input carries element n+1, unless cur is the last one.
+	// The operation and the count are a clock old here as well; they do not change
+	// while an operation is in the unit, so the stage behind uses these for 150,
+	// 151 and 153 too, whose element comes to it straight from stage 1.
 	reg [127:0] pair;
 	reg [  1:0] op2;
 	reg [ 23:0] cnt2;
 	always @(posedge clk) begin
 		op2  <= op1;
 		cnt2 <= cnt1;
-		case (op1)
-			2'd2:    pair <= {cur, (cur_last || !i_valid) ? 64'd0 : i_d};
-			2'd3:    pair <= {cur_first ? 64'd0 : prev, cur};
-			default: pair <= {64'd0, cur};
-		endcase
+		pair <= {cur, (cur_last || !i_valid) ? 64'd0 : i_d};
 	end
 
-	// stage 3: shift
+	// the shift: of the pair for 152, of the element in hand for the others, for
+	// 153 with the element before it on its left
 	reg  [ 63:0] shifted;
-	wire [127:0] dbl_l = pair << cnt2[6:0];
-	wire [127:0] dbl_r = pair >> cnt2[6:0];
+	wire [127:0] in = (op2 == 2'd2) ? pair : {((op2 == 2'd3) && !cur_first) ? prev : 64'd0, cur};
+	wire [127:0] dbl_l = in << cnt2[6:0];
+	wire [127:0] dbl_r = in >> cnt2[6:0];
 	always @(posedge clk) begin
 		case (op2)
-			2'd0: shifted <= (|cnt2[23:6]) ? 64'd0 : (pair[63:0] << cnt2[5:0]);
-			2'd1: shifted <= (|cnt2[23:6]) ? 64'd0 : (pair[63:0] >> cnt2[5:0]);
+			2'd0: shifted <= (|cnt2[23:6]) ? 64'd0 : (in[63:0] << cnt2[5:0]);
+			2'd1: shifted <= (|cnt2[23:6]) ? 64'd0 : (in[63:0] >> cnt2[5:0]);
 			2'd2: shifted <= (|cnt2[23:7]) ? 64'd0 : dbl_l[127:64];
 			2'd3: shifted <= (|cnt2[23:7]) ? 64'd0 : dbl_r[63:0];
 		endcase
 	end
 
-	// stage 4
+	// the last stage
 	always @(posedge clk) o_result <= shifted;
 
 endmodule

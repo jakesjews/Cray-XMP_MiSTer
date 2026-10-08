@@ -1018,6 +1018,7 @@ localparam VLOG      = 3'b000,   //vector logical
 				.i_sj       (s_j_data),
 				.i_ak       (a_k_data),
 				.i_wr_v     (|pd[PD_V_I+:8]),
+				.i_short    ((gu == 1) && (cip[10:9] != 2'd2)),  //the shifts but 152
 				.o_busy     (tk_busy[gu]),
 				.o_instr    (tk_instr[gu]),
 				.o_sj       (tk_sj[gu]),
