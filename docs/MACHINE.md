@@ -126,6 +126,11 @@ Subsystem dead starts COS 1.17 and runs batch jobs.
   programmable clock interrupt (bit 31) and deadlock. They set only outside
   monitor mode. A clock or MCU request made in monitor mode waits and is
   taken when a user program runs.
+- **Interrupt monitor mode.** With its bit set, the error exit, program
+  range, operand range, floating-point error and deadlock flags set in
+  monitor mode too and interrupt the program; the normal exit, clock, MCU
+  and I/O flags still do not. A flag that cannot set in the mode a package
+  runs in stays as the package brought it.
 - **Floating-point range errors** as on manual page 3-21. For the add unit
   that is an incoming exponent of 60000 octal or more; a carry that takes
   in-range operands to 60000 is delivered without the error.
@@ -163,8 +168,8 @@ Subsystem dead starts COS 1.17 and runs batch jobs.
   sets the I/O interrupt flag outside monitor mode. The first pair, 10 and
   11, leads to the MIOP of the I/O Subsystem; the other three lead nowhere.
 
-Not there: the second vector logical unit, gather and scatter, the
-interrupt monitor mode, the 100 Mbyte channels of the CPU and channel parity.
+Not there: the second vector logical unit, gather and scatter, the 100 Mbyte
+channels of the CPU and channel parity.
 
 ## Differences from a real X-MP
 
@@ -203,8 +208,8 @@ interrupt monitor mode, the 100 Mbyte channels of the CPU and channel parity.
   pass. 023ijk other than 023i01 is `Ai Sj`. 026ijk with k = 2 to 6 is the
   population count. 174ijk with k = 3 to 7 is the reciprocal. Dead start clears the programmable clock's enable and
   request; on the real machine they are undefined then.
-- **A fetch outside the field in monitor mode** is not checked, since the
-  program range flag cannot set there.
+- **A fetch outside the field in monitor mode** is not checked without
+  interrupt monitor mode, since the program range flag cannot set there.
 - **A store into an instruction** that is already in an instruction buffer
   does not change what runs, as on the real machine (manual page 3-33): the
   buffer keeps the old parcels until it is filled again or an exchange voids

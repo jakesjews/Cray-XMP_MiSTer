@@ -102,7 +102,7 @@
 //!   floating point interrupt is enabled outside monitor mode.
 //! * `ErrorKind::NotDefinedByManual` stops the run for an instruction fetch
 //!   outside the field in monitor mode and for a test and set of a set
-//!   semaphore in monitor mode.
+//!   semaphore in monitor mode, both without interrupt monitor mode.
 //! * `ErrorKind::TimeDependent` stops the run when a program outside
 //!   monitor mode could be interrupted by the programmable clock.
 //!
@@ -131,7 +131,15 @@
 //!   number, the memory error fields, VNU, ESVL and EAM are stored as zero.
 //!   A package that arrives with a flag set causes another exchange at once
 //!   outside monitor mode (page 3-36); in monitor mode only the memory error
-//!   flag does.
+//!   flag does, and the flags interrupt monitor mode enables.  The other
+//!   flags of such a package stay as they came and are stored with it.
+//! * **Interrupt monitor mode** (X 3-9): the bit "enables all interrupts in
+//!   monitor mode except PC, MCU, I/O, and ICP"; the four-processor manual
+//!   HR-0097 names the normal exit with them.  So with the bit the
+//!   deadlock, floating point, operand range, program range, memory error
+//!   and error exit flags set in monitor mode as they do outside it (the
+//!   floating point and operand range flags with their own mode bits), and
+//!   the others do not.
 //! * **Floating point error flag**: sets only when the floating point mode
 //!   bit is set and monitor mode is not (page 3-21).  The status bit FPS
 //!   records an error whatever the modes are; 0021 and 0022 clear it and

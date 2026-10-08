@@ -97,11 +97,12 @@ impl Machine {
     }
 
     /// Deliver a floating point result.  A range error raises the floating
-    /// point error flag if the mode flag is set and monitor mode is not
-    /// (page 3-21).  With an undefined operand the result is undefined, and
-    /// if an interrupt could have been taken the run cannot go on.
+    /// point error flag if the mode flag is set and the flag can set in the
+    /// mode the machine is in (page 3-21).  With an undefined operand the
+    /// result is undefined, and if an interrupt could have been taken the
+    /// run cannot go on.
     pub(crate) fn fp_result(&mut self, r: Option<FpResult>) -> Result<Option<u64>, TestError> {
-        let armed = self.m & mode::FLOATING_POINT != 0 && !self.monitor_mode();
+        let armed = self.m & mode::FLOATING_POINT != 0 && self.flag_enabled(flag::FLOATING_POINT);
         // the status bit records an error whatever the modes are
         match r {
             Some(r) if r.range_error => self.fps = Some(true),
@@ -137,7 +138,7 @@ impl Machine {
         (self.cln != 0).then(|| self.cln as usize - 1)
     }
 
-    /// 000 and 004: set the flag unless in monitor mode, then exchange in
+    /// 000 and 004: set the flag if the mode lets it set, then exchange in
     /// any mode.  P already points one parcel past the exit (page 4-7).
     fn exit_instruction(&mut self, flag: u16) {
         self.interrupt(flag);
@@ -303,7 +304,7 @@ impl Machine {
                     let set = self.need(self.sm[c][n], "semaphore tested by 0034")?;
                     if !set {
                         self.sm[c][n] = Some(true);
-                    } else if monitor {
+                    } else if !self.flag_enabled(flag::DEADLOCK) {
                         // nothing can clear it on a one-processor machine
                         return Err(self.error(
                             ErrorKind::NotDefinedByManual,

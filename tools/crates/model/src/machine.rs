@@ -46,8 +46,9 @@ pub mod mode {
 /// The mode and status bits at bits 35 to 39 of word 1 of the exchange
 /// package (CSM-0111000 page 3-12), bit 39 being the least significant.
 pub mod mode1 {
-    /// Bit 39: interrupt monitor mode (IMM).  Stored and loaded; it has no
-    /// effect in the model.
+    /// Bit 39: interrupt monitor mode (IMM).  "When set, enables all
+    /// interrupts in monitor mode except PC, MCU, I/O" and the normal exit:
+    /// the flags of `flag::IN_INTERRUPT_MONITOR_MODE` set there too.
     pub const INTERRUPT_MONITOR: u8 = 0o01;
     /// Bit 37: bidirectional memory mode (BDM).  Stored and loaded, set by
     /// 0026 and cleared by 0025; it has no effect in the model.
@@ -87,6 +88,12 @@ pub mod flag {
     /// found its semaphore set.  It is not next to the other flags in the
     /// package; in `Machine::f` it is the bit above them.
     pub const DEADLOCK: u16 = 0o1000;
+    /// The flags that set in monitor mode when the interrupt monitor mode
+    /// bit is set (CSM-0111000 page 3-9 names the ones that do not: the
+    /// programmable clock, MCU and I/O interrupts; HR-0097 adds the normal
+    /// exit).
+    pub const IN_INTERRUPT_MONITOR_MODE: u16 =
+        DEADLOCK | FLOATING_POINT | OPERAND_RANGE | PROGRAM_RANGE | MEMORY_ERROR | ERROR_EXIT;
 }
 
 /// Why a run stopped with a test error (exit status 3 of `cray-xmp-run`).
@@ -846,10 +853,19 @@ impl Machine {
         }
     }
 
-    /// Set a flag in F and ask for the exchange, unless monitor mode keeps
-    /// the flag clear (HRM page 3-36).
+    /// True if the flag can set in the mode the machine is in: any flag
+    /// outside monitor mode, none in it (HRM page 3-36), but that the
+    /// interrupt monitor mode bit lets some set there too.
+    pub(crate) fn flag_enabled(&self, flag: u16) -> bool {
+        !self.monitor_mode()
+            || (self.m1 & mode1::INTERRUPT_MONITOR != 0
+                && flag & flag::IN_INTERRUPT_MONITOR_MODE != 0)
+    }
+
+    /// Set a flag in F and ask for the exchange, unless the mode keeps the
+    /// flag clear.
     pub(crate) fn interrupt(&mut self, flag: u16) {
-        if !self.monitor_mode() {
+        if self.flag_enabled(flag) {
             self.set_f(self.f | flag);
             self.want_exchange = true;
         }
@@ -1051,9 +1067,11 @@ impl Machine {
     }
 
     /// True if a flag in F asks for an exchange: any flag outside monitor
-    /// mode, the memory error flag in any mode (HRM page 3-36).
+    /// mode, the memory error flag in any mode (HRM page 3-36), and in
+    /// interrupt monitor mode the flags it enables.
     fn interrupt_pending(&self) -> bool {
-        self.f & flag::MEMORY_ERROR != 0 || (self.f != 0 && !self.monitor_mode())
+        (0..10).any(|n| self.f & (1 << n) != 0 && self.flag_enabled(1 << n))
+            || self.f & flag::MEMORY_ERROR != 0
     }
 
     // ---- fetch
@@ -1080,7 +1098,7 @@ impl Machine {
 
     /// A fetch outside the field: program range error.
     fn program_range_on_fetch(&mut self) -> Result<(), TestError> {
-        if self.monitor_mode() {
+        if !self.flag_enabled(flag::PROGRAM_RANGE) {
             // The flag cannot set and nothing stops the machine; the manual
             // does not say what it executes.
             return Err(self.error(

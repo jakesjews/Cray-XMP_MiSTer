@@ -297,6 +297,90 @@ fn a_package_that_arrives_with_a_flag_set_exchanges_at_once() {
     assert_eq!((m.a(3), m.f()), (Some(3), flag::NORMAL_EXIT));
 }
 
+/// A machine in monitor mode that exits into the package at word 400: a
+/// program at word 300 with the given bits of words 1 and 2 and the given
+/// instruction limit, which comes back to the package at 400 when it is
+/// interrupted or exits.
+fn into_package_limit(source: &str, word1: u8, word2: u8, flags: u16, ila: u32) -> Machine {
+    let mut m = monitor_cal("A1 400; XA A1; EX");
+    let mut package = [0u64; 16];
+    package[0] = (0o300u64 * 4) << 24;
+    package[1] = (word1 as u64) << 24;
+    package[2] = (ila as u64) << 29 | (word2 as u64) << 24;
+    package[3] = 0o20 << 40 | (flags as u64) << 24;
+    package[5] = (LA_MAX as u64) << 29;
+    m.load_words(0o400, &package).unwrap();
+    m.load_words(0o300, &words(&cal(source))).unwrap();
+    steps(&mut m, 3);
+    m
+}
+
+/// `into_package_limit` with the largest instruction limit.
+fn into_package(source: &str, word1: u8, word2: u8, flags: u16) -> Machine {
+    into_package_limit(source, word1, word2, flags, LA_MAX)
+}
+
+#[test]
+fn interrupt_monitor_mode() {
+    // X 3-9: the bit "enables all interrupts in monitor mode except PC, MCU,
+    // I/O, and ICP"; HR-0097 names the normal exit with them.
+    assert_eq!(
+        flag::IN_INTERRUPT_MONITOR_MODE,
+        flag::DEADLOCK
+            | flag::FLOATING_POINT
+            | flag::OPERAND_RANGE
+            | flag::PROGRAM_RANGE
+            | flag::MEMORY_ERROR
+            | flag::ERROR_EXIT
+    );
+    let imm = mode1::INTERRUPT_MONITOR;
+    let mm = mode::MONITOR;
+    // an error exit: no flag in monitor mode, the flag with the bit
+    for (word1, f) in [(0, 0), (imm, flag::ERROR_EXIT)] {
+        let mut m = into_package("ERR", word1, mm, 0);
+        steps(&mut m, 1);
+        assert_eq!(package_fields(&m, 0o400).6, f);
+    }
+    // a normal exit sets none either way
+    let mut m = into_package("EX", imm, mm, 0);
+    steps(&mut m, 1);
+    assert_eq!(package_fields(&m, 0o400).6, 0);
+    // a floating point error, with its mode bit
+    let big = pack(false, 0o57777, 0x8000_0000_0000);
+    for (word1, f) in [(0, 0), (imm, flag::FLOATING_POINT)] {
+        let mut m = into_package("S3 S1*FS2; A1 5; EX", word1, mm | mode::FLOATING_POINT, 0);
+        m.set_s(1, Some(big));
+        m.set_s(2, Some(big));
+        steps(&mut m, 1);
+        assert_eq!(m.monitor_mode() && m.p() == CODE * 4 + 4, f != 0);
+        if f != 0 {
+            assert_eq!(package_fields(&m, 0o400).6, f);
+        }
+    }
+    // a fetch outside the field (here beyond word 777) is the program range
+    // error there
+    let mut m = into_package_limit("J 4000", imm, mm, 0, 0o20);
+    steps(&mut m, 2);
+    let (p, _, _, _, _, _, f) = package_fields(&m, 0o400);
+    assert_eq!((p, f), (0o4000, flag::PROGRAM_RANGE));
+    // a flag the bit enables, in a package that arrives, exchanges at once;
+    // the others ride along
+    let mut m = into_package("A1 5; EX", imm, mm, flag::ERROR_EXIT);
+    let issued = m.instructions();
+    steps(&mut m, 1);
+    assert_eq!(m.instructions(), issued);
+    assert_eq!(package_fields(&m, 0o400).0, 0o300 * 4);
+    let riders = flag::NORMAL_EXIT | flag::IO_INTERRUPT | flag::MCU_INTERRUPT;
+    let mut m = into_package("A1 5; EX", imm, mm, riders);
+    steps(&mut m, 2);
+    assert_eq!(package_fields(&m, 0o400).6, riders);
+    assert_eq!(m.mem(0o401).unwrap() & 0xff_ffff, 5);
+    // outside monitor mode the bit changes nothing
+    let mut m = into_package("EX", imm, 0, 0);
+    steps(&mut m, 1);
+    assert_eq!(package_fields(&m, 0o400).6, flag::NORMAL_EXIT);
+}
+
 #[test]
 fn monitor_functions() {
     // Page 4-8: 0013 transmits bits 2**11 to 2**4 of (Aj) to XA; XA is

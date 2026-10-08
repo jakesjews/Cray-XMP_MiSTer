@@ -277,6 +277,7 @@ module func_top (
 	reg flag_nex;  //set by normal exit instr (004)
 
 	wire signal_interrupt;
+	wire imm_flags_on;  // the flags interrupt monitor mode enables may set
 
 	//Real Time Clock
 	reg [63:0] real_time_clock;
@@ -432,7 +433,8 @@ module func_top (
 	// (or beyond the four million words of memory) is not fetched; it travels down the
 	// parcel pipeline marked as a fault, and when it would become the current
 	// instruction the program range flag sets instead.  The flag cannot set in monitor
-	// mode, where the manual does not say what happens; there the fetch is not checked.
+	// mode (but in interrupt monitor mode), where the manual does not say what happens;
+	// there the fetch is not checked.
 	wire [22:0] fetch_limit = (|instr_limit_addr[23:22]) ? 23'h400000 : {1'b0, instr_limit_addr[21:0]};
 	// Whether P is outside is kept in a register, formed beside P itself: for the
 	// parcel behind this one and for the target of a branch, and one of them taken as
@@ -443,7 +445,7 @@ module func_top (
 		reg [24:0] word;
 		begin
 			word    = {3'b0, word_addr} + {1'b0, instr_base_addr};
-			outside = !mode_mm && (word >= {2'b0, fetch_limit});
+			outside = imm_flags_on && (word >= {2'b0, fetch_limit});
 		end
 	endfunction
 
@@ -648,63 +650,58 @@ module func_top (
 			flag_nex <= x_data[24];  //bit 39
 		end  //Now we need to take care of the conditions that actually set all of these flags
 		else if (!x_swap) begin
+			//A flag sets outside monitor mode only; in interrupt monitor mode the deadlock,
+			//floating point, operand range, program range and error exit flags set in
+			//monitor mode too.  A flag that cannot set keeps what its package gave it.
 			//Deadlock - set when all CPUs in a cluster are holding issue on a test & set instr.
 			//With one CPU that is whenever a test and set finds its semaphore set.
-			flag_dl  <= mode_mm ? 1'b0 : (flag_dl || ts_blocked);
+			if (imm_flags_on && ts_blocked) flag_dl <= 1'b1;
 			//Programmable clock interrupt - set while the clock's request is set.  The
 			//request is made when the interrupt countdown counter reaches 0 and stays
 			//until 0014j5 clears it, so one made in monitor mode is taken on leaving it.
-			flag_pci <= mode_mm ? 1'b0 : (flag_pci || pclk_req);
+			if (!mode_mm && pclk_req) flag_pci <= 1'b1;
 			//MCU interrupt - set while the maintenance control unit (here the console)
 			//holds its request
-			flag_mcu <= mode_mm ? 1'b0 : (flag_mcu || i_mcu_int);
+			if (!mode_mm && i_mcu_int) flag_mcu <= 1'b1;
 			//Floating Point Error - set when the floating point range error occurs in any of
-			//the floating-point functional units and the enable floating-point interrupt flag is set. 
-			flag_fpe <= mode_mm ? 1'b0 : (flag_fpe || (mode_ifp && fp_range_err));
-			//Operand Range Error - set when the data reference is made outside the boundaries of 
+			//the floating-point functional units and the enable floating-point interrupt flag is set.
+			if (imm_flags_on && mode_ifp && fp_range_err) flag_fpe <= 1'b1;
+			//Operand Range Error - set when the data reference is made outside the boundaries of
 			//the data base address and data limit address registers, and the Enable Operand Range
-			//Interrupt flag (the mode bit IOR) is set. 
-			flag_ore <= mode_mm ? 1'b0 : (flag_ore || (mem_range_err && mode_ior));
-			//Program Range Error - set when an instruction fetch is made outside the boundaries of 
+			//Interrupt flag (the mode bit IOR) is set.
+			if (imm_flags_on && mem_range_err && mode_ior) flag_ore <= 1'b1;
+			//Program Range Error - set when an instruction fetch is made outside the boundaries of
 			//the Instruction Base Address and Instruction Limit Address registers.
-			flag_pre <= mode_mm ? 1'b0 : (flag_pre || fetch_fault);
+			if (imm_flags_on && fetch_fault) flag_pre <= 1'b1;
 			//Memory Error - set when a correctable or uncorrectable memory error occurs and the
-			//corresponding enable memory error mode bit is set in the M register
-			flag_me  <= 1'b0;
+			//corresponding enable memory error mode bit is set in the M register.  There are
+			//no memory errors here: the flag is what a package brought.
 			//I/O Interrupt flag - set while a 6 Mbyte channel holds its interrupt request
-			flag_ioi <= mode_mm ? 1'b0 : (flag_ioi || i_ch_int);
+			if (!mode_mm && i_ch_int) flag_ioi <= 1'b1;
 			//Error Exit - set by an error exit instruction (000)
-			flag_eex <= mode_mm ? 1'b0 : (((cip[15:9] == 7'o000) && cip_vld && issue_vld) || flag_eex);
+			if (imm_flags_on && (cip[15:9] == 7'o000) && cip_vld && issue_vld) flag_eex <= 1'b1;
 			//Normal Exit - set by a normal exit instruction (004)
-			flag_nex <= mode_mm ? 1'b0 : (((cip[15:9] == 7'o004) && cip_vld && issue_vld) || flag_nex);
+			if (!mode_mm && (cip[15:9] == 7'o004) && cip_vld && issue_vld) flag_nex <= 1'b1;
 		end
 
-	//Monitor_mode (mode_mm) inhibits all interrupts except memory errors, error exit or normal exit
-	//Interrupt Monitor Mode (mode_imm) re-enables everything except PC, MCU, I/O and ICP errors
-	//Interrupt sources
-	//Deadlock: !mode_mm || mode_imm
-	//PCI: !mode_mm
-	//MCU: !mode_mm
-	//FPE: !mode_mm || mode_imm
-	//ORE: !mode_mm || mode_imm
-	//PRE: !mode_mm || mode_imm
-	//ME:  1'b1
-	//IOI: !mode_mm
-	//EEX: 1'b1
-	//NEX: 1'b1
+	//Interrupt Monitor Mode "enables all interrupts in monitor mode except PC, MCU,
+	//I/O" (CSM-0111000 page 3-9) "and normal exit" (HR-0097 page 3-9): the flags that
+	//set, and ask for the exchange, in monitor mode as well when the bit is set
+	assign imm_flags_on = !mode_mm || mode_imm;
 
-	//page 3-12 of Cray XMP-1 system programmer reference manual
-	//Non ME flags can only be set if not in monitor mode
 	//Except for the ME flag, if the program is in monitor mode
 	//and the conditions for setting an F register are present, the
-	//flag remains cleared and no exchange sequence is initiated.
+	//flag remains cleared and no exchange sequence is initiated
+	//(page 3-12 of the X-MP/1 system programmer reference manual).
 
 	assign flags[9:0] = {
 		flag_dl, flag_pci, flag_mcu, flag_fpe, flag_ore, flag_pre, flag_me, flag_ioi, flag_eex, flag_nex
 	};
 
-	//Fire an interrupt when the current instruction executes, we're not in monitor mode, and a flag has been set	
-	assign signal_interrupt = x_run && |flags[9:0] && !mode_mm;
+	//Ask for the exchange when a flag is set: any flag outside monitor mode, the ones
+	//interrupt monitor mode enables in it, and the memory error flag in any mode
+	assign signal_interrupt = x_run && (flag_me || (|flags[9:0] && !mode_mm) ||
+		(mode_imm && (flag_dl || flag_fpe || flag_ore || flag_pre || flag_eex)));
 
 	//Cluster number: from the package, or by 0014j3 in monitor mode
 	always @(posedge clk)

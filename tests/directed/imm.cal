@@ -1,0 +1,199 @@
+* imm: interrupt monitor mode (CSM-0111000 page 3-9).  With the bit set, a
+* program in monitor mode is interrupted by an error exit, an operand or
+* program range error, a floating point error and a test and set of a set
+* semaphore, as a program outside monitor mode is; a normal exit still sets
+* no flag.  Without the bit nothing of that sets a flag in monitor mode.
+* Also what a package's own flags do when it arrives: those its mode lets
+* set exchange at once, the others ride along and are stored again.
+         INCLUDE "rt_direct.cal"
+         INCLUDE "rt_user.cal"
+UPKG     =       3000
+*
+* take a word of the next program's package (U$W1 to U$W5) from %W.
+* Clobbers S1.
+         MACRO   SETW %DST,%W
+         S1      %W,0
+         %DST,0  S1
+         ENDM
+*
+         TBEGIN
+* ---- monitor mode without the bit: an error exit sets no flag
+         SETW    U$W2,KW2M
+         UGO     KPERR
+         UFLAG   S2
+         CHKS    S2,0,2
+* with the bit: the error exit flag; the normal exit still none
+         SETW    U$W1,KW1I
+         UGO     KPERR
+         UFLAG   S2
+         CHKS    S2,2,3
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,PERR+1,4             ; P one parcel past the exit
+         UGO     KPEX
+         UFLAG   S2
+         CHKS    S2,0,5
+         S2      UPKG+1,0
+         S2      S2>D'24
+         S3      <5
+         S2      S2&S3
+         CHKS    S2,1,6                  ; the bit comes back in word 1
+*
+* ---- operand range: the data base is beyond memory, so the store is
+* dropped.  Without the bit the program goes on; with it the flag sets
+* right behind the store.
+         SETW    U$W1,KZERO
+         SETW    U$W4,KW4FAR
+         UGO     KPORE
+         UFLAG   S2
+         CHKS    S2,0,7
+         A2      UPKG+2,0
+         CHKA    A2,6,10                 ; it ran to its exit
+         SETW    U$W1,KW1I
+         UGO     KPORE
+         UFLAG   S2
+         CHKS    S2,40,11
+         A2      UPKG+2,0
+         CHKA    A2,0,12                 ; the instruction behind the store did not run
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,PORE2,13
+* the operand range mode bit is still needed
+         SETW    U$W2,KW2N
+         UGO     KPORE
+         UFLAG   S2
+         CHKS    S2,0,14
+         SETW    U$W2,KW2M
+         SETW    U$W4,KZERO
+*
+* ---- floating point error
+         SETW    U$W1,KZERO
+         UGO     KPFPE
+         UFLAG   S2
+         CHKS    S2,0,15
+         SETW    U$W1,KW1I
+         UGO     KPFPE
+         UFLAG   S2
+         CHKS    S2,100,16
+         A2      UPKG+2,0
+         CHKA    A2,0,17
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,PFPE2,36
+*
+* ---- program range: a fetch beyond the instruction limit
+         SETW    U$W2,KW2ML
+         UGO     KPPRE
+         UFLAG   S2
+         CHKS    S2,20,20
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,20000,21             ; the address that could not be fetched
+         SETW    U$W2,KW2M
+*
+* ---- deadlock: a test and set of a set semaphore
+         CLN     1
+         SM5     1
+         CLN     0
+         SETW    U$W4,KW4C
+         UGO     KPDL
+         S2      UPKG+3,0
+         S2      S2>D'24
+         CHKS    S2,UPKG/20*200000+100000000,22 ; XA, and only the deadlock flag
+         S2      UPKG+1,0
+         S2      S2<D'35
+         S2      S2>D'63
+         CHKS    S2,1,23                 ; waiting for semaphore
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,PDL,24               ; P at the test and set
+         SETW    U$W4,KZERO
+*
+* ---- a package that arrives with flags.  In interrupt monitor mode the
+* error exit flag exchanges at once: the program does not run.
+         SETW    U$W3,KW3E
+         UGO     KPEX2
+         UFLAG   S2
+         CHKS    S2,2,25
+         A2      UPKG+2,0
+         CHKA    A2,0,26
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,PEX2,27              ; P as it came
+* the normal exit, clock, MCU and I/O flags do not: the program runs, and
+* its exit stores them as they came
+         SETW    U$W3,KW3N
+         UGO     KPEX2
+         UFLAG   S2
+         CHKS    S2,605,30
+         A2      UPKG+2,0
+         CHKA    A2,6,31
+* without the bit no flag of a monitor mode package does anything
+         SETW    U$W1,KZERO
+         SETW    U$W3,KW3A
+         UGO     KPEX2
+         UFLAG   S2
+         CHKS    S2,767,32
+         A2      UPKG+2,0
+         CHKA    A2,6,33
+         SETW    U$W3,KW3
+*
+* ---- outside monitor mode the bit changes nothing
+         SETW    U$W1,KW1I
+         SETW    U$W2,KW2U
+         UGO     KPEX
+         UFLAG   S2
+         CHKS    S2,1,34                 ; normal exit
+         UGO     KPERR
+         UFLAG   S2
+         CHKS    S2,2,35
+         TPASS
+         TEND    DUMPAS
+*
+KZERO    CON     0
+KW1I     CON     1*T$P2_24               ; word 1: interrupt monitor mode
+KW2M     CON     T$LAMAX*T$P2_29+25*T$P2_24 ; word 2: monitor mode, IFP and IOR
+KW2N     CON     T$LAMAX*T$P2_29+5*T$P2_24 ; the same without IOR
+KW2ML    CON     100*T$P2_29+25*T$P2_24  ; the same with the instruction limit at word 4000
+KW2U     CON     T$LAMAX*T$P2_29+24*T$P2_24 ; not in monitor mode
+KW3      CON     UPKG/20*T$P2_40
+KW3E     CON     UPKG/20*T$P2_40+2*T$P2_24 ; error exit flag
+KW3N     CON     UPKG/20*T$P2_40+605*T$P2_24 ; clock, MCU, I/O and normal exit flags
+KW3A     CON     UPKG/20*T$P2_40+767*T$P2_24 ; every flag but memory error
+KW4FAR   CON     400000*T$P2_29          ; word 4: a data base beyond memory
+KW4C     CON     1*T$P2_24               ; word 4: cluster 1
+KBIG     CON     X'5FFF800000000000      ; the largest exponent
+KPERR    CON     PERR*T$P2_24
+KPEX     CON     PEX*T$P2_24
+KPEX2    CON     PEX2*T$P2_24
+KPORE    CON     PORE*T$P2_24
+KPFPE    CON     PFPE*T$P2_24
+KPPRE    CON     PPRE*T$P2_24
+KPDL     CON     PDL*T$P2_24
+         UDATA
+*
+* the programs
+         ORG     2000
+PERR     ERR
+PEX      EX
+         ORG     2010
+PEX2     A2      6
+         EX
+         ORG     2020
+PORE     A1      5
+         100,0   A1
+PORE2    A2      6
+         EX
+         ORG     2030
+PFPE     S1      KBIG,0
+         S2      S1*FS1
+PFPE2    DFI                             ; waits for the product: the interrupt is taken here
+         A2      6
+         EX
+         ORG     2040
+PPRE     J       20000
+         ORG     2050
+PDL      SM5     1,TS
+         A2      6
+         EX
+         END
