@@ -329,7 +329,7 @@ module mem_fu (
 				RD_IDX: begin
 					if (wait_cnt != 4'd0) wait_cnt <= wait_cnt - 4'd1;
 					else if (r_own || i_vk_avail) begin
-						address <= gbase + idx_word;
+						address <= gaddr;
 						state   <= RD;
 					end
 				end
@@ -375,15 +375,17 @@ module mem_fu (
 				//counts the words not yet written or dropped.  The V register a 177
 				//stores may still be receiving a result (chaining): its element is
 				//taken when it is in.  A scatter takes the element of Vk with the
-				//word's address at the same time.
+				//word's address at the same time: the address register follows the
+				//address of the element that is taken next (gaddr) while no word is
+				//in hand or the word in hand is leaving.
 				WR: begin
 					if (wait_cnt != 4'd0) wait_cnt <= wait_cnt - 4'd1;
 					if (wr_gone) begin
 						address  <= address + stride;
 						wr_valid <= 1'b0;
 					end
+					if (r_scatter && (!wr_valid || wr_gone)) address <= gaddr;
 					if ((wait_cnt == 4'd0) && (fetch_left != 7'd0) && (!wr_valid || wr_gone) && (!r_v || i_v_avail) && (!r_scatter || i_vk_avail)) begin
-						if (r_scatter) address <= gbase + idx_word;
 						wr_word    <= src_word;
 						wr_valid   <= 1'b1;
 						reg_idx    <= reg_idx + 6'd1;
@@ -428,8 +430,9 @@ module mem_fu (
 	reg [ 3:0] r_wait;
 
 	//The register word for reg_idx, valid src_wait clocks after reg_idx is set.
-	//The source register is not changing while this unit runs.
-	wire [ 3:0] src_wait = from_b || from_t ? 4'd1 : (v_type ? V_READ_WAIT[3:0] : 4'd0);
+	//The source register is not changing while this unit runs.  A gather or a
+	//scatter waits a clock more, for the address formed from the element of Vk.
+	wire [ 3:0] src_wait = from_b || from_t ? 4'd1 : (v_type ? (V_READ_WAIT[3:0] + {3'd0, gather || scatter}) : 4'd0);
 	reg  [63:0] src_word;
 	always @*
 		if (r_from_b) src_word = {40'b0, i_b_rd_data};
@@ -461,6 +464,11 @@ module mem_fu (
 			3'd6: idx_word = i_v6_data[23:0];
 			3'd7: idx_word = i_v7_data[23:0];
 		endcase
+
+	//and the address itself, a clock later: off the way of the address register,
+	//which decides by its own value whether a word is inside the field
+	reg [23:0] gaddr;
+	always @(posedge clk) gaddr <= gbase + idx_word;
 
 	//The word being stored is held here, so the registers can move on to the next.
 	always @* o_mem_wr_data = wr_word;
