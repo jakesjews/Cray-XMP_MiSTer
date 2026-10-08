@@ -88,6 +88,17 @@ ONE_BUFFER = [
     (10, '175ij4, VL 5, then a merge', ['V2,VM V1,Z', 'V5 V3!V4&VM'], 5),
     # 076: Si ready in 4 CPs (X 5-63)
     (5, '076, then its result used', ['S1 V2,A2', 'S2 S1&S1']),
+    # 077: Vi ready in 1 CP.  It has no S result, so nothing on its way to an S register
+    # holds it but its own Sj.
+    (2, '077 behind a 072, then a PASS', ['V2,A2 S1', 'PASS']),
+    (2, '077, then a 076 of its register', ['V2,A2 S1', 'S1 V2,A2']),
+    (2, '077, then a 155 of its register', ['V2,A2 S1', 'V5 V2+V2']),
+    # An instruction holds for the register it writes and the registers it reads: not for
+    # a register whose number happens to be in a field that names none (a shift count, a
+    # constant).  064 has S1 reserved for 7 CPs, 032 has A1 for 4.  (The PASS keeps the
+    # result of the second reading out of the clock period of the shift's.)
+    (3, '064 to S1, then 054 with a count of 10, then a PASS', ['S1 S4*FS5', 'S3 S3<10', 'PASS']),
+    (2, '032 to A1, then 022 with the constant 10', ['A1 A3*A3', 'A4 10']),
     # Chaining, X 4-12.  A register that is still to receive the result of an earlier
     # instruction does not hold issue as an operand: the operation takes each element when
     # it is there, and has it at its unit 4 CPs after it arrived at the register, as it has

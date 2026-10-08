@@ -120,7 +120,7 @@ module cray_predecode (
 	generate
 		for (g = 0; g < 14; g = g + 1) begin : g_s
 			assign o_pd[PD_S_STAGE+g] = s_type && s_en && S_TAKES[g] && (s_delay == g + 1);
-			assign o_pd[PD_S_WPC+g]   = (s_delay == g);
+			assign o_pd[PD_S_WPC+g]   = s_en && (s_delay == g);
 		end
 	endgenerate
 
@@ -128,7 +128,11 @@ module cray_predecode (
 	assign o_pd[PD_S_SRC+:5]   = s_src;
 	assign o_pd[PD_S_DEST+:8]  = s_dest;
 	assign o_pd[PD_S_DNUM+:3]  = s_to_s0 ? 3'b000 : dec[8:6];
-	assign o_pd[PD_S_CMASK+:8] = di | dj | dk | s_dest;
+	//Hold issue on "Si reserved": a result still on its way to the register this
+	//instruction writes.  The registers it reads are held for in func_top, by what
+	//cray_opnd says they are; a field that is no S register here (a shift count, a
+	//constant, the V register of 076 and 077) holds nothing.
+	assign o_pd[PD_S_CMASK+:8] = s_en ? s_dest : 8'd0;
 	//077: transmit (Sj) to element (Ak) of Vi
 	assign o_pd[PD_S_077]      = (d_op == 7'b0111111);
 	assign o_pd[PD_S_VW+:8]    = (d_op == 7'b0111111) ? di : 8'd0;
@@ -155,7 +159,7 @@ module cray_predecode (
 	generate
 		for (g = 0; g < 11; g = g + 1) begin : g_a
 			assign o_pd[PD_A_STAGE+g] = a_type && a_en && A_TAKES[g] && (a_delay == g + 1);
-			assign o_pd[PD_A_WPC+g]   = (a_delay == g);
+			assign o_pd[PD_A_WPC+g]   = a_en && (a_delay == g);
 		end
 	endgenerate
 
@@ -163,7 +167,8 @@ module cray_predecode (
 	assign o_pd[PD_A_SRC+:4]   = a_src;
 	assign o_pd[PD_A_DEST+:8]  = di;
 	assign o_pd[PD_A_DNUM+:3]  = dec[8:6];
-	assign o_pd[PD_A_CMASK+:8] = di | dj | dk;
+	//as for S: "Ai reserved"
+	assign o_pd[PD_A_CMASK+:8] = a_en ? di : 8'd0;
 	assign o_pd[PD_A_025]      = (d_op == 7'o025);
 	//023, Ai Sj: the S register must have no result on its way
 	assign o_pd[PD_A_SCONF+:8] = ((d_op == 7'b0010011) && (dec[2:0] == 3'b0)) ? dj : 8'd0;
