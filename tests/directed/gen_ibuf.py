@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write ibufhop.cal: a program that hops between more 16-word blocks than
+"""Write ibufhop.cal: a program that hops between more 32-word blocks than
 there are instruction buffers.
 
     gen_ibuf.py [SEED] > ibufhop.cal
@@ -8,6 +8,9 @@ Each block counts its visit, steps a pseudo-random number and leaves by one
 of three jumps picked from its bits.  The jumps sit at the very end of the
 block or a parcel or two before it, so the fetch runs ahead into the next
 block while the jump is on its way, and the next block is one of the set.
+A block is entered at its start, in its second half or a few parcels before
+its jumps, so that either half of a buffer is the one fetched first and the
+program reaches the other half while it is still on its way.
 With 12 blocks and four buffers, buffers are refilled all the time, and a
 buffer being refilled is often asked for the block it held before.  The
 reference model has no buffers; it only has to agree at the end.
@@ -16,7 +19,8 @@ import random
 import sys
 
 BLOCKS = 12
-BASE = 0o1000            # a multiple of 20 octal words
+BASE = 0o1000            # a multiple of 40 octal words
+WORDS = 32               # a block: what an instruction buffer holds
 VISITS = 600
 
 
@@ -42,16 +46,20 @@ def main():
                 ('S2', 'A2'), ('S0', "S2<D'%d" % shift1), ('JSM', 'HB%d' % a), ('S0', "S2<D'%d" % shift2),
                 ('JSM', 'HB%d' % b), ('J', 'HB%d' % c)]
         used = sum(2 if x[0][0] == 'J' else 1 for x in body)
-        pad = 64 - tail - used
-        out.append('         ORG       %o' % (BASE + 16 * k))
+        pad = 4 * WORDS - tail - used
+        # where the block is entered: its start, its second half, or close to the body
+        entry = r.choice([0, 0, 2 * WORDS, 2 * WORDS + r.randrange(8), r.randrange(pad + 1)])
+        out.append('         ORG       %o' % (BASE + WORDS * k))
+        for _ in range(entry):
+            e('', 'A6', 'A6+1')                        # never reached
         first = True
-        for _ in range(pad):
+        for _ in range(pad - entry):
             e('HB%d' % k if first else '', 'PASS'); first = False
         for res, op in body:
             e('HB%d' % k if first else '', res, op); first = False
         for _ in range(tail):
             e('', 'A6', 'A6+1')                        # never reached
-    out.append('         ORG       %o' % (BASE + 16 * BLOCKS))
+    out.append('         ORG       %o' % (BASE + WORDS * BLOCKS))
     e('HDONE', 'A7', '0')
     e('', 'TPASS')
     e('', 'TEND', 'DUMPAS')

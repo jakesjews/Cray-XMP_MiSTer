@@ -1,14 +1,14 @@
 * ibuf: an instruction buffer that is being filled again must not answer
 * for the block it held before.
-* A block is 16 words (20 octal) and the four buffers are filled in
+* A block is 32 words (40 octal) and the four buffers are filled in
 * rotation.  The program forces these fills:
-*     200 (start), 420 (Y), 220 (M1), 240 (M2), 400 (X): X takes the buffer of 200
-*     260, the block after M2, fetched ahead as the jump at the end of M2 is
+*     200 (start), 440 (Y), 240 (M1), 300 (M2), 400 (X): X takes the buffer of 200
+*     340, the block after M2, fetched ahead as the jump at the end of M2 is
 *     reached: it takes the buffer of Y
 * The jump goes to the last word of X, and four parcels later the program
 * runs on into Y, which is no longer in a buffer but whose buffer is still
-* being filled with block 260.  Words 260-277 hold A7 A7+1 and are never
-* reached by a correct machine; words 420-423 hold sixteen A6 A6+1.
+* being filled with block 340.  Words 340-377 hold A7 A7+1 and are never
+* reached by a correct machine; words 440-443 hold sixteen A6 A6+1.
 * Results: word 6000 = A5 (4), 6001 = A6 (20 octal), 6002 = A7 (0).
          INCLUDE "rt_direct.cal"
          TBEGIN
@@ -16,9 +16,9 @@
          A6        0
          A7        0
          J         YL
-         ORG       220
-M1S      J         M2S
          ORG       240
+M1S      J         M2S
+         ORG       300
 M2S      J         X0
 M2B      PASS
          PASS
@@ -80,7 +80,136 @@ M2B      PASS
          PASS
          PASS
          PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
          J         T
+         ORG       340
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
          A7        A7+1
          A7        A7+1
          A7        A7+1
@@ -146,7 +275,7 @@ M2B      PASS
          J         BAD
          ORG       400
 X0       J         M2B
-         ORG       417
+         ORG       437
 T        A5        A5+1
          A5        A5+1
          A5        A5+1
@@ -168,7 +297,7 @@ T        A5        A5+1
          A6        A6+1
          A6        A6+1
          J         FIN
-         ORG       426
+         ORG       446
 YL       J         M1S
          ORG       500
 FIN      6000,0    A5

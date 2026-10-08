@@ -9,14 +9,78 @@
          A5        D'600
          J         HB0
          ORG       1000
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
 HB0      PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
          PASS      
          PASS      
          PASS      
@@ -69,7 +133,71 @@ HB0      PASS
          A6        A6+1
          A6        A6+1
          A6        A6+1
-         ORG       1020
+         ORG       1040
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
 HB1      PASS      
          PASS      
          PASS      
@@ -115,9 +243,6 @@ HB1      PASS
          PASS      
          PASS      
          PASS      
-         PASS      
-         PASS      
-         PASS      
          A1        A1+1
          A5        A5-1
          A0        A5
@@ -125,12 +250,15 @@ HB1      PASS
          A2        A2*A3
          A2        A2+A4
          S2        A2
+         S0        S2<D'41
+         JSM       HB3
          S0        S2<D'53
-         JSM       HB7
-         S0        S2<D'47
-         JSM       HB7
-         J         HB10
-         ORG       1040
+         JSM       HB1
+         J         HB7
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         ORG       1100
 HB2      PASS      
          PASS      
          PASS      
@@ -176,23 +304,26 @@ HB2      PASS
          PASS      
          PASS      
          PASS      
-         A1        A1+1
-         A5        A5-1
-         A0        A5
-         JAZ       HDONE
-         A2        A2*A3
-         A2        A2+A4
-         S2        A2
-         S0        S2<D'54
-         JSM       HB7
-         S0        S2<D'41
-         JSM       HB0
-         J         HB6
-         A6        A6+1
-         A6        A6+1
-         A6        A6+1
-         ORG       1060
-HB3      PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
          PASS      
          PASS      
          PASS      
@@ -252,8 +383,72 @@ HB3      PASS
          J         HB3
          A6        A6+1
          A6        A6+1
-         ORG       1100
-HB4      PASS      
+         ORG       1140
+HB3      PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
          PASS      
          PASS      
          PASS      
@@ -305,80 +500,83 @@ HB4      PASS
          A2        A2*A3
          A2        A2+A4
          S2        A2
-         S0        S2<D'58
-         JSM       HB0
-         S0        S2<D'41
-         JSM       HB0
+         S0        S2<D'53
+         JSM       HB10
+         S0        S2<D'47
+         JSM       HB8
          J         HB0
          A6        A6+1
          A6        A6+1
          A6        A6+1
-         ORG       1120
-HB5      PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         PASS      
-         A1        A1+1
-         A5        A5-1
-         A0        A5
-         JAZ       HDONE
-         A2        A2*A3
-         A2        A2+A4
-         S2        A2
-         S0        S2<D'41
-         JSM       HB10
-         S0        S2<D'57
-         JSM       HB3
-         J         HB6
+         ORG       1200
          A6        A6+1
-         ORG       1140
-HB6      PASS      
-         PASS      
-         PASS      
-         PASS      
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+HB4      PASS      
          PASS      
          PASS      
          PASS      
@@ -435,8 +633,74 @@ HB6      PASS
          JSM       HB7
          J         HB8
          A6        A6+1
-         ORG       1160
-HB7      PASS      
+         ORG       1240
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+HB5      PASS      
+         PASS      
+         PASS      
          PASS      
          PASS      
          PASS      
@@ -488,15 +752,319 @@ HB7      PASS
          A2        A2*A3
          A2        A2+A4
          S2        A2
-         S0        S2<D'50
-         JSM       HB10
-         S0        S2<D'41
-         JSM       HB3
-         J         HB7
+         S0        S2<D'58
+         JSM       HB4
+         S0        S2<D'44
+         JSM       HB0
+         J         HB6
+         A6        A6+1
+         ORG       1300
          A6        A6+1
          A6        A6+1
          A6        A6+1
-         ORG       1200
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+HB6      PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         A1        A1+1
+         A5        A5-1
+         A0        A5
+         JAZ       HDONE
+         A2        A2*A3
+         A2        A2+A4
+         S2        A2
+         S0        S2<D'54
+         JSM       HB11
+         S0        S2<D'57
+         JSM       HB11
+         J         HB8
+         A6        A6+1
+         ORG       1340
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+HB7      PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         A1        A1+1
+         A5        A5-1
+         A0        A5
+         JAZ       HDONE
+         A2        A2*A3
+         A2        A2+A4
+         S2        A2
+         S0        S2<D'59
+         JSM       HB7
+         S0        S2<D'42
+         JSM       HB8
+         J         HB6
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         ORG       1400
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
 HB8      PASS      
          PASS      
          PASS      
@@ -545,6 +1113,12 @@ HB8      PASS
          PASS      
          PASS      
          PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
          A1        A1+1
          A5        A5-1
          A0        A5
@@ -552,12 +1126,14 @@ HB8      PASS
          A2        A2*A3
          A2        A2+A4
          S2        A2
-         S0        S2<D'46
-         JSM       HB8
-         S0        S2<D'50
+         S0        S2<D'52
+         JSM       HB6
+         S0        S2<D'58
          JSM       HB10
-         J         HB1
-         ORG       1220
+         J         HB2
+         A6        A6+1
+         A6        A6+1
+         ORG       1440
 HB9      PASS      
          PASS      
          PASS      
@@ -605,6 +1181,68 @@ HB9      PASS
          PASS      
          PASS      
          PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
          A1        A1+1
          A5        A5-1
          A0        A5
@@ -612,13 +1250,36 @@ HB9      PASS
          A2        A2*A3
          A2        A2+A4
          S2        A2
-         S0        S2<D'57
-         JSM       HB11
-         S0        S2<D'54
-         JSM       HB5
-         J         HB11
+         S0        S2<D'53
+         JSM       HB1
+         S0        S2<D'52
+         JSM       HB2
+         J         HB8
          A6        A6+1
-         ORG       1240
+         A6        A6+1
+         A6        A6+1
+         ORG       1500
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
 HB10     PASS      
          PASS      
          PASS      
@@ -664,6 +1325,49 @@ HB10     PASS
          PASS      
          PASS      
          PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
+         PASS      
          A1        A1+1
          A5        A5-1
          A0        A5
@@ -671,15 +1375,79 @@ HB10     PASS
          A2        A2*A3
          A2        A2+A4
          S2        A2
-         S0        S2<D'56
+         S0        S2<D'59
          JSM       HB4
-         S0        S2<D'57
-         JSM       HB4
+         S0        S2<D'59
+         JSM       HB11
          J         HB9
          A6        A6+1
          A6        A6+1
          A6        A6+1
-         ORG       1260
+         ORG       1540
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
+         A6        A6+1
 HB11     PASS      
          PASS      
          PASS      
@@ -725,6 +1493,8 @@ HB11     PASS
          PASS      
          PASS      
          PASS      
+         PASS      
+         PASS      
          A1        A1+1
          A5        A5-1
          A0        A5
@@ -732,15 +1502,13 @@ HB11     PASS
          A2        A2*A3
          A2        A2+A4
          S2        A2
-         S0        S2<D'48
-         JSM       HB9
-         S0        S2<D'53
+         S0        S2<D'58
+         JSM       HB3
+         S0        S2<D'58
          JSM       HB0
-         J         HB7
+         J         HB3
          A6        A6+1
-         A6        A6+1
-         A6        A6+1
-         ORG       1300
+         ORG       1600
 HDONE    A7        0
          TPASS     
          TEND      DUMPAS

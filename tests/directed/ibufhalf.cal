@@ -1,0 +1,206 @@
+* ibufhalf: an instruction buffer answers for the half of its block that has
+* come in, and only for that half.  A block is 32 words and is fetched in
+* two halves, the one with the wanted parcel first; the four buffers are
+* filled in rotation.
+*   - Block 400 is fetched ahead as the jump at the end of block 340 is
+*     reached, its first half first.  The jump goes to its second half,
+*     which is still to come.  The buffer held block 200 before, whose
+*     second half (words 220-223) is A7 A7+1.
+*   - Block 440 is entered in its second half, which is fetched first, and
+*     jumps back at once into its first half.  The buffer held block 240
+*     before, which has A7 A7+1 where the first half of 440 has its code.
+* Results: word 6000 = A5 (4), 6001 = A6 (2), 6002 = A7 (0).
+         INCLUDE "rt_direct.cal"
+         TBEGIN
+         A5        0
+         A6        0
+         A7        0
+         J         BK1
+         ORG       220
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         ORG       240
+BK1      J         BK2
+         ORG       244
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         A7        A7+1
+         ORG       300
+BK2      J         BK3
+         ORG       340
+BK3      PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         J         ZT
+         ORG       420
+ZT       A5        A5+1
+         A5        A5+1
+         A5        A5+1
+         A5        A5+1
+         J         YE
+         ORG       444
+Y0       A6        A6+1
+         A6        A6+1
+         J         FIN
+         ORG       460
+YE       J         Y0
+         ORG       500
+FIN      6000,0    A5
+         6001,0    A6
+         6002,0    A7
+         CHKA      A7,0,2
+         CHKA      A6,2,3
+         CHKA      A5,4,4
+         TPASS
+         TEND
+         END

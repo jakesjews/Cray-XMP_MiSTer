@@ -213,10 +213,12 @@ time, and a second random seed. All five must agree with the model.
   user mode, and in user mode at a non-zero base address.
 - `tests/directed/` are the bring-up tests for exchange, floating point and
   vectors; `vload.cal`, vector loads at every alignment, step and length
-  (written by `gen_vload.py`); and the tests of what the X-MP added:
-  `xpkg.cal` for the exchange package and the two fields, `shared.cal` for
-  the shared registers, semaphores and status register, `channels.cal` for
-  the 6 Mbyte channels.
+  (written by `gen_vload.py`); the instruction buffer tests `ibuf.cal`,
+  `ibufhalf.cal` and `ibufhop.cal` (written by `gen_ibuf.py`); and the tests
+  of what the X-MP added: `xpkg.cal` for the exchange package and the two
+  fields, `shared.cal` for the shared registers, semaphores and status
+  register, `channels.cal` for the 6 Mbyte channels, `vlah.cal` for the VL
+  register and the 24-bit constant, `imm.cal` for interrupt monitor mode.
 - `tests/rtl_only/` holds programs that check themselves, for what the model
   cannot predict: the real-time clock, the programmable clock and its
   interrupt, and the console interrupt. They run on the RTL alone. A line

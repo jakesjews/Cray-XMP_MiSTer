@@ -3,9 +3,9 @@
 // N requesters share one request/acknowledge memory port.  A requester raises
 // req with we, burst, addr and wdata and holds them until its last ack; ack is a
 // one-clock pulse per word with rdata valid in the same clock.  A burst is a
-// 16-word read (instruction buffer fill).  The grant is held for the whole
-// request.  Priority rotates so the instruction buffers cannot starve data
-// references or the reverse.
+// 16-word read (half an instruction buffer, or a line of a vector load).  The
+// grant is held for the whole request.  Priority rotates so the instruction
+// buffers cannot starve data references or the reverse.
 //
 // The requester-side timing is the one the original mem_arb gave: ack arrives
 // the clock after the memory answers, and the next request is looked at the

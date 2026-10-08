@@ -57,6 +57,7 @@ Repairs to the upstream files:
   that are not valid.
 - `s_res_lut`, `v_scheduler`: delivery time of 076, and 174 as the reciprocal.
 - `i_buf`: 16-word burst fills, and no fill starts during an exchange.
+- `i_buf`: buffers of 32 words, as on the X-MP, fetched in two halves.
 - `func_top`: the exchange sequence and saved P, holding issue for operands
   another unit is still producing, second parcels no longer decoded as
   instructions, exact decoding of 0020 to 0022, the T register write of 075,
@@ -213,8 +214,8 @@ channels of the CPU and channel parity.
 - **A store into an instruction** that is already in an instruction buffer
   does not change what runs, as on the real machine (manual page 3-33): the
   buffer keeps the old parcels until it is filled again or an exchange voids
-  it. The four buffers hold 16 words each, and which blocks are in them at a
-  given moment follows this core's fetch sequence, not the real machine's.
+  it. Which blocks are in the four buffers at a given moment follows this
+  core's fetch sequence, not the real machine's.
   The reference model has no buffers and runs the new parcel at once, so the
   two can differ on a program that modifies code it is about to run.
 
@@ -449,7 +450,9 @@ manual (SM-0043, changing systems) has a field engineer clear memory for
 that case. A reset from the menu leaves the memories as they are, as a
 restart of the real machine does.
 
-In the CPU, instruction buffers fill with 16-word bursts. A vector load
+An instruction buffer holds 32 words, as on the X-MP, and fills with two
+16-word bursts: first the half with the parcel that is wanted, which runs as
+soon as it is in, then the other half. A vector load
 stepping by 1 to 7 words also reads whole lines in bursts when three or more
 of its elements lie in a line, and picks its elements out as they arrive. A
 block or vector store reads the next word from its register while the one
