@@ -165,7 +165,7 @@ def cmd_keys(args):
     for code in range(1, 120):
         fcntl.ioctl(fd, UI_SET_KEYBIT, code)
     # struct uinput_user_dev: name, bus/vendor/product/version, ff effects, 4 x 64 axis limits
-    os.write(fd, struct.pack('80sHHHHi', b'Cray1 test keyboard', 3, 0x1209, 0xC1A1, 1, 0) + bytes(4 * 64 * 4))
+    os.write(fd, struct.pack('80sHHHHi', b'Cray-XMP test keyboard', 3, 0x1209, 0xC1A1, 1, 0) + bytes(4 * 64 * 4))
     fcntl.ioctl(fd, UI_DEV_CREATE)
     time.sleep(5.0)                           # Main_MiSTer needs a while to open the new device
 

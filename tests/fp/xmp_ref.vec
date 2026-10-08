@@ -13,7 +13,8 @@
 # Not included, because cray-sim itself does not reproduce them:
 #   mul 4005CAE20FC3F04D 3FFECB56F3138000 -> 4003A1262B15B48F   (live in main(); cray-sim and
 #       this crate give ...B48E for 064; ...B48F is the X-MP 066 rounded product and also what
-#       the reconstructed CRAY-1 staircase pyramid gives for 064)
+#       a reconstruction of the first CRAY-1's staircase pyramid, once in this repository, gave
+#       for 064)
 #   add 000000000DEA1736 00000000399F9541 -> 000000004789AC77   (commented out; an integer sum)
 #   mul 301C0BDB56AE0732 2213260D6B89030A -> 4001000000000000   (commented out)
 
