@@ -34,7 +34,7 @@ module func_top (
 	i_mcu_int,
 	i_ibuf_busy,
 	o_ibuf_hold,
-	//6 Mbyte channels (X-MP)
+	//6 Mbyte channels
 	o_ch_set_ca,
 	o_ch_set_cl,
 	o_ch_clear,
@@ -49,13 +49,12 @@ module func_top (
 
 
 
-	// XMP = 0: the CRAY-1 of 1982.  XMP = 1: the same with what a one-processor X-MP
-	// has that the operating system COS needs (CSM-0111000): the X-MP exchange
-	// package with a 24-bit P and separate instruction and data fields, four million
-	// words, the cluster number and the shared registers and semaphores, the status
-	// register, the operand range and bidirectional memory mode bits, and vector
-	// operations without recursion.  docs/CPU.md lists what each setting does.
-	parameter XMP = 0;
+	// The functional units of a one-processor CRAY X-MP with what the operating
+	// system COS needs of it (CSM-0111000): the exchange package with a 24-bit P and
+	// separate instruction and data fields, four million words, the cluster number
+	// and the shared registers and semaphores, the status register, the operand
+	// range and bidirectional memory mode bits.  docs/MACHINE.md lists what it does
+	// and does not have.
 
 	`include "cray_types.vh"
 	`include "cray_pd.vh"
@@ -78,7 +77,7 @@ module func_top (
 	output wire o_mem_wr_en;
 	input wire i_mem_ack;
 
-	//I/O interface: orders to the 6 Mbyte channels of the X-MP (module xmp_channels),
+	//I/O interface: orders to the 6 Mbyte channels (module xmp_channels),
 	//valid in the clock after their instruction issues, and what 033 reads back
 	output wire o_ch_set_ca;  // 0010: enter the current address and activate
 	output wire o_ch_set_cl;  // 0011: enter the limit address
@@ -206,7 +205,7 @@ module func_top (
 	wire [21:0] mem_addr;
 	wire        mem_ack;
 
-	//X-MP: cluster number, shared registers, semaphores and status register
+	//Cluster number, shared registers, semaphores and status register
 	wire [23:0] shr_a;  // (SBj) for 026ij7, while it is in CIP
 	wire [63:0] shr_s;  // the result of a 072 form, while it is in CIP
 	wire [63:0] status_reg;  // 073i01, while it is in CIP
@@ -236,14 +235,12 @@ module func_top (
 	wire        p_oof;  // the fetch pointer is outside the field
 	wire        nip_in_vld;  // a parcel (or the news that there is none) is ready for NIP
 	reg nip_fault, cip_fault;
-	wire        fetch_fault;  // the current instruction, or its second parcel, lies outside the field
-	wire        branch_range_err;
-	wire [23:0] p_mask = XMP ? 24'hFFFFFF : 24'h3FFFFF;  // P is 22 bits on a CRAY-1
+	wire fetch_fault;  // the current instruction, or its second parcel, lies outside the field
 
 
 	reg [ 7:0] xa;
-	reg [ 1:0] cln;  //X-MP cluster number
-	reg        program_state;  //X-MP program state bit: stored and loaded only
+	reg [ 1:0] cln;  //cluster number
+	reg        program_state;  //program state bit: stored and loaded only
 	reg [23:0] instr_base_addr;
 	reg [23:0] instr_limit_addr;
 	reg [23:0] data_base_addr;
@@ -268,7 +265,7 @@ module func_top (
 	///////////////////////////////// 
 	wire [9:0] flags;
 	//individual 1-bit flags
-	reg flag_dl;  //deadlock (X-MP)
+	reg flag_dl;  //deadlock
 	reg flag_pci;  //programmable clock interrupt
 	reg flag_mcu;  //MCU - set when MIOP send signal
 	reg flag_fpe;  //floating point error
@@ -339,7 +336,6 @@ module func_top (
 	wire       s0_busy;
 
 	//V-type scheduler signals
-	wire [       3:0] v_fu_delay;
 	wire [       7:0] vwrite_start;
 	wire [       7:0] vread_start;
 	wire [       7:0] vfu_start;
@@ -369,16 +365,12 @@ module func_top (
 	wire            opnd_busy;  // one of them still has a result on its way
 	wire            cip_issue;  // the current instruction issues this clock
 
-	cray_predecode #(
-		.XMP(XMP)
-	) predecode (
+	cray_predecode predecode (
 		.i_parcel(nip),
 		.o_pd    (pd_nip)
 	);
 	//what the same decode makes of no instruction at all, for when CIP is cleared
-	cray_predecode #(
-		.XMP(XMP)
-	) predecode_none (
+	cray_predecode predecode_none (
 		.i_parcel(16'b0),
 		.o_pd    (pd_none)
 	);
@@ -437,13 +429,11 @@ module func_top (
 	assign x_idle = !(|a_res_mask) && !(|s_res_mask) && !(|vreg_busy) && !(|vfu_busy) && !vm_pending && mem_idle && !i_ibuf_busy;
 
 	// The program field.  A parcel whose absolute word address is at or beyond the limit
-	// (or beyond the one million words of memory) is not fetched; it travels down the
+	// (or beyond the four million words of memory) is not fetched; it travels down the
 	// parcel pipeline marked as a fault, and when it would become the current
 	// instruction the program range flag sets instead.  The flag cannot set in monitor
 	// mode, where the manual does not say what happens; there the fetch is not checked.
-	// The X-MP has four million words and a 24-bit base.
-	wire [22:0] fetch_limit = XMP ? ((|instr_limit_addr[23:22]) ? 23'h400000 : {1'b0, instr_limit_addr[21:0]}) :
-								((|instr_limit_addr[23:20]) ? 23'h100000 : {3'b0, instr_limit_addr[19:0]});
+	wire [22:0] fetch_limit = (|instr_limit_addr[23:22]) ? 23'h400000 : {1'b0, instr_limit_addr[21:0]};
 	// Whether P is outside is kept in a register, formed beside P itself: for the
 	// parcel behind this one and for the target of a branch, and one of them taken as
 	// P is.  (While an exchange loads P and the limits it follows a clock behind,
@@ -452,18 +442,18 @@ module func_top (
 		input [21:0] word_addr;  // P without its parcel number
 		reg [24:0] word;
 		begin
-			word    = {3'b0, word_addr} + {1'b0, XMP ? instr_base_addr : {2'b0, instr_base_addr[21:0]}};
+			word    = {3'b0, word_addr} + {1'b0, instr_base_addr};
 			outside = !mode_mm && (word >= {2'b0, fetch_limit});
 		end
 	endfunction
 
-	wire [23:0] p_behind = (p_addr + 24'b1) & p_mask;
+	wire [23:0] p_behind = p_addr + 24'b1;
 	// A branch issues in its third clock as the current instruction at the earliest,
 	// so its target, which for 005 comes out of the B registers, is taken from a
 	// register a clock old.
 	reg  [23:0] branch_dest_r;
 	always @(posedge clk) branch_dest_r <= branch_dest;
-	wire [23:0] p_target = branch_dest_r & p_mask;
+	wire [23:0] p_target = branch_dest_r;
 	reg         p_outside;
 	always @(posedge clk)
 		p_outside <= (!x_swap && issue_vld && (nip_in_vld || take_branch)) ? (take_branch ? outside(
@@ -476,9 +466,6 @@ module func_top (
 	assign p_oof       = p_outside;
 	assign nip_in_vld  = i_nip_vld || p_oof;
 	assign fetch_fault = cip_vld && x_run && (cip_fault || (two_parcel_cip && nip_fault));
-
-	//a branch to an address that does not fit P (manual 4-4)
-	assign branch_range_err = !XMP && issue_vld && take_branch && (|branch_dest_r[23:22]);
 
 	assign o_ibuf_hold = !x_run || p_oof;
 
@@ -507,8 +494,8 @@ module func_top (
 	// or the first instruction that has not issued when an interrupt is taken.
 	always @(posedge clk)
 		if (rst) p_save <= 24'b0;
-		else if (x_take_exit) p_save <= (cip_addr + 24'd1) & p_mask;
-		else if (x_take_int) p_save <= cip_vld ? cip_addr : (nip_vld ? ((p_addr - 24'd1) & p_mask) : p_addr);
+		else if (x_take_exit) p_save <= cip_addr + 24'd1;
+		else if (x_take_int) p_save <= cip_vld ? cip_addr : (nip_vld ? (p_addr - 24'd1) : p_addr);
 
 	//look up the appropriate A and S reg values to store them during the exchange sequence
 	assign a_ex_addr = x_cnt[2:0];
@@ -517,8 +504,7 @@ module func_top (
 	//The instruction buffers always follow the program counter
 	assign o_p_addr = p_addr + {instr_base_addr[21:0], 2'b0};
 
-	// Outgoing package word.
-	// X-MP layout (CSM-0111000 figure 3-3):
+	// Outgoing package word (CSM-0111000 figure 3-3):
 	//   word 0  P [47:24]                                             A0 [23:0]
 	//   word 1  IBA [47:29]  WS FPS BDM - IMM [28:24]                 A1
 	//   word 2  ILA [47:29]  IOR ICM IFP IUM MM [28:24]               A2
@@ -527,40 +513,20 @@ module func_top (
 	//   word 5  DLA [47:29]                                           A5
 	//   words 6-7  A6, A7,  words 8-15  S0-S7
 	// The processor number, the memory error fields, VNU, ESVL and EAM are stored as 0.
-	// CRAY-1 layout (manual figure 3-8):
-	//   word 0  P [45:24]                          A0 [23:0]
-	//   word 1  BA [45:28]                         A1
-	//   word 2  LA [45:28]  M [27:24]              A2
-	//   word 3  XA [47:40]  VL [39:33]  F [32:24]  A3
-	//   words 4-7  A4-A7,  words 8-15  S0-S7
 	reg [63:0] x_word;
 	always @* begin
-		if (XMP)
-			case (x_cnt)
-				4'b0000: x_word = {16'b0, p_save, a_ex_data};
-				4'b0001:
-				x_word = {16'b0, instr_base_addr[23:5], mode_ws, mode_fps, mode_bdm, 1'b0, mode_imm, a_ex_data};
-				4'b0010:
-				x_word = {16'b0, instr_limit_addr[23:5], mode_ior, mode_icm, mode_ifp, mode_ium, mode_mm, a_ex_data};
-				4'b0011: x_word = {15'b0, flag_dl, xa, vector_length, flags[8:0], a_ex_data};
-				4'b0100: x_word = {16'b0, data_base_addr[23:5], program_state, 2'b0, cln, a_ex_data};
-				4'b0101: x_word = {16'b0, data_limit_addr[23:5], 5'b0, a_ex_data};
-				4'b0110: x_word = {40'b0, a_ex_data};
-				4'b0111: x_word = {40'b0, a_ex_data};
-				default: x_word = s_ex_data;
-			endcase
-		else
-			case (x_cnt)
-				4'b0000: x_word = {18'b0, p_save[21:0], a_ex_data};
-				4'b0001: x_word = {18'b0, instr_base_addr[21:4], 4'b0, a_ex_data};
-				4'b0010: x_word = {18'b0, instr_limit_addr[21:4], mode_icm, mode_ifp, mode_ium, mode_mm, a_ex_data};
-				4'b0011: x_word = {16'b0, xa, vector_length, flags[8:0], a_ex_data};
-				4'b0100: x_word = {40'b0, a_ex_data};
-				4'b0101: x_word = {40'b0, a_ex_data};
-				4'b0110: x_word = {40'b0, a_ex_data};
-				4'b0111: x_word = {40'b0, a_ex_data};
-				default: x_word = s_ex_data;
-			endcase
+		case (x_cnt)
+			4'b0000: x_word = {16'b0, p_save, a_ex_data};
+			4'b0001: x_word = {16'b0, instr_base_addr[23:5], mode_ws, mode_fps, mode_bdm, 1'b0, mode_imm, a_ex_data};
+			4'b0010:
+			x_word = {16'b0, instr_limit_addr[23:5], mode_ior, mode_icm, mode_ifp, mode_ium, mode_mm, a_ex_data};
+			4'b0011: x_word = {15'b0, flag_dl, xa, vector_length, flags[8:0], a_ex_data};
+			4'b0100: x_word = {16'b0, data_base_addr[23:5], program_state, 2'b0, cln, a_ex_data};
+			4'b0101: x_word = {16'b0, data_limit_addr[23:5], 5'b0, a_ex_data};
+			4'b0110: x_word = {40'b0, a_ex_data};
+			4'b0111: x_word = {40'b0, a_ex_data};
+			default: x_word = s_ex_data;
+		endcase
 	end
 
 	always @* o_data_to_mem = x_swap ? x_word : data_to_mem;
@@ -573,26 +539,23 @@ module func_top (
 	assign o_mem_addr  = x_swap ? x_mem_addr : mem_addr;
 	assign mem_ack     = i_mem_ack && !x_swap;
 
-	//Set up the instr/data base and limit registers: bits 16-33, words 1,2 and 4,5
+	//Set up the instr/data base and limit registers: bits 16-34, words 1,2 and 4,5,
+	//in units of 32 words
 	always @(posedge clk)
 		if (rst) instr_base_addr <= 24'b0;
-		else if (x_load && (x_cnt == 4'b0001))
-			instr_base_addr <= XMP ? {x_data[47:29], 5'b0} : {2'b0, x_data[45:28], 4'b0};
+		else if (x_load && (x_cnt == 4'b0001)) instr_base_addr <= {x_data[47:29], 5'b0};
 
 	always @(posedge clk)
 		if (rst) instr_limit_addr <= 24'hFFFFFF;
-		else if (x_load && (x_cnt == 4'b0010))
-			instr_limit_addr <= XMP ? {x_data[47:29], 5'b0} : {2'b0, x_data[45:28], 4'b0};
+		else if (x_load && (x_cnt == 4'b0010)) instr_limit_addr <= {x_data[47:29], 5'b0};
 
 	always @(posedge clk)
 		if (rst) data_base_addr <= 24'b0;
-		else if (XMP ? (x_load && (x_cnt == 4'b0100)) : (x_load && (x_cnt == 4'b0001)))
-			data_base_addr <= XMP ? {x_data[47:29], 5'b0} : {2'b0, x_data[45:28], 4'b0};
+		else if (x_load && (x_cnt == 4'b0100)) data_base_addr <= {x_data[47:29], 5'b0};
 
 	always @(posedge clk)
 		if (rst) data_limit_addr <= 24'hFFFFFF;
-		else if (XMP ? (x_load && (x_cnt == 4'b0101)) : (x_load && (x_cnt == 4'b0010)))
-			data_limit_addr <= XMP ? {x_data[47:29], 5'b0} : {2'b0, x_data[45:28], 4'b0};
+		else if (x_load && (x_cnt == 4'b0101)) data_limit_addr <= {x_data[47:29], 5'b0};
 
 
 	//and exchange address
@@ -600,13 +563,12 @@ module func_top (
 		if (rst) xa <= 8'h0;
 		else if (x_load && (x_cnt == 4'b0011)) xa <= x_data[47:40];
 		else if (!x_swap)
-			xa <= ((cip[15:6]==10'o0013) && (XMP ? (cip[2:0]==3'b0) : 1'b1) && cip_issue && mode_mm) ? a_j_data[11:4] : xa;   //(Aj) is 0 when j is 0
+			xa <= ((cip[15:6]==10'o0013) && (cip[2:0]==3'b0) && cip_issue && mode_mm) ? a_j_data[11:4] : xa;   //(Aj) is 0 when j is 0
 
 	//Set the mode bits - Pg 3-9 of CSM-0111000
-	//0021 and 0022 switch the floating point interrupt mode on both machines.  On the
-	//X-MP 0023 and 0024 switch the operand range interrupt mode and 0026 and 0025 the
-	//bidirectional memory mode, which is only carried.  They wait for results on their
-	//way (mode_hold).
+	//0021 and 0022 switch the floating point interrupt mode, 0023 and 0024 the operand
+	//range interrupt mode and 0026 and 0025 the bidirectional memory mode, which is
+	//only carried.  They wait for results on their way (mode_hold).
 	wire mode_set = cip_issue && (cip[15:9] == 7'o002);
 	always @(posedge clk)
 		if (rst) begin
@@ -617,7 +579,7 @@ module func_top (
 			mode_ifp <= 1'b0;
 			mode_ium <= 1'b0;
 			mode_mm  <= 1'b0;
-		end else if (XMP && x_load && (x_cnt == 4'b0001)) begin
+		end else if (x_load && (x_cnt == 4'b0001)) begin
 			mode_bdm <= x_data[26];
 			mode_imm <= x_data[24];
 		end else if (x_load && (x_cnt == 4'b0010)) begin
@@ -637,14 +599,14 @@ module func_top (
 				default: ;
 			endcase
 
-	//X-MP status bits of word 1.  FPS: a floating point error has occurred, whatever
+	//The status bits of word 1.  FPS: a floating point error has occurred, whatever
 	//the interrupt mode; cleared by 0021 and 0022.  WS: the exchange found a test and
 	//set waiting in CIP; it is not loaded from a package.
 	always @(posedge clk)
 		if (rst) begin
 			mode_fps <= 1'b0;
 			mode_ws  <= 1'b0;
-		end else if (XMP && x_load && (x_cnt == 4'b0001)) begin
+		end else if (x_load && (x_cnt == 4'b0001)) begin
 			mode_fps <= x_data[27];
 			mode_ws  <= 1'b0;
 		end else begin
@@ -655,7 +617,7 @@ module func_top (
 
 	always @(posedge clk)
 		if (rst) program_state <= 1'b0;
-		else if (XMP && x_load && (x_cnt == 4'b0100)) program_state <= x_data[28];
+		else if (x_load && (x_cnt == 4'b0100)) program_state <= x_data[28];
 
 
 
@@ -674,7 +636,7 @@ module func_top (
 			flag_nex <= 1'b0;
 		end  //Load initial values from the exchange package.
 		else if (x_load && (x_cnt == 4'b0011)) begin
-			flag_dl  <= XMP ? x_data[48] : 1'b0;  //bit 15
+			flag_dl  <= x_data[48];  //bit 15
 			flag_pci <= x_data[32];  //bit 31
 			flag_mcu <= x_data[31];  //bit 32
 			flag_fpe <= x_data[30];  //bit 33
@@ -701,17 +663,15 @@ module func_top (
 			flag_fpe <= mode_mm ? 1'b0 : (flag_fpe || (mode_ifp && fp_range_err));
 			//Operand Range Error - set when the data reference is made outside the boundaries of 
 			//the data base address and data limit address registers, and the Enable Operand Range
-			//Interrupt flag is set. 
-			//On the X-MP the mode bit IOR must be set as well.
-			flag_ore <= mode_mm ? 1'b0 : (flag_ore || (mem_range_err && ((XMP == 0) || mode_ior)));
+			//Interrupt flag (the mode bit IOR) is set. 
+			flag_ore <= mode_mm ? 1'b0 : (flag_ore || (mem_range_err && mode_ior));
 			//Program Range Error - set when an instruction fetch is made outside the boundaries of 
 			//the Instruction Base Address and Instruction Limit Address registers.
-			flag_pre <= mode_mm ? 1'b0 : (flag_pre || fetch_fault || branch_range_err);
+			flag_pre <= mode_mm ? 1'b0 : (flag_pre || fetch_fault);
 			//Memory Error - set when a correctable or uncorrectable memory error occurs and the
 			//corresponding enable memory error mode bit is set in the M register
 			flag_me  <= 1'b0;
 			//I/O Interrupt flag - set while a 6 Mbyte channel holds its interrupt request
-			//(the CRAY-1 setting has no channels)
 			flag_ioi <= mode_mm ? 1'b0 : (flag_ioi || i_ch_int);
 			//Error Exit - set by an error exit instruction (000)
 			flag_eex <= mode_mm ? 1'b0 : (((cip[15:9] == 7'o000) && cip_vld && issue_vld) || flag_eex);
@@ -746,11 +706,11 @@ module func_top (
 	//Fire an interrupt when the current instruction executes, we're not in monitor mode, and a flag has been set	
 	assign signal_interrupt = x_run && |flags[9:0] && !mode_mm;
 
-	//Cluster number (X-MP): from the package, or by 0014j3 in monitor mode
+	//Cluster number: from the package, or by 0014j3 in monitor mode
 	always @(posedge clk)
 		if (rst) cln <= 2'b0;
-		else if (XMP && x_load && (x_cnt == 4'b0100)) cln <= x_data[25:24];
-		else if (XMP && cip_issue && mode_mm && (cip[15:6] == 10'o0014) && (cip[2:0] == 3'd3)) cln <= cip[4:3];
+		else if (x_load && (x_cnt == 4'b0100)) cln <= x_data[25:24];
+		else if (cip_issue && mode_mm && (cip[15:6] == 10'o0014) && (cip[2:0] == 3'd3)) cln <= cip[4:3];
 
 	//1) accept the incoming data from the instruction buffers
 	always @(posedge clk)
@@ -767,7 +727,7 @@ module func_top (
 		end else if (nip_in_vld && issue_vld) begin
 			nip_fault <= p_oof;
 			cip_fault <= nip_fault && nip_vld && !take_branch;
-			cip_addr <= (p_addr - 24'd1) & p_mask;  // NIP holds the parcel before the fetch pointer
+			cip_addr <= p_addr - 24'd1;  // NIP holds the parcel before the fetch pointer
 			nip <= i_nip_nxt;
 			lip <= i_nip_nxt;
 			cip <= nip;
@@ -925,8 +885,7 @@ module func_top (
 	//  the clock of issue   020 to 022 immediate; 023 (Sj); 024 B register;
 	//                       026ij7 shared register
 	//  1 clock after        10h word from memory
-	//  3 clocks after       033 channel; 032 product on the X-MP
-	//  5 clocks after       032 product on the CRAY-1
+	//  3 clocks after       033 channel; 032 product
 	wire [3:0] cip_asrc = pd[PD_A_SRC+:4];
 	wire a_now = !a_next_en;
 	wire        adue_imm = a_now && ((cip_asrc == ABUS_IMM) || (cip_asrc == ABUS_COMP_IMM) || (cip_asrc == ABUS_SIMM) || (cip_asrc == ABUS_S_BUS));
@@ -991,7 +950,6 @@ localparam VLOG      = 3'b000,   //vector logical
 	assign mem_idle    = !mem_busy;
 	assign v_type      = pd[PD_VTYPE];
 	assign mem_type    = pd[PD_MTYPE];
-	assign v_fu_delay  = pd[PD_V_DELAY+:4];
 
 	//check if it's free to issue
 
@@ -1022,7 +980,6 @@ localparam VLOG      = 3'b000,   //vector logical
 
 	//Number of elements a vector instruction processes: VL of 0 means 64 (manual 4-10)
 	wire [6:0] vl_count = (vector_length[5:0] == 6'd0) ? 7'd64 : {1'b0, vector_length[5:0]};
-	wire [4:0] v_rec_delay = {1'b0, v_fu_delay} + 5'd2;  //recursive operand delay: unit time + 2
 
 	//units with a tracker: 0 logical, 1 shift, 2 integer add, 3 FP multiply, 4 FP add,
 	//5 reciprocal, 6 population count
@@ -1100,7 +1057,7 @@ localparam VLOG      = 3'b000,   //vector logical
 	reg [63:0] sw_data;
 	always @(posedge clk) begin
 		sw_en    <= rst ? 8'b0 : vreg_swrite;
-		vm_load  <= !rst && cip_issue && (cip_instr == 7'o003) && !xmp_sem;
+		vm_load  <= !rst && cip_issue && (cip_instr == 7'o003) && !sem_instr;
 		rtc_load <= !rst && (cip[15:6] == 10'o0014) && (cip_k == 3'o0) && cip_issue && mode_mm;
 		sw_idx   <= a_k_data[5:0];
 		sw_data  <= s_j_data;
@@ -1134,22 +1091,20 @@ localparam VLOG      = 3'b000,   //vector logical
 			end
 
 			v_regfile vreg (
-				.clk        (clk),
-				.rst        (rst),
-				.i_rd_start (vread_start[gr] && !mem_type),
-				.i_len      (vl_count),
-				.i_recursive(vwrite_start[gr] && (XMP == 0)),  //no recursion on the X-MP
-				.i_rec_delay(v_rec_delay),
-				.i_elem_idx (a_k_data[5:0]),
-				.i_mem_rd   (vmem_reads[gr]),
-				.i_mem_idx  (vmem_rd_idx),
-				.o_rd_data  (v_rd_data[64*gr+:64]),
-				.i_wr_start (vwrite_start[gr]),
-				.i_wr_en    (wr_en),
-				.i_wr_idx   (wr_idx),
-				.i_wr_data  (wr_data),
-				.o_busy     (vreg_busy[gr]),
-				.o_reading  (vreg_reading[gr])
+				.clk       (clk),
+				.rst       (rst),
+				.i_rd_start(vread_start[gr] && !mem_type),
+				.i_len     (vl_count),
+				.i_elem_idx(a_k_data[5:0]),
+				.i_mem_rd  (vmem_reads[gr]),
+				.i_mem_idx (vmem_rd_idx),
+				.o_rd_data (v_rd_data[64*gr+:64]),
+				.i_wr_start(vwrite_start[gr]),
+				.i_wr_en   (wr_en),
+				.i_wr_idx  (wr_idx),
+				.i_wr_data (wr_data),
+				.o_busy    (vreg_busy[gr]),
+				.o_reading (vreg_reading[gr])
 			);
 
 			//Chaining.  Once a functional unit has delivered element 0 of this
@@ -1514,9 +1469,7 @@ localparam VLOG      = 3'b000,   //vector logical
 
 
 	//Address Multiply unit
-	fast_addr_mult #(
-		.XMP(XMP)
-	) amult (
+	fast_addr_mult amult (
 		.clk     (clk),       //system clock input
 		.i_aj    (a_j_data),  //24-bit aj input
 		.i_ak    (a_k_data),  //24-bit ak input
@@ -1528,9 +1481,7 @@ localparam VLOG      = 3'b000,   //vector logical
 	//         Memory Controller Functional Unit           //
 	/////////////////////////////////////////////////////////
 
-	mem_fu #(
-		.XMP(XMP)
-	) mfu (
+	mem_fu mfu (
 		.clk              (clk),
 		.rst              (rst),
 		.i_cip            (cip),
@@ -1593,7 +1544,7 @@ localparam VLOG      = 3'b000,   //vector logical
 
 
 	/////////////////////////////////////////////////////////
-	//   X-MP: shared registers, semaphores, status        //
+	//   Shared registers, semaphores, status              //
 	/////////////////////////////////////////////////////////
 	//Three clusters, each with eight 24-bit SB registers, eight 64-bit ST registers and
 	//32 semaphores (CSM-0111000 pages 2-17, 5-17, 5-32, 5-34, 5-59).  The cluster number
@@ -1606,73 +1557,63 @@ localparam VLOG      = 3'b000,   //vector logical
 	//  073i01  Si SR0      the status register
 	//A store acts in the clock its instruction issues, and a load takes what the
 	//register holds in that clock, so a load right behind a store sees it.
-	wire xmp_sem = (XMP != 0) && (cip[15:9] == 7'o003) && cip[8] && (cip[8:6] != 3'd5);  //0034, 0036, 0037
+	wire sem_instr = (cip[15:9] == 7'o003) && cip[8] && (cip[8:6] != 3'd5);  //0034, 0036, 0037
 
-	generate
-		if (XMP) begin : g_shared
-			(* ramstyle = "MLAB, no_rw_check" *)reg [23:0] sb[0:31];
-			(* ramstyle = "MLAB, no_rw_check" *)reg [63:0] st[0:31];
-			//four words of flip-flops: as a block memory they sat far from the S registers
-			(* ramstyle = "logic" *)reg [31:0] sm[ 0:3];  //bit 31 is semaphore 0; cluster 0 is never used
+	(* ramstyle = "MLAB, no_rw_check" *)reg [23:0] sb[0:31];
+	(* ramstyle = "MLAB, no_rw_check" *)reg [63:0] st[0:31];
+	//four words of flip-flops: as a block memory they sat far from the S registers
+	(* ramstyle = "logic" *)reg [31:0] sm[ 0:3];  //bit 31 is semaphore 0; cluster 0 is never used
 
-			wire        clustered = (cln != 2'd0);
-			wire [ 4:0] reg_n = {cln, cip[5:3]};
-			wire [31:0] sem_bit = 32'h80000000 >> cip[4:0];  //the semaphore jk names
-			wire        is_ts = pd[PD_TS];
-			wire [31:0] sem_now = sm[cln];
+	wire        clustered = (cln != 2'd0);
+	wire [ 4:0] reg_n = {cln, cip[5:3]};
+	wire [31:0] sem_bit = 32'h80000000 >> cip[4:0];  //the semaphore jk names
+	wire        is_ts = pd[PD_TS];
+	wire [31:0] sem_now = sm[cln];
 
-			//A test and set looks at its semaphore in its first clock as the current
-			//instruction and issues, or waits, from the second.  The look goes through
-			//the cluster number and the semaphore number, too long a way to stand before
-			//the issue of every instruction.  With one CPU nothing changes a semaphore
-			//while the instruction waits.
-			reg ts_seen, ts_set;
-			always @(posedge clk) begin
-				ts_seen <= !rst && cip_vld && is_ts && !cip_issue;
-				ts_set  <= clustered && (|(sem_now & sem_bit));
-			end
-			assign ts_wait    = cip_vld && is_ts && clustered && (!ts_seen || ts_set);
-			assign ts_blocked = cip_vld && is_ts && ts_seen && ts_set;
+	//A test and set looks at its semaphore in its first clock as the current
+	//instruction and issues, or waits, from the second.  The look goes through
+	//the cluster number and the semaphore number, too long a way to stand before
+	//the issue of every instruction.  With one CPU nothing changes a semaphore
+	//while the instruction waits.
+	reg ts_seen, ts_set;
+	always @(posedge clk) begin
+		ts_seen <= !rst && cip_vld && is_ts && !cip_issue;
+		ts_set  <= clustered && (|(sem_now & sem_bit));
+	end
+	assign ts_wait    = cip_vld && is_ts && clustered && (!ts_seen || ts_set);
+	assign ts_blocked = cip_vld && is_ts && ts_seen && ts_set;
 
-			always @(posedge clk) begin
-				if (cip_issue && clustered) begin
-					if ((cip[15:9] == 7'o027) && (cip[2:0] == 3'd7)) sb[reg_n] <= a_i_data;
-					if ((cip[15:9] == 7'o073) && (cip[2:0] == 3'd3)) st[reg_n] <= s_i_data;
-					if ((cip[15:9] == 7'o073) && (cip[5:0] == 6'o02)) sm[cln] <= s_i_data[63:32];
-					else if (cip[15:6] == 10'o0036) sm[cln] <= sem_now & ~sem_bit;
-					else if (is_ts || (cip[15:6] == 10'o0037)) sm[cln] <= sem_now | sem_bit;
-				end
-			end
-
-			assign shr_a = clustered ? sb[reg_n] : 24'b0;
-			//072i00 is still the real-time clock
-			assign shr_s = (cip[5:0] == 6'o00) ? real_time_clock : !clustered ? 64'b0 : (cip[2:0] == 3'd3) ? st[reg_n] : {sem_now, 32'b0};
-			//clustered, program state, floating point error status and the three mode
-			//bits; the cluster number only in monitor mode; ones in the low half
-			assign status_reg = {
-				clustered,
-				5'b0,
-				program_state,
-				5'b0,
-				mode_fps,
-				mode_ifp,
-				mode_ior,
-				mode_bdm,
-				14'b0,
-				mode_mm ? cln : 2'b0,
-				32'hFFFFFFFF
-			};
-		end else begin : g_no_shared
-			assign ts_wait    = 1'b0;
-			assign ts_blocked = 1'b0;
-			assign shr_a      = 24'b0;
-			assign shr_s      = real_time_clock;  //072 is the real-time clock
-			assign status_reg = 64'b0;
+	always @(posedge clk) begin
+		if (cip_issue && clustered) begin
+			if ((cip[15:9] == 7'o027) && (cip[2:0] == 3'd7)) sb[reg_n] <= a_i_data;
+			if ((cip[15:9] == 7'o073) && (cip[2:0] == 3'd3)) st[reg_n] <= s_i_data;
+			if ((cip[15:9] == 7'o073) && (cip[5:0] == 6'o02)) sm[cln] <= s_i_data[63:32];
+			else if (cip[15:6] == 10'o0036) sm[cln] <= sem_now & ~sem_bit;
+			else if (is_ts || (cip[15:6] == 10'o0037)) sm[cln] <= sem_now | sem_bit;
 		end
-	endgenerate
+	end
+
+	assign shr_a = clustered ? sb[reg_n] : 24'b0;
+	//072i00 is still the real-time clock
+	assign shr_s = (cip[5:0] == 6'o00) ? real_time_clock : !clustered ? 64'b0 : (cip[2:0] == 3'd3) ? st[reg_n] : {sem_now, 32'b0};
+	//clustered, program state, floating point error status and the three mode
+	//bits; the cluster number only in monitor mode; ones in the low half
+	assign status_reg = {
+		clustered,
+		5'b0,
+		program_state,
+		5'b0,
+		mode_fps,
+		mode_ifp,
+		mode_ior,
+		mode_bdm,
+		14'b0,
+		mode_mm ? cln : 2'b0,
+		32'hFFFFFFFF
+	};
 
 	/////////////////////////////////////////////////////////
-	//   X-MP: orders to the 6 Mbyte channels, and 033     //
+	//   Orders to the 6 Mbyte channels, and 033           //
 	/////////////////////////////////////////////////////////
 	//  0010jk  CA,Aj Ak    0011jk  CL,Aj Ak    0012j0  CI,Aj    0012j1  MC,Aj
 	//act in monitor mode when j is not 0 and the low four bits of (Aj) name a channel
@@ -1681,46 +1622,34 @@ localparam VLOG      = 3'b000,   //vector logical
 	//later clock, so a 033 right behind a 0012 sees what the 0012 did:
 	//  033i0x  Ai CI       033ij0  Ai CA,Aj    033ij1  Ai CE,Aj
 	//The result is due four clocks after issue.
-	generate
-		if (XMP) begin : g_chan
-			reg set_ca, set_cl, clear, k1;
-			reg [ 2:0] num;
-			reg [21:0] addr;
-			reg rd_int, rd_none, rd_err;
-			reg [23:0] rd1, rd2;
-			wire order = cip_issue && mode_mm && (cip[15:9] == 7'o001) && (cip_j != 3'd0) && a_j_data[3];
+	reg ch_set_ca, ch_set_cl, ch_clear, ch_k1;
+	reg [ 2:0] ch_num;
+	reg [21:0] ch_addr;
+	reg ch_rd_int, ch_rd_none, ch_rd_err;
+	reg [23:0] ch_rd1, ch_rd2;
+	wire ch_order = cip_issue && mode_mm && (cip[15:9] == 7'o001) && (cip_j != 3'd0) && a_j_data[3];
 
-			always @(posedge clk) begin
-				set_ca <= !rst && order && (cip[8:6] == 3'd0);
-				set_cl <= !rst && order && (cip[8:6] == 3'd1);
-				clear <= !rst && order && (cip[8:6] == 3'd2);
-				k1 <= (cip_k == 3'd1);
-				num <= a_j_data[2:0];
-				addr <= a_k_data[21:0];
-				rd_int <= (cip_j == 3'd0);
-				rd_none <= !a_j_data[3];
-				rd_err <= cip_k[0];
-				rd1 <= rd_int ? {20'b0, i_ch_int_num} : rd_none ? 24'b0 : rd_err ? {23'b0, i_ch_err} : {2'b0, i_ch_ca};
-				rd2 <= rd1;
-			end
+	always @(posedge clk) begin
+		ch_set_ca <= !rst && ch_order && (cip[8:6] == 3'd0);
+		ch_set_cl <= !rst && ch_order && (cip[8:6] == 3'd1);
+		ch_clear <= !rst && ch_order && (cip[8:6] == 3'd2);
+		ch_k1 <= (cip_k == 3'd1);
+		ch_num <= a_j_data[2:0];
+		ch_addr <= a_k_data[21:0];
+		ch_rd_int <= (cip_j == 3'd0);
+		ch_rd_none <= !a_j_data[3];
+		ch_rd_err <= cip_k[0];
+		ch_rd1 <= ch_rd_int ? {20'b0, i_ch_int_num} : ch_rd_none ? 24'b0 : ch_rd_err ? {23'b0, i_ch_err} : {2'b0, i_ch_ca};
+		ch_rd2 <= ch_rd1;
+	end
 
-			assign o_ch_set_ca = set_ca;
-			assign o_ch_set_cl = set_cl;
-			assign o_ch_clear  = clear;
-			assign o_ch_k1     = k1;
-			assign o_ch_num    = num;
-			assign o_ch_addr   = addr;
-			assign ch_a        = rd2;
-		end else begin : g_no_chan
-			assign o_ch_set_ca = 1'b0;
-			assign o_ch_set_cl = 1'b0;
-			assign o_ch_clear  = 1'b0;
-			assign o_ch_k1     = 1'b0;
-			assign o_ch_num    = 3'b0;
-			assign o_ch_addr   = 22'b0;
-			assign ch_a        = 24'b0;
-		end
-	endgenerate
+	assign o_ch_set_ca = ch_set_ca;
+	assign o_ch_set_cl = ch_set_cl;
+	assign o_ch_clear  = ch_clear;
+	assign o_ch_k1     = ch_k1;
+	assign o_ch_num    = ch_num;
+	assign o_ch_addr   = ch_addr;
+	assign ch_a        = ch_rd2;
 
 	/////////////////////////////////////////////////////////
 	//         Misc. Registers, instruction decoding, etc. //
@@ -1841,7 +1770,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		if (rst) p_addr <= 24'b0;
 		else if (!x_swap)
 			p_addr <= (issue_vld && (nip_in_vld || take_branch)) ? (take_branch ? p_target : p_behind) : p_addr;
-		else if (x_load && (x_cnt == 4'b0000)) p_addr <= XMP ? {x_data[47:24]} : {2'b0, x_data[45:24]};
+		else if (x_load && (x_cnt == 4'b0000)) p_addr <= x_data[47:24];
 
 	reg alert;
 	always @(posedge clk) alert <= rst ? 1'b0 : ((p_addr[23:2] == 22'h207B) || alert);

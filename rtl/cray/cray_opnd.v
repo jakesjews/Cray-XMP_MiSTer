@@ -8,15 +8,12 @@
 //
 // A j, k or h designator of zero is a constant, not a register (manual 4-5).
 // An i designator always names the register itself.
-
 //
-// With XMP the X-MP forms are told apart: 027ij7 (SBj Ai) reads Ai and no S
-// register, 026ij7 (Ai SBj) reads nothing, and 073ij3 (STj Si) and 073i02
-// (SM Si) read Si.
+// The forms for the shared registers are told apart: 027ij7 (SBj Ai) reads Ai
+// and no S register, 026ij7 (Ai SBj) reads nothing, and 073ij3 (STj Si) and
+// 073i02 (SM Si) read Si.
 
-module cray_opnd #(
-	parameter XMP = 0
-) (
+module cray_opnd (
 	input  wire [15:0] i_cip,
 	output reg  [ 7:0] o_rd_a,
 	output reg  [ 7:0] o_rd_s
@@ -52,7 +49,7 @@ module cray_opnd #(
 			7'o023: o_rd_s = rj;  // Ai Sj
 			7'o025: o_rd_a = ri;  // Bjk Ai
 			7'o026, 7'o027:
-			if (XMP && (k == 3'd7)) begin
+			if (k == 3'd7) begin
 				if (op == 7'o027) o_rd_a = ri;  // SBj Ai
 			end else o_rd_s = rj;  // Ai PSj, Ai ZSj
 			7'o030, 7'o031, 7'o032: o_rd_a = rj | rk;
@@ -68,7 +65,7 @@ module cray_opnd #(
 			7'o060, 7'o061, 7'o062, 7'o063, 7'o064, 7'o065, 7'o066, 7'o067: o_rd_s = rj | rk;
 			7'o070: o_rd_s = rj;
 			7'o071: o_rd_a = rk;
-			7'o073: if (XMP && ((k == 3'd3) || (i_cip[5:0] == 6'o02))) o_rd_s = ri;  // STj Si, SM Si
+			7'o073: if ((k == 3'd3) || (i_cip[5:0] == 6'o02)) o_rd_s = ri;  // STj Si, SM Si
 			7'o075: o_rd_s = ri;  // Tjk Si
 			7'o076: o_rd_a = rk;  // Si Vj,Ak
 			7'o077: begin

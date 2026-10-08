@@ -1,4 +1,4 @@
-// The machine that runs COS: the CPU with the X-MP features and the I/O
+// The machine that runs COS: the CPU and the I/O
 // Subsystem, joined as they are in a CRAY X-MP.
 //
 //   - Channel 11 octal of the CPU (output) leads to the MIOP's channel 20, and
@@ -252,9 +252,7 @@ module xmp_machine #(
 		.i_rdata(i_tape_data)
 	);
 
-	cray_cpu #(
-		.XMP(1)
-	) cpu (
+	cray_cpu cpu (
 		.clk          (clk),
 		.rst          (cpu_rst),
 		.i_single_step(1'b0),

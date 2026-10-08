@@ -2,8 +2,8 @@
 //       ADDRESS Multiply UNIT
 //******************************************
 //
-//It takes 6 time units to produce a 24-bit result. No overflow is detected.
-//If I add 4 partial products per cycle, it should work fine.
+//It takes 4 time units to produce a 24-bit result, as the X-MP's unit does
+//(HR-0032). No overflow is detected.
 
 module fast_addr_mult (
 	i_aj,
@@ -11,10 +11,6 @@ module fast_addr_mult (
 	clk,
 	o_result
 );
-
-
-	// XMP = 1: the X-MP's unit, 4 clock periods; the CRAY-1's takes 6
-	parameter XMP = 0;
 
 	input wire clk;
 	input wire [23:0] i_aj;
@@ -27,8 +23,6 @@ module fast_addr_mult (
 	reg [23:0] result_jk;  //the low half of the product is all that is kept
 
 	reg [23:0] temp2;
-	reg [23:0] temp3;
-	reg [23:0] temp4;
 
 	always @(posedge clk) begin
 		//Flop the incoming
@@ -38,12 +32,10 @@ module fast_addr_mult (
 		result_jk <= aj_0 * ak_0;
 		//Just pipeline the result along
 		temp2     <= result_jk;
-		temp3     <= temp2;
-		temp4     <= temp3;
 	end
 
 	//The unit's last clock is the one its result spends on the A result bus
-	assign o_result = XMP ? temp2 : temp4;
+	assign o_result = temp2;
 
 
 

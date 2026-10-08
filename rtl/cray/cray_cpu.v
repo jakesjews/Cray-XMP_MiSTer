@@ -1,22 +1,19 @@
-// Cray CPU: instruction buffers, functional units and the memory multiplexer.
-//
-// XMP = 0 builds the CRAY-1 of 1982.  XMP = 1 adds what a one-processor X-MP has
-// that the operating system COS needs, with the 6 Mbyte channel pairs 10 to 17
-// octal (xmp_channels.v); docs/CPU.md lists what each setting does.
+// Cray CPU: instruction buffers, functional units, the 6 Mbyte channel pairs 10
+// to 17 octal (xmp_channels.v) and the memory multiplexer.  It is the CPU of a
+// one-processor CRAY X-MP with what the operating system COS needs of it;
+// docs/MACHINE.md lists what it does and does not have.
 //
 // Memory port: req, we, burst, addr and wdata are held until the last ack of a
 // request.  ack is a one-clock pulse per word with rdata valid in that clock.
 // burst is a 16-word read with addr[3:0] = 0.  Bit 63 is Cray bit 0, so parcel 0
 // of a word is rdata[63:48].
 
-module cray_cpu #(
-	parameter XMP = 0
-) (
+module cray_cpu (
 	input wire clk,
 	input wire rst,  // released to dead start from the exchange package at address 0
 	input wire i_single_step,  // issue one instruction at a time (test aid)
 	input wire i_mcu_int,  // request of the maintenance control unit: sets the MCU interrupt flag outside monitor mode
-	input wire i_io_clear,  // X-MP: I/O Master Clear, which stops the 6 Mbyte channels
+	input wire i_io_clear,  // I/O Master Clear, which stops the 6 Mbyte channels
 
 	output wire        o_mem_req,
 	output wire        o_mem_we,
@@ -26,7 +23,7 @@ module cray_cpu #(
 	input  wire        i_mem_ack,
 	input  wire [63:0] i_mem_rdata,
 
-	// X-MP: the devices of the 6 Mbyte channels.  Element n is the pair of input
+	// The devices of the 6 Mbyte channels.  Element n is the pair of input
 	// channel 10 + 2n and output channel 11 + 2n octal.  Ready, Resume and
 	// Disconnect are one-clock pulses; data stays until the Resume that answers it.
 	input  wire [ 3:0] i_ch_in_ready,
@@ -77,9 +74,9 @@ module cray_cpu #(
 	//               Memory multiplexer             //
 	//////////////////////////////////////////////////
 	// requester 0: instruction buffers, 1: memory functional unit,
-	// 2 (X-MP): the 6 Mbyte channels
+	// 2: the 6 Mbyte channels
 
-	localparam NM = (XMP != 0) ? 3 : 2;
+	localparam NM = 3;
 
 	wire [   NM-1:0] mux_req;
 	wire [   NM-1:0] mux_we;
@@ -149,9 +146,7 @@ module cray_cpu #(
 	//       Registers and functional units         //
 	//////////////////////////////////////////////////
 
-	func_top #(
-		.XMP(XMP)
-	) cpu (
+	func_top cpu (
 		.clk            (clk),
 		.rst            (rst),
 		// instruction buffer interface
@@ -189,57 +184,43 @@ module cray_cpu #(
 	);
 
 	//////////////////////////////////////////////////
-	//          6 Mbyte channels (X-MP)             //
+	//               6 Mbyte channels               //
 	//////////////////////////////////////////////////
 
-	generate
-		if (XMP != 0) begin : g_chan
-			xmp_channels channels (
-				.clk       (clk),
-				.rst       (rst),
-				.i_io_clear(i_io_clear),
+	xmp_channels channels (
+		.clk       (clk),
+		.rst       (rst),
+		.i_io_clear(i_io_clear),
 
-				.i_set_ca (ch_set_ca),
-				.i_set_cl (ch_set_cl),
-				.i_clear  (ch_clear),
-				.i_k1     (ch_k1),
-				.i_num    (ch_num),
-				.i_addr   (ch_addr),
-				.o_ca     (ch_ca),
-				.o_err    (ch_err),
-				.o_int_num(ch_int_num),
-				.o_int    (ch_int),
+		.i_set_ca (ch_set_ca),
+		.i_set_cl (ch_set_cl),
+		.i_clear  (ch_clear),
+		.i_k1     (ch_k1),
+		.i_num    (ch_num),
+		.i_addr   (ch_addr),
+		.o_ca     (ch_ca),
+		.o_err    (ch_err),
+		.o_int_num(ch_int_num),
+		.o_int    (ch_int),
 
-				.o_mem_req  (mux_req[2]),
-				.o_mem_we   (mux_we[2]),
-				.o_mem_addr (mux_addr[65:44]),
-				.o_mem_wdata(mux_wdata[191:128]),
-				.i_mem_ack  (mux_ack[2]),
-				.i_mem_rdata(mem_read_data),
+		.o_mem_req  (mux_req[2]),
+		.o_mem_we   (mux_we[2]),
+		.o_mem_addr (mux_addr[65:44]),
+		.o_mem_wdata(mux_wdata[191:128]),
+		.i_mem_ack  (mux_ack[2]),
+		.i_mem_rdata(mem_read_data),
 
-				.i_in_ready      (i_ch_in_ready),
-				.i_in_data       (i_ch_in_data),
-				.o_in_resume     (o_ch_in_resume),
-				.i_in_disconnect (i_ch_in_disconnect),
-				.o_out_ready     (o_ch_out_ready),
-				.o_out_data      (o_ch_out_data),
-				.i_out_resume    (i_ch_out_resume),
-				.o_out_disconnect(o_ch_out_disconnect),
-				.o_out_mc        (o_ch_out_mc)
-			);
-			assign mux_burst[2] = 1'b0;
-			assign mux_seq[2]   = 1'b0;
-		end else begin : g_no_chan
-			assign ch_ca               = 22'b0;
-			assign ch_err              = 1'b0;
-			assign ch_int_num          = 4'b0;
-			assign ch_int              = 1'b0;
-			assign o_ch_in_resume      = 4'b0;
-			assign o_ch_out_ready      = 4'b0;
-			assign o_ch_out_data       = 64'b0;
-			assign o_ch_out_disconnect = 4'b0;
-			assign o_ch_out_mc         = 4'b0;
-		end
-	endgenerate
+		.i_in_ready      (i_ch_in_ready),
+		.i_in_data       (i_ch_in_data),
+		.o_in_resume     (o_ch_in_resume),
+		.i_in_disconnect (i_ch_in_disconnect),
+		.o_out_ready     (o_ch_out_ready),
+		.o_out_data      (o_ch_out_data),
+		.i_out_resume    (i_ch_out_resume),
+		.o_out_disconnect(o_ch_out_disconnect),
+		.o_out_mc        (o_ch_out_mc)
+	);
+	assign mux_burst[2] = 1'b0;
+	assign mux_seq[2]   = 1'b0;
 
 endmodule

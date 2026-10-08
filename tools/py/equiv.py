@@ -7,8 +7,7 @@ For every module in the named files (default: each Verilog file under rtl/
 that differs from REV, default HEAD), Yosys checks the working tree against
 REV: same outputs, same next state of every register, and the same values
 sent to every submodule, for all inputs.  Submodules are not looked into;
-their own files are checked on their own.  A module with an XMP parameter is
-checked for XMP = 0 and XMP = 1.
+their own files are checked on their own.
 
 This is for edits that must not change behaviour: formatting, lint clean-ups,
 renaming nothing.  It needs registers, ports and submodule instances to keep
@@ -40,12 +39,11 @@ def read_cmd(base, path, lib):
                                               os.path.join(base, path))
 
 
-def load(base, path, module, params, name):
+def load(base, path, module, name):
     """Yosys commands that leave `module` of the tree at `base` stashed as `name`."""
     cmds = ['design -reset']
     cmds += [read_cmd(base, p, True) for p in sources(base) if p != path]
     cmds.append(read_cmd(base, path, False))
-    cmds += ['chparam -set %s %s %s' % (k, v, module) for k, v in params]
     cmds += ['hierarchy -top %s' % module, 'rename -top %s' % name]
     cmds += ['proc', 'opt_clean', 'memory_map', 'opt_clean',
              # turn every submodule connection into a port of the module
@@ -54,13 +52,13 @@ def load(base, path, module, params, name):
     return cmds
 
 
-def prove(gold_base, path, module, params, timeout, work):
-    cmds = load(gold_base, path, module, params, 'gold') + load(ROOT, path, module, params, 'gate')
+def prove(gold_base, path, module, timeout, work):
+    cmds = load(gold_base, path, module, 'gold') + load(ROOT, path, module, 'gate')
     cmds += ['design -reset', 'design -copy-from gold -as gold gold', 'design -copy-from gate -as gate gate',
              'equiv_make gold gate equiv', 'hierarchy -top equiv', 'equiv_simple', 'equiv_induct',
              'equiv_status -assert']
     script = os.path.join(work, 'equiv.ys')
-    log = os.path.join(work, '%s%s.log' % (module, ''.join('_%s%s' % kv for kv in params)))
+    log = os.path.join(work, '%s.log' % module)
     open(script, 'w').write('\n'.join(cmds) + '\n')
     try:
         r = subprocess.run(['yosys', '-q', '-l', log, script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -99,13 +97,10 @@ def main():
             continue
         text = open(os.path.join(ROOT, path)).read()
         for module in re.findall(r'^\s*module\s+(\w+)', text, re.M):
-            sets = [[('XMP', '0')], [('XMP', '1')]] if re.search(r'parameter\s+XMP\b', text) else [[]]
-            for params in sets:
-                checked += 1
-                why = prove(gold, path, module, params, timeout, work)
-                label = module + ''.join(' %s=%s' % kv for kv in params)
-                print('%-44s %-28s %s' % (path, label, 'same' if why is None else 'DIFFERENT: ' + why), flush=True)
-                failed += why is not None
+            checked += 1
+            why = prove(gold, path, module, timeout, work)
+            print('%-44s %-28s %s' % (path, module, 'same' if why is None else 'DIFFERENT: ' + why), flush=True)
+            failed += why is not None
     print('%d checks, %d failed (logs in %s)' % (checked, failed, work))
     sys.exit(1 if failed else 0)
 

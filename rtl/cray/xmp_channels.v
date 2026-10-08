@@ -1,4 +1,4 @@
-// The 6 Mbyte channels of the X-MP setting: channels 10 to 17 octal, the even
+// The 6 Mbyte channels of the X-MP: channels 10 to 17 octal, the even
 // ones input and the odd ones output (CSM-0111000 pages 2-15 to 2-19, 5-9,
 // 5-37 and appendix B).  The reference model is tools/crates/model/src/channel.rs.
 //

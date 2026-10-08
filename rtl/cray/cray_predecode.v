@@ -15,8 +15,6 @@ module cray_predecode (
 	i_parcel,
 	o_pd
 );
-	parameter XMP = 0;
-
 	`include "cray_pd.vh"
 
 	input wire [15:0] i_parcel;
@@ -30,9 +28,7 @@ module cray_predecode (
 	//------------------------------------------------------------------
 	// Registers read, kind of instruction, special waits
 	//------------------------------------------------------------------
-	cray_opnd #(
-		.XMP(XMP)
-	) opnd (
+	cray_opnd opnd (
 		.i_cip (i_parcel),
 		.o_rd_a(o_pd[PD_RD_A+:8]),
 		.o_rd_s(o_pd[PD_RD_S+:8])
@@ -52,35 +48,35 @@ module cray_predecode (
 	//wait for a 175 to finish building the mask, and 003 for a merge to finish using it;
 	//a scalar floating point instruction waits for a vector operation to leave its unit
 	assign o_pd[PD_H076+:8] = (op == 7'o076) ? (8'd1 << j) : 8'd0;
-	assign o_pd[PD_HVM] = (op == 7'o003) || (op == 7'o073) || (op == 7'o146) || (op == 7'o147) || (op == 7'o175);
-	assign o_pd[PD_H003] = (op == 7'o003);
-	assign o_pd[PD_HFADD] = (op == 7'o062) || (op == 7'o063);
-	assign o_pd[PD_HFMUL] = (op[6:2] == 5'b01101);
-	assign o_pd[PD_HFRCP] = (op == 7'o070);
+	assign o_pd[PD_HVM]     = (op == 7'o003) || (op == 7'o073) || (op == 7'o146) || (op == 7'o147) || (op == 7'o175);
+	assign o_pd[PD_H003]    = (op == 7'o003);
+	assign o_pd[PD_HFADD]   = (op == 7'o062) || (op == 7'o063);
+	assign o_pd[PD_HFMUL]   = (op[6:2] == 5'b01101);
+	assign o_pd[PD_HFRCP]   = (op == 7'o070);
 	//the mode instructions 0021 to 0027 and the status register read 073i01
-	assign o_pd[PD_HMODE] = ((op == 7'o002) && (i != 3'd0)) || ((XMP != 0) && (op == 7'o073) && (i_parcel[5:0] == 6'o01));
-	assign o_pd[PD_TS] = (i_parcel[15:6] == 10'o0034);
-	assign o_pd[PD_H074] = (op == 7'o074);
-	assign o_pd[PD_H024] = (op == 7'o024);
-	assign o_pd[PD_H072] = (op == 7'o072);
+	assign o_pd[PD_HMODE]   = ((op == 7'o002) && (i != 3'd0)) || ((op == 7'o073) && (i_parcel[5:0] == 6'o01));
+	assign o_pd[PD_TS]      = (i_parcel[15:6] == 10'o0034);
+	assign o_pd[PD_H074]    = (op == 7'o074);
+	assign o_pd[PD_H024]    = (op == 7'o024);
+	assign o_pd[PD_H072]    = (op == 7'o072);
 
 	//------------------------------------------------------------------
 	// The instruction as the A and S schedulers see it
 	//------------------------------------------------------------------
-	//On a CRAY-1 the fields the manual marks x are ignored (023ijx, 026ijx, 027ijx,
-	//072ixx, 073ixx).  The X-MP gives some of those encodings a meaning, and the lookup
-	//tables tell them by the fields left in place here: 026ij7 and 027ij7 (SBj), 072i02
-	//and 073i02 (the semaphores), 072ij3 and 073ij3 (STj) and 073i01 (the status
-	//register).  026ij1 is told apart at the population count unit.
+	//The fields the manual marks x are ignored (023ijx, 026ijx, 027ijx, 072ixx, 073ixx),
+	//but for the encodings that have a meaning of their own, which the lookup tables
+	//tell by the fields left in place here: 026ij7 and 027ij7 (SBj), 072i02 and 073i02
+	//(the semaphores), 072ij3 and 073ij3 (STj) and 073i01 (the status register).
+	//026ij1 is told apart at the population count unit.
 	reg [15:0] dec;
 	always @* begin
 		dec = i_parcel;
 		case (op)
 			7'o023: dec = {i_parcel[15:3], 3'b000};
-			7'o026, 7'o027: if (!XMP || (k != 3'd7)) dec = {i_parcel[15:3], 3'b000};
-			7'o072: if (!XMP || !((i_parcel[5:0] == 6'o02) || (k == 3'd3))) dec = {i_parcel[15:6], 6'b000000};
+			7'o026, 7'o027: if (k != 3'd7) dec = {i_parcel[15:3], 3'b000};
+			7'o072: if (!((i_parcel[5:0] == 6'o02) || (k == 3'd3))) dec = {i_parcel[15:6], 6'b000000};
 			7'o073:
-			if (!XMP || !((i_parcel[5:0] == 6'o01) || (i_parcel[5:0] == 6'o02) || (k == 3'd3)))
+			if (!((i_parcel[5:0] == 6'o01) || (i_parcel[5:0] == 6'o02) || (k == 3'd3)))
 				dec = {i_parcel[15:6], 6'b000000};
 			default: ;
 		endcase
@@ -137,9 +133,7 @@ module cray_predecode (
 	wire [3:0] a_delay;
 	wire [3:0] a_src;
 	wire       a_en;
-	a_res_lut #(
-		.XMP(XMP)
-	) abus_res_lut (
+	a_res_lut abus_res_lut (
 		.i_cip      (dec),
 		.o_delay    (a_delay),
 		.o_src      (a_src),
@@ -183,99 +177,87 @@ module cray_predecode (
 	wire        rcpl = (op == 7'o174) && (k != 3'd1) && (k != 3'd2);
 	wire [15:0] vdec = rcpl ? {i_parcel[15:3], 3'b000} : i_parcel;
 
-	reg [3:0] fu_delay;
 	reg [2:0] fu;
 	reg vi_en, vj_en, vk_en;
 	always @* begin
 		casez (vdec)
 			//140-147
 			16'b1100????????????: begin
-				fu_delay = 4'd2;  //vector logical
-				fu       = VLOG;
-				vi_en    = 1'b1;
-				vk_en    = 1'b1;
-				vj_en    = i_parcel[9];  //vj for odd instructions, S for even instructions
+				fu    = VLOG;
+				vi_en = 1'b1;
+				vk_en = 1'b1;
+				vj_en = i_parcel[9];  //vj for odd instructions, S for even instructions
 			end
 			//150-153
 			16'b11010???????????: begin
-				fu_delay = 4'd4;  //vector shift
-				fu       = VSHIFT;
-				vi_en    = 1'b1;
-				vj_en    = 1'b1;
-				vk_en    = 1'b0;
+				fu    = VSHIFT;
+				vi_en = 1'b1;
+				vj_en = 1'b1;
+				vk_en = 1'b0;
 			end
 			//154-157
 			16'b11011???????????: begin
-				fu_delay = 4'd3;  //vector add
-				fu       = VADD;
-				vi_en    = 1'b1;
-				vk_en    = 1'b1;
-				vj_en    = i_parcel[9];
+				fu    = VADD;
+				vi_en = 1'b1;
+				vk_en = 1'b1;
+				vj_en = i_parcel[9];
 			end
 			//160-167
 			16'b1110????????????: begin
-				fu_delay = 4'd7;  //FP mul
-				fu       = FP_MUL;
-				vi_en    = 1'b1;
-				vk_en    = 1'b1;
-				vj_en    = i_parcel[9];
+				fu    = FP_MUL;
+				vi_en = 1'b1;
+				vk_en = 1'b1;
+				vj_en = i_parcel[9];
 			end
 			//170-173
 			16'b11110???????????: begin
-				fu_delay = 4'd6;  //FP add
-				fu       = FP_ADD;
-				vi_en    = 1'b1;
-				vk_en    = 1'b1;
-				vj_en    = i_parcel[9];
+				fu    = FP_ADD;
+				vi_en = 1'b1;
+				vk_en = 1'b1;
+				vj_en = i_parcel[9];
 			end
 			//174ij0 - floating point reciprocal approximation
 			16'b1111100??????000: begin
-				fu_delay = 4'd14;
-				fu       = FP_RA;
-				vi_en    = 1'b1;
-				vk_en    = 1'b0;
-				vj_en    = 1'b1;
+				fu    = FP_RA;
+				vi_en = 1'b1;
+				vk_en = 1'b0;
+				vj_en = 1'b1;
 			end
 			//174ij1 - population count of (Vj elements) to Vi elements
 			//174ij2 - population count parity of (Vj elements) to Vi elements
 			16'b1111100??????001, 16'b1111100??????010: begin
-				fu_delay = 4'd6;
-				fu       = VPOP;
-				vi_en    = 1'b1;
-				vj_en    = 1'b1;
-				vk_en    = 1'b0;
+				fu    = VPOP;
+				vi_en = 1'b1;
+				vj_en = 1'b1;
+				vk_en = 1'b0;
 			end
 			//175xj0-175xj3 - create vector mask based on the results of testing the Vj register
 			16'b1111101?????????: begin
-				fu_delay = 4'd2;  //vector logical
-				fu       = VLOG;
-				vi_en    = 1'b0;
-				vj_en    = 1'b1;
-				vk_en    = 1'b0;
+				fu    = VLOG;
+				vi_en = 1'b0;
+				vj_en = 1'b1;
+				vk_en = 1'b0;
 			end
 			//176ixk-177xj0
 			16'b111111??????????: begin
-				fu_delay = 4'd2;
-				fu       = MEM;
-				vi_en    = !i_parcel[9];  //write to Vi for 176
-				vj_en    = i_parcel[9];  //read from Vj for 177
-				vk_en    = 1'b0;
+				fu    = MEM;
+				vi_en = !i_parcel[9];  //write to Vi for 176
+				vj_en = i_parcel[9];  //read from Vj for 177
+				vk_en = 1'b0;
 			end
 			default: begin
-				fu       = 3'b0;
-				fu_delay = 4'b0;
-				vi_en    = 1'b0;
-				vj_en    = 1'b0;
-				vk_en    = 1'b0;
+				fu    = 3'b0;
+				vi_en = 1'b0;
+				vj_en = 1'b0;
+				vk_en = 1'b0;
 			end
 		endcase
 	end
 
-	assign o_pd[PD_V_I+:8]     = vi_en ? (8'd1 << i) : 8'd0;
-	assign o_pd[PD_V_J+:8]     = vj_en ? (8'd1 << j) : 8'd0;
-	assign o_pd[PD_V_K+:8]     = vk_en ? (8'd1 << k) : 8'd0;
-	assign o_pd[PD_V_FU+:8]    = 8'd1 << fu;
-	assign o_pd[PD_V_DELAY+:4] = fu_delay;
+	assign o_pd[PD_V_I+:8]  = vi_en ? (8'd1 << i) : 8'd0;
+	assign o_pd[PD_V_J+:8]  = vj_en ? (8'd1 << j) : 8'd0;
+	assign o_pd[PD_V_K+:8]  = vk_en ? (8'd1 << k) : 8'd0;
+	assign o_pd[PD_V_FU+:8] = 8'd1 << fu;
 
 	//------------------------------------------------------------------
 	// Branch unit
