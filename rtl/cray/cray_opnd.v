@@ -44,8 +44,9 @@ module cray_opnd (
 			endcase
 			7'o002: if (i == 3'd0) o_rd_a = rk;  // VL Ak
 			7'o003: o_rd_s = rj;  // VM Sj
-			7'o010, 7'o011, 7'o012, 7'o013: o_rd_a = R0;  // branch on A0
-			7'o014, 7'o015, 7'o016, 7'o017: o_rd_s = R0;  // branch on S0
+			// with the high bit of i set these are Ah exp, which reads nothing
+			7'o010, 7'o011, 7'o012, 7'o013: if (!i[2]) o_rd_a = R0;  // branch on A0
+			7'o014, 7'o015, 7'o016, 7'o017: if (!i[2]) o_rd_s = R0;  // branch on S0
 			7'o023: o_rd_s = rj;  // Ai Sj
 			7'o025: o_rd_a = ri;  // Bjk Ai
 			7'o026, 7'o027:

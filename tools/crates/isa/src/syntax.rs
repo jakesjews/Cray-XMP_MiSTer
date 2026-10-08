@@ -480,7 +480,7 @@ fn bind(form: &'static Form, caps: &[Cap], eval: &mut Eval) -> Result<Option<Ass
         let neg22 = |x: i64| (-(1 << 22)..0).contains(&x);
         let too_big = |x: i64, reg: &str| {
             format!(
-                "constant {} does not fit: {} takes 0 to 17777777 or its complement",
+                "constant {} does not fit: {} takes 24 bits",
                 signed_octal(x),
                 reg
             )
@@ -488,7 +488,15 @@ fn bind(form: &'static Form, caps: &[Cap], eval: &mut Eval) -> Result<Option<Ass
         match form.sel {
             Sel::None => fields.set_exp(form.exp, x)?,
             Sel::ImmA => {
+                // the register is in i for `Ai exp` and in h for `Ah exp`
+                let reg = if form.op == Op::ImmALong {
+                    fields.h
+                } else {
+                    fields.i
+                };
+                (fields.h, fields.i) = (0, reg);
                 // a 24-bit pattern with the top two bits set is a negative A value
+                let all24 = x;
                 let x = if (0xc0_0000..0x100_0000).contains(&x) {
                     x - 0x100_0000
                 } else {
@@ -503,6 +511,11 @@ fn bind(form: &'static Form, caps: &[Cap], eval: &mut Eval) -> Result<Option<Ass
                 } else if neg22(x) {
                     target = base_form(Op::ImmANot);
                     fields.set_jkm(!(x as u32) & 0x3f_ffff);
+                } else if (0..1 << 24).contains(&all24) {
+                    // neither 22 bits nor their complement: the 24-bit form
+                    target = base_form(Op::ImmALong);
+                    fields.h = reg;
+                    fields.set_exp(ExpKind::Ijkm24, all24)?;
                 } else {
                     return Err(too_big(x, "Ai"));
                 }
@@ -708,6 +721,7 @@ impl Form {
             ExpKind::J => Some(2),
             ExpKind::Jk | ExpKind::JkRev => Some(0o12),
             ExpKind::Jkm | ExpKind::Ijkm => Some(0o1234567),
+            ExpKind::Ijkm24 => Some(0o23456701),
             ExpKind::JkmNot => Some(-0o1234567),
             ExpKind::JkmSigned => Some(0o1234),
         };

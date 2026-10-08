@@ -129,19 +129,6 @@ impl Machine {
         self.p = target & self.p_mask();
     }
 
-    /// 010 to 017 with the high bit of i set are not branches but `Ah exp`,
-    /// a 24-bit constant, on an X-MP with extended addressing, which this
-    /// machine is not.
-    fn no_long_constant(&self, d: &Decoded) -> Result<(), TestError> {
-        if d.i & 4 != 0 {
-            return Err(self.error(
-                ErrorKind::NotDefinedByManual,
-                "01hijkm with the high bit of i set (the X-MP's 24-bit constant to Ah)",
-            ));
-        }
-        Ok(())
-    }
-
     /// The shared registers of the current cluster; `None` in cluster
     /// 0, where "instructions regarding the shared registers become no-ops,
     /// except for the instructions returning values to Ai or Si, which
@@ -280,8 +267,12 @@ impl Machine {
                 }
             }
             Op::SetVl => {
-                // the low seven bits of (Ak), 1 if k = 0 (page 4-10)
-                let value = self.ak(d).map(|a| a as u8 & 0x7f);
+                // the low six bits of (Ak), 1 if k = 0; "the 7th bit of VL
+                // is set if the 6 low-order bits of (Ak) = 0" (X 5-14)
+                let value = self.ak(d).map(|a| match a as u8 & 0o77 {
+                    0 => 0o100,
+                    low => low,
+                });
                 self.set_vl(value);
             }
             Op::Efi | Op::Dfi => {
@@ -410,7 +401,6 @@ impl Machine {
                 self.branch(d.ijkm() & A_MASK);
             }
             Op::Jaz | Op::Jan | Op::Jap | Op::Jam => {
-                self.no_long_constant(d)?;
                 let a0 = self.need(self.a[0], "A0 (branch condition)")?;
                 let taken = match d.op {
                     Op::Jaz => a0 == 0,
@@ -423,7 +413,6 @@ impl Machine {
                 }
             }
             Op::Jsz | Op::Jsn | Op::Jsp | Op::Jsm => {
-                self.no_long_constant(d)?;
                 let s0 = self.need(self.s[0], "S0 (branch condition)")?;
                 let taken = match d.op {
                     Op::Jsz => s0 == 0,
@@ -440,6 +429,11 @@ impl Machine {
             Op::ImmA => self.set_a(i, Some(d.jkm())),
             Op::ImmANot => self.set_a(i, Some(!d.jkm() & A_MASK)),
             Op::ImmAShort => self.set_a(i, Some(jk as u32)),
+            // 01hijkm with the high bit of i set: the low 24 bits of ijkm to
+            // Ah, and A0 is a register here (X 5-27)
+            Op::ImmALong => self.set_a(d.h as usize, Some(d.ijkm() & A_MASK)),
+            // 023i01: the 7-bit VL register as it stands (X 5-30)
+            Op::AFromVl => self.set_a(i, self.vl.map(|v| v as u32)),
             Op::AFromS => {
                 let value = self.sj(d).map(|s| s as u32 & A_MASK);
                 self.set_a(i, value);

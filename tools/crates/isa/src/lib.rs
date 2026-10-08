@@ -8,15 +8,17 @@
 //! 1982: their rows carry `flag::OPTION` and a page of revision F of that
 //! manual (HR-0004, May 1982), starting with `F`.  What the X-MP added
 //! (channel master clear, the cluster number, the mode switches 0023 to
-//! 0027, the semaphores, the shared registers and the status register)
-//! carries `flag::XMP` and a page of the CRAY X-MP Series Model 14 mainframe
-//! reference manual CSM-0111000, starting with `X`.
+//! 0027, the semaphores, the shared registers, the status register, the
+//! read of VL and the 24-bit constant to Ah) carries `flag::XMP` and a
+//! page of the CRAY X-MP Series Model 14 mainframe reference manual
+//! CSM-0111000, starting with `X`.
 //!
 //! A field the manual marks `x` is ignored whatever it holds.  Where an
 //! encoding is left undefined the table keeps the meaning of its
-//! neighbours: 026ijk with k = 2 to 6 is the population count, 174ijk with
-//! k = 3 to 7 the reciprocal, 003 with i other than 4, 6 and 7 is `VM Sj`.
-//! 0014jk with k = 1 or 2 is a pass.
+//! neighbours: 023ijk other than 023i01 is `Ai Sj`, 026ijk with k = 2 to 6
+//! is the population count, 174ijk with k = 3 to 7 the reciprocal, 003
+//! with i other than 4, 6 and 7 is `VM Sj`.  0014jk with k = 1 or 2 is a
+//! pass.
 //!
 //! # Instruction format
 //!

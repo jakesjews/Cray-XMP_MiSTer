@@ -106,6 +106,10 @@ pub enum Op {
     ImmANot,
     /// 022ijk Ai <- jk
     ImmAShort,
+    /// X-MP 01hijkm with the high bit of i set: Ah <- the low 24 bits of ijkm
+    ImmALong,
+    /// X-MP 023i01: Ai <- (VL)
+    AFromVl,
     /// 023ijx Ai <- (Sj)
     AFromS,
     /// 024ijk Ai <- (Bjk)
@@ -382,10 +386,12 @@ pub enum ExpKind {
     /// exp = jkm as a 22-bit two's complement displacement or address;
     /// -2**21 to 2**22 - 1 is accepted, decode gives -2**21 to 2**21 - 1.
     JkmSigned,
-    /// exp = low 24 bits of ijkm, a parcel address.  P is 22 bits wide: a
-    /// value of 2**22 or more (either low bit of i set) is a program range
-    /// error on the machine.  The top bit of i is ignored.
+    /// exp = low 24 bits of ijkm, a parcel address.  The top bit of i is
+    /// clear in 010 to 017 and ignored in 006 and 007.
     Ijkm,
+    /// exp = low 24 bits of ijkm, a constant; the form sets the top bit of
+    /// i (`Ah exp`).
+    Ijkm24,
 }
 
 /// Value dependent choice of encoding made by `assemble` (CAL rules).
@@ -393,7 +399,8 @@ pub enum ExpKind {
 pub enum Sel {
     None,
     /// `Ai exp`: 022 if 0 to 63 and not a forward reference, else 020 if
-    /// positive, else 021 with the complement.
+    /// it fits 22 bits, else 021 with the complement if that does, else
+    /// the 24-bit form 01h.
     ImmA,
     /// `Ai #exp`: 021 with jkm = exp if exp is positive, else 020 with the
     /// complement of exp.
@@ -415,6 +422,8 @@ pub enum RegRef {
     Aj,
     Ak,
     Ah,
+    /// Ah as a result: A0 is a register here, not a constant.
+    AhDest,
     A0,
     Si,
     Sj,
@@ -656,6 +665,18 @@ impl Form {
         self.dont_care |= bits;
         self
     }
+    /// The row needs these bits of a field it names to be set.
+    const fn set(mut self, bits: u16) -> Form {
+        self.mask |= bits;
+        self.bits |= bits;
+        self
+    }
+    /// The row needs these bits of a field it names to be clear.
+    const fn clear(mut self, bits: u16) -> Form {
+        self.mask |= bits;
+        self.bits &= !bits;
+        self
+    }
 }
 
 use flag::*;
@@ -721,20 +742,22 @@ pub static FORMS: &[Form] = &[
     base(JumpB, "005xjk", "J", "Bjk", "4-13", "Jump to (Bjk)").f(BR).r(&[Bjk]),
     base(Jump, "006ijkm", "J", "exp", "4-14", "Jump to exp").e(E::Ijkm).dc(0o400).f(BR),
     base(ReturnJump, "007ijkm", "R", "exp", "4-15", "Return jump to exp; set B00 to P").e(E::Ijkm).dc(0o400).f(BR).w(&[B00]),
-    base(Jaz, "010ijkm", "JAZ", "exp", "4-16", "Branch to exp if (A0) = 0").e(E::Ijkm).dc(0o400).f(CBR).r(&[A0]),
-    base(Jan, "011ijkm", "JAN", "exp", "4-16", "Branch to exp if (A0) not 0").e(E::Ijkm).dc(0o400).f(CBR).r(&[A0]),
-    base(Jap, "012ijkm", "JAP", "exp", "4-16", "Branch to exp if (A0) positive").e(E::Ijkm).dc(0o400).f(CBR).r(&[A0]),
-    base(Jam, "013ijkm", "JAM", "exp", "4-16", "Branch to exp if (A0) negative").e(E::Ijkm).dc(0o400).f(CBR).r(&[A0]),
-    base(Jsz, "014ijkm", "JSZ", "exp", "4-17", "Branch to exp if (S0) = 0").e(E::Ijkm).dc(0o400).f(CBR).r(&[S0]),
-    base(Jsn, "015ijkm", "JSN", "exp", "4-17", "Branch to exp if (S0) not 0").e(E::Ijkm).dc(0o400).f(CBR).r(&[S0]),
-    base(Jsp, "016ijkm", "JSP", "exp", "4-17", "Branch to exp if (S0) positive").e(E::Ijkm).dc(0o400).f(CBR).r(&[S0]),
-    base(Jsm, "017ijkm", "JSM", "exp", "4-17", "Branch to exp if (S0) negative").e(E::Ijkm).dc(0o400).f(CBR).r(&[S0]),
+    base(Jaz, "010ijkm", "JAZ", "exp", "4-16", "Branch to exp if (A0) = 0").e(E::Ijkm).clear(0o400).f(CBR).r(&[A0]),
+    base(Jan, "011ijkm", "JAN", "exp", "4-16", "Branch to exp if (A0) not 0").e(E::Ijkm).clear(0o400).f(CBR).r(&[A0]),
+    base(Jap, "012ijkm", "JAP", "exp", "4-16", "Branch to exp if (A0) positive").e(E::Ijkm).clear(0o400).f(CBR).r(&[A0]),
+    base(Jam, "013ijkm", "JAM", "exp", "4-16", "Branch to exp if (A0) negative").e(E::Ijkm).clear(0o400).f(CBR).r(&[A0]),
+    base(Jsz, "014ijkm", "JSZ", "exp", "4-17", "Branch to exp if (S0) = 0").e(E::Ijkm).clear(0o400).f(CBR).r(&[S0]),
+    base(Jsn, "015ijkm", "JSN", "exp", "4-17", "Branch to exp if (S0) not 0").e(E::Ijkm).clear(0o400).f(CBR).r(&[S0]),
+    base(Jsp, "016ijkm", "JSP", "exp", "4-17", "Branch to exp if (S0) positive").e(E::Ijkm).clear(0o400).f(CBR).r(&[S0]),
+    base(Jsm, "017ijkm", "JSM", "exp", "4-17", "Branch to exp if (S0) negative").e(E::Ijkm).clear(0o400).f(CBR).r(&[S0]),
+    base(ImmALong, "01hijkm", "Ah", "exp", "X 5-27", "Transmit exp = the low 24 bits of ijkm to Ah").e(E::Ijkm24).s(Sel::ImmA).set(0o400).f(XM).w(&[AhDest]),
     // ---- 020 to 033: A registers
     base(ImmA, "020ijkm", "Ai", "exp", "4-18", "Transmit exp = jkm to Ai").e(E::Jkm).s(Sel::ImmA).w(&[Ai]),
     alt(ImmA, "020ijkm", "Ai", "#exp", "4-18", "Transmit complement of exp = jkm to Ai (exp negative)").e(E::JkmNot).s(Sel::ImmANot).f(X),
     base(ImmANot, "021ijkm", "Ai", "exp", "4-18", "Transmit exp = 1's complement of jkm to Ai").e(E::JkmNot).s(Sel::ImmA).w(&[Ai]),
     alt(ImmANot, "021ijkm", "Ai", "#exp", "4-18", "Transmit complement of exp = jkm to Ai").e(E::Jkm).s(Sel::ImmANot).f(X),
     base(ImmAShort, "022ijk", "Ai", "exp", "4-19", "Transmit exp = jk to Ai").e(E::Jk).s(Sel::ImmA).w(&[Ai]),
+    base(AFromVl, "023i01", "Ai", "VL", "X 5-30", "Transmit (VL) to Ai").f(XM).r(&[Vl]).w(&[Ai]),
     base(AFromS, "023ijx", "Ai", "Sj", "4-20", "Transmit (Sj) to Ai").r(&[Sj]).w(&[Ai]),
     base(AFromB, "024ijk", "Ai", "Bjk", "4-21", "Transmit (Bjk) to Ai").r(&[Bjk]).w(&[Ai]),
     base(BFromA, "025ijk", "Bjk", "Ai", "4-21", "Transmit (Ai) to Bjk").r(&[Ai]).w(&[Bjk]),

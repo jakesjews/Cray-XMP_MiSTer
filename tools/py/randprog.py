@@ -145,8 +145,8 @@ class Gen:
     def op_a(self):
         r, e = self.r, self.emit
         i = self.areg()
-        k = r.randrange(11)
-        if k == 0: e('A%d' % i, "O'%o" % self.imm(r.choice([4, 6, 16, 22])))
+        k = r.randrange(13)
+        if k == 0: e('A%d' % i, "O'%o" % self.imm(r.choice([4, 6, 16, 22, 24])))   # 24 bits: 01hijkm where it must be
         elif k == 1: e('A%d' % i, "#O'%o" % self.imm(r.choice([4, 16, 22])))
         elif k == 2: e('A%d' % i, 'S%d' % self.sreg())
         elif k == 3: e('A%d' % i, 'B%02o' % self.breg())
@@ -154,6 +154,9 @@ class Gen:
         elif k == 5: e('A%d' % i, r.choice(['PS%d', 'QS%d']) % self.sreg())
         elif k == 6: e('A%d' % i, 'ZS%d' % self.sreg())
         elif k in (7, 8): e('A%d' % i, 'A%d%sA%d' % (self.aany(), r.choice('+-'), self.aany()))
+        elif k == 11: e('A%d' % i, 'VL')
+        elif k == 12:                                                      # 01hijkm with any constant, small ones too
+            e('VWD', "D'16/O'%06o,D'16/O'%06o" % (0o010000 | i << 9 | r.randrange(4, 8) << 6 | r.randrange(64), r.getrandbits(16)))
         else: e('A%d' % i, 'A%d*A%d' % (self.aany(), self.aany()))
 
     def op_s(self):

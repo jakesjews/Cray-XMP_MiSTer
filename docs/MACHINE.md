@@ -98,6 +98,13 @@ Subsystem dead starts COS 1.17 and runs batch jobs.
   The countdown runs all the time, one count per clock period; a request
   comes every interval + 1 clock periods.
 - A, S, B, T and V registers, VL, VM, the real-time clock, XA and a 24-bit P.
+- **VL** as the X-MP has it: 0020 enters the low six bits of (Ak) and sets
+  the seventh when they are zero, so the register holds 1 to 100 octal, and
+  023i01 `Ai VL` reads it. The field of an exchange package is loaded as it
+  stands.
+- **The 24-bit constant** 01hijkm `Ah exp`, told from the branches 010 to 017
+  by the high bit of i. The assembler uses it for a constant that neither
+  22 bits nor their complement hold.
 - **Memory** has four million words.
 - **The exchange package** has the X-MP layout: a 24-bit P, an instruction
   base and limit and a data base and limit of 19 bits each in units of 32
@@ -156,10 +163,8 @@ Subsystem dead starts COS 1.17 and runs batch jobs.
   sets the I/O interrupt flag outside monitor mode. The first pair, 10 and
   11, leads to the MIOP of the I/O Subsystem; the other three lead nowhere.
 
-Not there: the 24-bit constant `Ah exp` (01hijkm with the high bit of i),
-`Ai VL` (023i01), the second vector logical unit, gather and scatter, the
-interrupt monitor mode, the X-MP's rule for VL, the 100 Mbyte channels of the
-CPU and channel parity.
+Not there: the second vector logical unit, gather and scatter, the
+interrupt monitor mode, the 100 Mbyte channels of the CPU and channel parity.
 
 ## Differences from a real X-MP
 
@@ -195,8 +200,8 @@ CPU and channel parity.
 - **No memory errors.** The memory error flag and the error fields of the
   exchange package are always zero.
 - **Encodings the manuals leave undefined.** 0014jk with k = 1 or 2 is a
-  pass. 026ijk with k = 2 to 6 is the population count. 174ijk with k = 3 to
-  7 is the reciprocal. Dead start clears the programmable clock's enable and
+  pass. 023ijk other than 023i01 is `Ai Sj`. 026ijk with k = 2 to 6 is the
+  population count. 174ijk with k = 3 to 7 is the reciprocal. Dead start clears the programmable clock's enable and
   request; on the real machine they are undefined then.
 - **A fetch outside the field in monitor mode** is not checked, since the
   program range flag cannot set there.

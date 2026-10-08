@@ -1450,10 +1450,12 @@ localparam VLOG      = 3'b000,   //vector logical
 	//address and scalar instructions
 	imm_gen igen (
 		.i_instr   (cip_instr),
+		.i_cip_i   (cip_i),
 		.i_cip_j   (cip_j),
 		.i_cip_k   (cip_k),
 		.i_lip     (lip),
 		.i_sj      (s_j_data),
+		.i_vl      (vector_length),
 		.o_a_result(a_imm_out),
 		.o_s_result(s_imm_out)
 	);
@@ -1718,7 +1720,9 @@ localparam VLOG      = 3'b000,   //vector logical
 	always @(posedge clk)
 		if (rst) vector_length <= 7'b1000000;
 		else if (!x_swap) begin
-			vector_length <= (cip_issue && (cip[15:6]==10'o0020)) ? a_k_data[6:0] : vector_length;   //(Ak) is 1 when k is 0
+			//the low six bits of (Ak), which is 1 when k is 0, and "the 7th bit of VL is
+			//set if the 6 low-order bits of (Ak) = 0" (CSM-0111000 page 5-14)
+			if (cip_issue && (cip[15:6] == 10'o0020)) vector_length <= {(a_k_data[5:0] == 6'b0), a_k_data[5:0]};
 		end else if (x_load && (x_cnt == 4'b0011)) vector_length <= x_data[39:33];
 
 

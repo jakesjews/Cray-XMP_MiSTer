@@ -1,0 +1,225 @@
+* vlah: the VL register as the X-MP has it, with its read back 023i01, and
+* the 24-bit constant 01hijkm (CSM-0111000 pages 5-14, 5-27 and 5-30).
+         INCLUDE "rt_direct.cal"
+         INCLUDE "rt_user.cal"
+UPKG     =       3000
+         TBEGIN
+*
+* ---- VL: the low six bits of (Ak), and 100 when they are zero.  The
+* manual's three examples first.
+         A1      0
+         VL      A1
+         A2      VL
+         CHKA    A2,100,2
+         A1      23
+         VL      A1
+         A2      VL
+         CHKA    A2,23,3
+         A1      123
+         VL      A1
+         A2      VL
+         CHKA    A2,23,4
+         A1      100
+         VL      A1
+         A2      VL
+         CHKA    A2,100,5
+         A1      177
+         VL      A1
+         A2      VL
+         CHKA    A2,77,6
+         A1      7700
+         VL      A1
+         A2      VL
+         CHKA    A2,100,7
+         VL      1
+         A2      VL
+         CHKA    A2,1,10
+* a read right behind the instruction that sets VL, with its result used at once
+         A1      5
+         A3      D'60
+         VL      A3
+         A4      VL
+         A5      A4+A1
+         CHKA    A5,D'65,11
+* 023 with j, or with another k, is still Ai Sj
+         S2      1234
+         VL      A1
+         VWD     D'16/O'023421
+         CHKA    A4,1234,12
+         VWD     D'16/O'023402
+         CHKA    A4,0,13
+*
+* ---- VL and a vector operation: 100 means 64 operations
+         A1      D'64
+         VL      A1
+         A0      KV
+         V1      ,A0,1
+         V2      V1+V1
+         A1      200
+         VL      A1                      ; the low six bits are zero: 100
+         V3      V2+V1
+         A2      D'63
+         S1      V3,A2
+         CHKS    S1,D'192,14
+         A1      3
+         VL      A1
+         V3      V1+V1                   ; elements 0 to 2 only
+         A2      2
+         S1      V3,A2
+         CHKS    S1,6,15
+         A2      3
+         S1      V3,A2
+         CHKS    S1,D'12,16
+*
+* ---- the exchange package: the register is stored as it stands, and the
+* field of a package is loaded as it stands
+         UGO     KP1
+         UFLAG   S2
+         CHKS    S2,1,20                 ; normal exit
+         S2      UPKG+3,0
+         S2      S2<D'24
+         S2      S2>D'57
+         CHKS    S2,100,21               ; the program set VL from zero
+         A2      UPKG+1,0
+         CHKA    A2,0,22                 ; what it read first: the field of its package
+         A2      UPKG+2,0
+         CHKA    A2,100,23               ; and after VL A3
+         S1      KW3,0                   ; a package whose VL field is 101
+         U$W3,0  S1
+         UGO     KP2
+         A2      UPKG+1,0
+         CHKA    A2,101,24
+         A2      UPKG+2,0
+         CHKA    A2,7,25                 ; one operation: element 0 only
+*
+* ---- the 24-bit constant: what neither 22 bits nor their complement hold
+         A3      40000000
+         CHKA    A3,40000000,30
+         A4      57777777
+         CHKA    A4,57777777,31
+         A5      20000000
+         A1      A5+1
+         CHKA    A5,20000000,32
+         CHKA    A1,20000001,33          ; the constant used at once
+* A0 is a register for it; a branch on A0 right behind it waits for it
+         A0      0
+         A0      37777777
+         JAN     OK1
+         TFAIL   34
+OK1      A0      -1
+         A0      40000000                ; negative as a 24-bit number
+         JAM     OK2
+         TFAIL   35
+* with a constant the assembler would put in a shorter form
+OK2      VWD     D'16/O'011400,D'16/O'000005
+         CHKA    A1,5,36
+         VWD     D'16/O'016777,D'16/O'177777
+         CHKA    A6,77777777,37
+         A0      5
+         VWD     D'16/O'010400,D'16/O'000000
+         JAZ     OK2B
+         TFAIL   40
+OK2B     BSS     0
+* the parcel behind the constant is the next instruction
+         A2      1
+         A3      50000001
+         A2      A2+1
+         A2      A2+1
+         CHKA    A2,3,41
+* 010 to 017 with the high bit of i clear are the branches they were
+         A0      0
+         JAZ     OK3
+         TFAIL   42
+OK3      S0      1
+         JSN     OK4
+         TFAIL   43
+OK4      TPASS
+         TEND    DUMPALL
+*
+KP1      CON     UP1*T$P2_24
+KP2      CON     UP2*T$P2_24
+KW3      CON     UPKG/20*T$P2_40+101*T$P2_33
+         UDATA
+KV       CON     1
+         CON     2
+         CON     3
+         CON     4
+         CON     5
+         CON     6
+         CON     7
+         CON     D'8
+         CON     D'9
+         CON     D'10
+         CON     D'11
+         CON     D'12
+         CON     D'13
+         CON     D'14
+         CON     D'15
+         CON     D'16
+         CON     D'17
+         CON     D'18
+         CON     D'19
+         CON     D'20
+         CON     D'21
+         CON     D'22
+         CON     D'23
+         CON     D'24
+         CON     D'25
+         CON     D'26
+         CON     D'27
+         CON     D'28
+         CON     D'29
+         CON     D'30
+         CON     D'31
+         CON     D'32
+         CON     D'33
+         CON     D'34
+         CON     D'35
+         CON     D'36
+         CON     D'37
+         CON     D'38
+         CON     D'39
+         CON     D'40
+         CON     D'41
+         CON     D'42
+         CON     D'43
+         CON     D'44
+         CON     D'45
+         CON     D'46
+         CON     D'47
+         CON     D'48
+         CON     D'49
+         CON     D'50
+         CON     D'51
+         CON     D'52
+         CON     D'53
+         CON     D'54
+         CON     D'55
+         CON     D'56
+         CON     D'57
+         CON     D'58
+         CON     D'59
+         CON     D'60
+         CON     D'61
+         CON     D'62
+         CON     D'63
+         CON     D'64
+*
+* the user programs
+         ORG     2000
+UP1      A1      VL                      ; the field of the package: 0
+         VL      A3                      ; (A3) is 0: VL becomes 100
+         A2      VL
+         EX
+UP2      A1      VL                      ; 101, as the package had it
+         A2      7
+         A3      0
+         S1      A2
+         V1,A3   S1                      ; element 0 is 7
+         V2      V1+V1                   ; one operation
+         V3,A3   S1
+         V3      V1\V3                   ; element 0: 7 xor 7; the others stay
+         S2      V1,A3
+         A2      S2
+         EX
+         END

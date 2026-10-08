@@ -443,7 +443,7 @@ R        =         3
 
 #[test]
 fn instruction_errors_carry_the_line_and_stop_the_image() {
-    let e = errors(" PASS\n FOO BAR\n A1 20000000\n S1 S2<S3\n S1 <200\n A1 1,2,3\n");
+    let e = errors(" PASS\n FOO BAR\n A1 100000000\n S1 S2<S3\n S1 <200\n A1 1,2,3\n");
     assert_eq!(e.iter().map(|x| x.0).collect::<Vec<_>>(), [2, 3, 4, 5, 6]);
     assert!(e[0].1.contains("no instruction form matches `FOO BAR`"));
     assert!(e[1].1.contains("does not fit"));

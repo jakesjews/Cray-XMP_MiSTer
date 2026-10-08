@@ -43,7 +43,7 @@ fn bound_fields(f: &Form) -> (bool, bool, bool, bool, bool) {
         ExpKind::J => j = true,
         ExpKind::Jk | ExpKind::JkRev => (j, k) = (true, true),
         ExpKind::Jkm | ExpKind::JkmNot | ExpKind::JkmSigned => (j, k, m) = (true, true, true),
-        ExpKind::Ijkm => (i, j, k, m) = (true, true, true, true),
+        ExpKind::Ijkm | ExpKind::Ijkm24 => (i, j, k, m) = (true, true, true, true),
     }
     h |= false;
     (h, i, j, k, m)
@@ -192,7 +192,14 @@ fn every_encoding_disassembles_to_text_that_assembles_back() {
                 raw += 1;
                 let no_spelling = matches!(d.op, Op::ClockPass | Op::MonitorPass);
                 let alias = matches!(d.op, Op::ShlS | Op::ShrS) && d.i == 0;
-                assert!(no_spelling || alias, "{:06o} {:06o} has no spelling", p0, m);
+                // the 24-bit form with a constant CAL gives a shorter form
+                let long = d.op == Op::ImmALong && matches!(d.i, 4 | 7);
+                assert!(
+                    no_spelling || alias || long,
+                    "{:06o} {:06o} has no spelling",
+                    p0,
+                    m
+                );
                 let mut text = format!("D'16/O'{:06o}", want.parcel0);
                 if let Some(m) = want.parcel1 {
                     text.push_str(&format!(",D'16/O'{:06o}", m));
@@ -219,8 +226,9 @@ fn every_encoding_disassembles_to_text_that_assembles_back() {
             }
         }
     }
-    // 0014j1, 0014j2, 0015xx-0017xx, 0540jk, 0550jk
-    assert_eq!(raw, 2 * 8 + 3 * 64 + 64 + 64);
+    // 0014j1, 0014j2, 0015xx-0017xx, 0540jk, 0550jk, and 01h with i = 4 or 7
+    // (eight registers, 64 values of jk, six second parcels)
+    assert_eq!(raw, 2 * 8 + 3 * 64 + 64 + 64 + 2 * 8 * 64 * 6);
 }
 
 #[test]
@@ -454,7 +462,7 @@ fn flags_and_units() {
 }
 
 #[test]
-fn a_register_constants_pick_020_021_022() {
+fn a_register_constants_pick_020_021_022_or_the_24_bit_form() {
     assert_eq!(asm("A1", "0"), [0o022100]);
     assert_eq!(asm("A3", "10"), [0o022310]);
     assert_eq!(asm("A1", "77"), [0o022177]);
@@ -473,8 +481,25 @@ fn a_register_constants_pick_020_021_022() {
     // a 24-bit pattern with the top bits set is a negative A value
     assert_eq!(asm("A1", "77777777"), [0o021100, 0o000000]);
     assert_eq!(asm("A1", "77777770"), [0o021100, 0o000007]);
-    assert!(asm_err("A1", "20000000").contains("does not fit"));
+    // what neither 22 bits nor their complement can hold takes the X-MP's
+    // 24-bit form 01hijkm: the register in h, the high bit of i set
+    assert_eq!(asm("A1", "20000000"), [0o011500, 0o000000]);
+    assert_eq!(asm("A7", "57777777"), [0o017677, 0o177777]);
+    assert_eq!(asm("A0", "37777777"), [0o010577, 0o177777]);
+    assert!(asm_err("A1", "100000000").contains("does not fit"));
     assert!(asm_err("A1", "-20000001").contains("does not fit"));
+    let d = decode(0o011500, Some(0));
+    assert_eq!((d.op, d.exp), (Op::ImmALong, Some(0o20000000)));
+    assert_eq!(d.writes(), vec![Reg::A(1)]);
+    assert_eq!(decode(0o010577, Some(0)).writes(), vec![Reg::A(0)]);
+    assert_eq!(disassemble(&d), "A1        20000000");
+    // with a constant CAL would put in a shorter form it has no spelling
+    assert_eq!(
+        disassemble(&decode(0o011400, Some(5))),
+        "VWD       D'16/O'011400,D'16/O'000005"
+    );
+    // 010 to 017 with the high bit of i clear are the branches
+    assert_eq!(decode(0o011300, Some(0)).op, Op::Jan);
     // a forward reference always takes two parcels
     let mut forward = |_: &str, _| {
         Ok(ExpValue {
@@ -745,6 +770,7 @@ fn xmp_rows() {
         ("SM23", "1,TS", 0o003423, Op::SemTestSet),
         ("SM23", "0", 0o003623, Op::SemClear),
         ("SM23", "1", 0o003723, Op::SemSet),
+        ("A1", "VL", 0o023101, Op::AFromVl),
         ("A1", "SB2", 0o026127, Op::AFromSb),
         ("SB2", "A1", 0o027127, Op::SbFromA),
         ("S1", "SM", 0o072102, Op::SFromSm),
@@ -768,6 +794,8 @@ fn xmp_rows() {
         (0o072100u16, Op::SFromRt),
         (0o073100, Op::SFromVm),
         (0o003020, Op::SetVm),
+        (0o023121, Op::AFromS),
+        (0o023102, Op::AFromS),
         (0o026120, Op::PopCount),
         (0o027120, Op::LeadingZeros),
         (0o001420, Op::SetRt),

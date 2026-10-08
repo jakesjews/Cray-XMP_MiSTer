@@ -89,6 +89,11 @@ impl Fields {
                 self.i = (value >> 22) as u8 & 3;
                 self.set_jkm(value as u32 & 0x3f_ffff);
             }
+            ExpKind::Ijkm24 => {
+                check(0, (1 << 24) - 1, "value")?;
+                self.i = 4 | ((value >> 22) as u8 & 3);
+                self.set_jkm(value as u32 & 0x3f_ffff);
+            }
         }
         Ok(())
     }
@@ -110,7 +115,7 @@ impl Fields {
                     v
                 }
             }
-            ExpKind::Ijkm => (self.ijkm() & 0xff_ffff) as i64,
+            ExpKind::Ijkm | ExpKind::Ijkm24 => (self.ijkm() & 0xff_ffff) as i64,
         })
     }
 }
@@ -301,7 +306,7 @@ impl Form {
             ExpKind::Jkm => (0, (1 << 22) - 1),
             ExpKind::JkmNot => (-(1 << 22), -1),
             ExpKind::JkmSigned => (-(1 << 21), (1 << 22) - 1),
-            ExpKind::Ijkm => (0, (1 << 24) - 1),
+            ExpKind::Ijkm | ExpKind::Ijkm24 => (0, (1 << 24) - 1),
         })
     }
 }
@@ -470,6 +475,7 @@ impl Decoded {
                 RegRef::Aj if self.j != 0 => Some(Reg::A(self.j)),
                 RegRef::Ak if self.k != 0 => Some(Reg::A(self.k)),
                 RegRef::Ah if self.h != 0 => Some(Reg::A(self.h)),
+                RegRef::AhDest => Some(Reg::A(self.h)),
                 RegRef::A0 => Some(Reg::A(0)),
                 RegRef::Si => Some(Reg::S(self.i)),
                 RegRef::Sj if self.j != 0 => Some(Reg::S(self.j)),

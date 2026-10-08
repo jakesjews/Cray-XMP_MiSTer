@@ -27,6 +27,7 @@ fn names(f: &Form, regs: &[RegRef]) -> String {
             _ => true,
         })
         .map(|r| match r {
+            RegRef::AhDest => "Ah".to_string(),
             RegRef::BBlock => "Bjk..".to_string(),
             RegRef::TBlock => "Tjk..".to_string(),
             RegRef::Vl => "VL".to_string(),

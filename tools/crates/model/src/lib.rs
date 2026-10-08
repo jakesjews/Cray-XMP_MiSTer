@@ -101,9 +101,8 @@
 //!   incoming exchange package, or a floating point operand while the
 //!   floating point interrupt is enabled outside monitor mode.
 //! * `ErrorKind::NotDefinedByManual` stops the run for an instruction fetch
-//!   outside the field in monitor mode, for a test and set of a set
-//!   semaphore in monitor mode, and for 010 to 017 with the high bit of i
-//!   set.
+//!   outside the field in monitor mode and for a test and set of a set
+//!   semaphore in monitor mode.
 //! * `ErrorKind::TimeDependent` stops the run when a program outside
 //!   monitor mode could be interrupted by the programmable clock.
 //!
@@ -159,18 +158,21 @@
 //!   that changes nothing; a program outside monitor mode stops the model
 //!   while a request may be set.  Enable and request start cleared.
 //!   In timed mode (`Machine::set_timing`) both clocks count.
+//! * **The VL register** (X 5-14, 5-30): 0020 enters the low six bits of
+//!   (Ak) and sets the seventh if they are zero, so what a program enters
+//!   is 1 to 100 octal.  The manual has that rule for 0020 only: the 7-bit
+//!   field of an exchange package is loaded as it stands, and 023i01 and
+//!   the next package show it so.  The number of operations is ((VL) - 1)
+//!   in six bits, plus one.
 //! * **Encodings the manuals leave undefined**: 0014jk with k = 1 or 2 is a
-//!   pass; 026ijk with k = 2 to 6 is the population count; 174ijk with k = 3
-//!   to 7 is the reciprocal.
+//!   pass; 023ijk other than 023i01 is `Ai Sj`; 026ijk with k = 2 to 6 is
+//!   the population count; 174ijk with k = 3 to 7 is the reciprocal.
 //! * **154 to 157**: the text of page 4-59 says 155 and 157 subtract; its
 //!   heading, the special cases on page 4-60, page 3-17 and Appendix D make
 //!   154 and 155 sums and 156 and 157 differences, which is what is done.
 //! * **A fetch outside the field in monitor mode** stops the model
 //!   (`ErrorKind::NotDefinedByManual`): the flag cannot set in monitor mode
 //!   (page 3-36) and the manual does not say what is executed.
-//! * **010 to 017 with the high bit of i set** are `Ah exp`, a 24-bit
-//!   constant, on an X-MP with extended addressing, which this machine is
-//!   not: the model stops.
 
 mod channel;
 mod event;

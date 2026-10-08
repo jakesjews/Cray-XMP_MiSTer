@@ -42,7 +42,9 @@ module cray_predecode (
 	assign o_pd[PD_EXCH] = (op == 7'o000) || (op == 7'o004);
 	assign o_pd[PD_VTYPE] = (i_parcel[15:14] == 2'b11);
 	assign o_pd[PD_MTYPE] = (i_parcel[15:11] == 5'b00111) || (i_parcel[15:14] == 2'b10) || (i_parcel[15:10] == 6'b111111);
-	assign o_pd[PD_BTYPE] = (i_parcel[15:12] == 4'b0001) || (op == 7'o005) || (op == 7'o006) || (op == 7'o007);
+	//01hijkm with the high bit of i set is not a branch but Ah exp, a 24-bit constant
+	wire long_a = (i_parcel[15:12] == 4'b0001) && i_parcel[8];
+	assign o_pd[PD_BTYPE] = ((i_parcel[15:12] == 4'b0001) && !long_a) || (op == 7'o005) || (op == 7'o006) || (op == 7'o007);
 
 	//076 reads a V register that must not be in use; 003, 073 and the merges 146 and 147
 	//wait for a 175 to finish building the mask, and 003 for a merge to finish using it;
@@ -67,19 +69,22 @@ module cray_predecode (
 	//but for the encodings that have a meaning of their own, which the lookup tables
 	//tell by the fields left in place here: 026ij7 and 027ij7 (SBj), 072i02 and 073i02
 	//(the semaphores), 072ij3 and 073ij3 (STj) and 073i01 (the status register).
-	//026ij1 is told apart at the population count unit.
+	//026ij1 is told apart at the population count unit, 023i01 (VL) where the
+	//constants are formed.  Ah exp is 020 to the schedulers, with Ah for Ai.
 	reg [15:0] dec;
 	always @* begin
 		dec = i_parcel;
-		case (op)
-			7'o023: dec = {i_parcel[15:3], 3'b000};
-			7'o026, 7'o027: if (k != 3'd7) dec = {i_parcel[15:3], 3'b000};
-			7'o072: if (!((i_parcel[5:0] == 6'o02) || (k == 3'd3))) dec = {i_parcel[15:6], 6'b000000};
-			7'o073:
-			if (!((i_parcel[5:0] == 6'o01) || (i_parcel[5:0] == 6'o02) || (k == 3'd3)))
-				dec = {i_parcel[15:6], 6'b000000};
-			default: ;
-		endcase
+		if (long_a) dec = {7'o020, i_parcel[11:9], i_parcel[5:0]};
+		else
+			case (op)
+				7'o023: dec = {i_parcel[15:3], 3'b000};
+				7'o026, 7'o027: if (k != 3'd7) dec = {i_parcel[15:3], 3'b000};
+				7'o072: if (!((i_parcel[5:0] == 6'o02) || (k == 3'd3))) dec = {i_parcel[15:6], 6'b000000};
+				7'o073:
+				if (!((i_parcel[5:0] == 6'o01) || (i_parcel[5:0] == 6'o02) || (k == 3'd3)))
+					dec = {i_parcel[15:6], 6'b000000};
+				default: ;
+			endcase
 	end
 
 	wire [6:0] d_op = dec[15:9];

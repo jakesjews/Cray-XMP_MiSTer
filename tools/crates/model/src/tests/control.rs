@@ -337,27 +337,57 @@ fn monitor_functions_pass_in_a_user_program() {
 
 #[test]
 fn vector_length_register() {
-    // Page 4-10: the low seven bits of (Ak) enter VL; (Ak) = 1 if k = 0;
-    // the number of operations is ((VL) - 1) in six bits, plus one: 64 for
-    // VL = 0 and for VL = 100 octal.
-    let mut m = monitor(&[0o002001, 0o002000, 0o002002]);
-    m.set_a(1, Some(0o1234));
-    m.set_a(2, Some(0));
+    // X 5-14: the low six bits of (Ak) enter VL and "the 7th bit of VL is
+    // set if the 6 low-order bits of (Ak) = 0", so VL is 1 to 100 octal;
+    // (Ak) = 1 if k = 0.  X 5-30: 023i01 reads the register, and the
+    // manual's three examples are 0 giving 100, 23 giving 23 and 123 giving
+    // 23.
+    let mut m = monitor_cal("VL A1; A2 VL; VL 1; A3 VL; VL A4; A5 VL; VL A6; A7 VL");
+    m.set_a(1, Some(0o123));
+    m.set_a(4, Some(0));
+    m.set_a(6, Some(0o7700));
     m.set_a(0, Some(50));
-    steps(&mut m, 1);
-    assert_eq!(m.vl(), Some(0o34));
-    assert_eq!(m.vector_length(), Some(0o34));
-    steps(&mut m, 1);
-    assert_eq!(m.vl(), Some(1));
-    steps(&mut m, 1);
-    assert_eq!(m.vl(), Some(0));
+    steps(&mut m, 2);
+    assert_eq!((m.vl(), m.a(2)), (Some(0o23), Some(0o23)));
+    assert_eq!(m.vector_length(), Some(0o23));
+    steps(&mut m, 2);
+    assert_eq!((m.vl(), m.a(3)), (Some(1), Some(1)));
+    steps(&mut m, 2);
+    assert_eq!((m.vl(), m.a(5)), (Some(0o100), Some(0o100)));
     assert_eq!(m.vector_length(), Some(64));
+    steps(&mut m, 2);
+    assert_eq!((m.vl(), m.a(7)), (Some(0o100), Some(0o100)));
+    // every other value of the low six bits is entered as it is
+    let mut m = monitor_cal("VL A1; A2 VL");
+    m.set_a(1, Some(0o177));
+    steps(&mut m, 2);
+    assert_eq!(m.a(2), Some(0o77));
+    // The 7-bit field of an exchange package is loaded as it stands (model
+    // choice: the manual has the rule for 0020 only), and the number of
+    // operations is ((VL) - 1) in six bits, plus one.
+    let mut m = monitor_cal("A1 VL");
+    m.set_vl(Some(0));
+    steps(&mut m, 1);
+    assert_eq!((m.a(1), m.vector_length()), (Some(0), Some(64)));
     assert_eq!(vl_count(0o100), 64);
     assert_eq!(vl_count(0), 64);
     assert_eq!(vl_count(1), 1);
     assert_eq!(vl_count(0o77), 63);
     assert_eq!(vl_count(0o101), 1);
     assert_eq!(vl_count(0o177), 63);
+    // an undefined VL reads as an undefined value
+    let mut m = Machine::new();
+    m.load_words(CODE, &words(&cal("A1 VL"))).unwrap();
+    m.start_at(CODE * 4, 0, LA_MAX, mode::MONITOR);
+    m.set_a(1, Some(5));
+    steps(&mut m, 1);
+    assert_eq!(m.a(1), None);
+    // 023 with any other k, or with j, is still `Ai Sj`
+    let mut m = monitor(&[0o023121, 0o023202]);
+    m.set_s(2, Some(0o1234));
+    m.set_vl(Some(7));
+    steps(&mut m, 2);
+    assert_eq!((m.a(1), m.a(2)), (Some(0o1234), Some(0)));
 }
 
 #[test]
@@ -546,15 +576,31 @@ fn program_range_error_in_monitor_mode_stops_the_model() {
 }
 
 #[test]
-fn encodings_this_machine_does_not_have_stop_the_model() {
-    // 01hijkm with the high bit of i set is `Ah exp`, a 24-bit constant, on
-    // an X-MP with extended addressing.  This one has none.
-    for parcel in [0o010400u16, 0o013700, 0o017500] {
-        let mut m = monitor(&[parcel, 0]);
-        let e = error_of(&mut m);
-        assert_eq!(e.kind, ErrorKind::NotDefinedByManual);
-        assert_eq!((e.p, e.parcels), (CODE * 4, Some((parcel, Some(0)))));
-    }
+fn the_24_bit_constant() {
+    // X 5-27: 01hijkm with the high bit of i set "enters a 24-bit value
+    // into Ah that is composed of the low-order 24 bits of the ijkm field".
+    // A0 is a register here.
+    let mut m = monitor(&[0o011577, 0o177777, 0o010400, 0o000005, 0o017700, 0o000001]);
+    m.set_a(0, Some(0o7777));
+    steps(&mut m, 3);
+    assert_eq!(
+        (m.a(1), m.a(0), m.a(7)),
+        (Some(0o37777777), Some(5), Some(0o60000001))
+    );
+    assert_eq!(m.p(), CODE * 4 + 6);
+    // the assembler picks the form for what 22 bits and their complement
+    // cannot hold
+    let mut m = monitor_cal("A3 40000000; A4 57777777; A5 20000000");
+    steps(&mut m, 3);
+    assert_eq!(
+        (m.a(3), m.a(4), m.a(5)),
+        (Some(0o40000000), Some(0o57777777), Some(0o20000000))
+    );
+    assert_eq!(m.p(), CODE * 4 + 6);
+    // with the high bit of i clear 010 to 017 are the branches
+    let mut m = monitor(&[0o010000, 0o001234]);
+    steps(&mut m, 1);
+    assert_eq!(m.p(), 0o1234);
 }
 
 #[test]

@@ -28,6 +28,8 @@ tools/target/release/cray-xmp asm prog.cal -o prog.img -l prog.lst
 - `ALIGN` goes on at the next multiple of 40 octal words, the size of an
   X-MP instruction buffer.
 - Symbols cannot be register names such as `A1`, `S3` or `B77`.
+- `Ai exp` takes the shortest form that holds the constant: 022 for 0 to 77,
+  020 or 021 for 22 bits or their complement, and the 24-bit 01h for the rest.
 - `cray-xmp isa` prints every instruction form the assembler accepts.
 
 Things that differ from Cray's CAL: no relocation or linking, no conditional
