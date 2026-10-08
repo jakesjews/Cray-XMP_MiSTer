@@ -23,7 +23,7 @@ module v_scheduler (
 	o_vfu_start,
 	o_v_issue,
 	i_vreg_busy,
-	i_vreg_chain_n,
+	i_vreg_reading,
 	i_vfu_busy
 );
 
@@ -37,19 +37,21 @@ module v_scheduler (
 	output wire [7:0] o_vread_start;
 	output wire [7:0] o_vfu_start;
 	output wire o_v_issue;
-	input wire [7:0] i_vreg_busy;
-	input wire [7:0] i_vreg_chain_n;
+	input wire [7:0] i_vreg_busy;  //reserved as an operand or as a result
+	input wire [7:0] i_vreg_reading;  //reserved as an operand
 	input wire [7:0] i_vfu_busy;
 
 	wire issue_vld;  //it's okay to issue the instruction
 
 	//is it okay to issue the instruction? 
-	//The result register must be free.  An operand register may be one a unit is still
-	//filling, once its first element is in (chaining).  A vector transfer also waits for
-	//A0 and Ak, which is part of what func_top holds every instruction for.
+	//The result register must be free.  An operand register must not be the operand
+	//of another instruction, but may be one that is still to receive a result, or is
+	//receiving it (chaining, CSM-0111000 page 4-12): the operation takes the elements
+	//as they come.  A vector transfer also waits for A0 and Ak, which is part of what
+	//func_top holds every instruction for.
 	wire vi_rdy = !(|(i_vi & i_vreg_busy));
-	wire vj_rdy = !(|(i_vj & i_vreg_busy & i_vreg_chain_n));
-	wire vk_rdy = !(|(i_vk & i_vreg_busy & i_vreg_chain_n));
+	wire vj_rdy = !(|(i_vj & i_vreg_reading));
+	wire vk_rdy = !(|(i_vk & i_vreg_reading));
 	wire fu_rdy = |(~i_vfu_busy & i_fu);
 
 	assign issue_vld = i_cip_vld && i_v_type && vi_rdy && vj_rdy && vk_rdy && fu_rdy;

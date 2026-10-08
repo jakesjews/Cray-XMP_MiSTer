@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Constrained-random CAL test programs for differential testing.
 
-    randprog.py SEED [-n INSTRUCTIONS] [-o OUT.cal] [--no-vector] [--no-float] [--no-mem]
+    randprog.py SEED [-n INSTRUCTIONS] [-o OUT.cal] [--no-vector] [--no-float] [--no-mem] [--chain]
 
 A program loads every register from a seeded data pool, the shared registers
 of cluster 1 among them, runs a random body and then stores all registers to
 a dump area, so the whole machine state ends up in memory where the reference
 model and the hardware simulation can be compared.
+
+With --chain the body is mostly vector instructions on a few V registers, one
+behind the other, so that operations run on the results of others still on
+their way: chains of functional units, vector loads and vector stores.
 
 Constraints that keep a program meaningful:
   - it terminates: branches go forward, and loops count down a reserved register
@@ -398,13 +402,29 @@ class Gen:
         return '\n'.join(self.lines) + '\n'
 
 
+class Chain(Gen):
+    """Mostly vector instructions, most of them on V0 to V3."""
+
+    def vreg(self):
+        return self.r.randrange(0, 4) if self.r.randrange(4) else self.r.randrange(0, 8)
+
+    def one(self):
+        w = self.r.randrange(100)
+        if w < 82: self.op_v()
+        elif w < 88: self.op_s()
+        elif w < 92: self.op_a()
+        elif w < 96: self.op_mem()
+        else: Gen.one(self)
+
+
 def main():
     a = sys.argv[1:]
     if not a:
         sys.exit(__doc__)
     seed = int(a[0])
     n = int(a[a.index('-n') + 1]) if '-n' in a else 200
-    g = Gen(seed, n, vector='--no-vector' not in a, floating='--no-float' not in a, memory='--no-mem' not in a)
+    kind = Chain if '--chain' in a else Gen
+    g = kind(seed, n, vector='--no-vector' not in a, floating='--no-float' not in a, memory='--no-mem' not in a)
     text = g.program()
     if '-o' in a:
         open(a[a.index('-o') + 1], 'w').write(text)

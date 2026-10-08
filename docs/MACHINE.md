@@ -190,13 +190,19 @@ channels of the CPU and channel parity.
   that waits for memory, such as a branch to an address that is in no buffer.
   Programs get the same results but not always in the same number of clock
   periods.
-- **Chaining.** The X-MP chains at any point of a result's stream (CSM-0111000
-  page 4-12), and so does this core: an operation may take as its operand a
-  register that a functional unit is still filling. Two things differ. The
-  operation that chains issues when the first element is in, where the X-MP
-  lets it issue before that and wait. And a register being filled by a vector
-  load is never chained, because memory does not deliver at a steady rate.
-  Results are the same.
+- **Chaining.** As on the X-MP (CSM-0111000 page 4-12), a register that is
+  reserved as a result and not as an operand does not hold the issue of an
+  instruction that reads it, a vector store included. The operation runs as
+  the data becomes available, element by element, also behind a vector load,
+  whose pauses then show in every operation of the chain. The manual gives no
+  clock periods for this but one rule: nothing is lost if the instruction
+  issues before or at the time element 0 arrives at the register. The core
+  keeps that rule exactly. An element is at the unit that takes it 4 clock
+  periods after it arrived at its register, as it is 4 clock periods after
+  issue (`tests/rtl_only/timing.cal` has the cases). With it the manual's
+  divide of two 64-element vectors takes 3 * 64 + 39 clock periods, where
+  the manual says 38: that number is in the CRAY-1 S manual too, and is what
+  the CRAY-1's chaining gives.
 - **The multiply and the reciprocal match Cray's own simulation of them.**
   Cray's floating-point diagnostic contains a simulation of each unit (the
   listing found is the 1997 edition for the J90; the code goes back to 1980).

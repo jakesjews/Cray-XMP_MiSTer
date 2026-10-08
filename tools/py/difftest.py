@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Differential testing: the hardware CPU simulation against the reference model.
 
-    difftest.py rand FIRST LAST [-n INSTRUCTIONS] [--no-vector] [--no-float] [--no-mem] [-j JOBS]
+    difftest.py rand FIRST LAST [-n INSTRUCTIONS] [--no-vector] [--no-float] [--no-mem] [--chain] [-j JOBS]
     difftest.py file PROG.cal [PROG.cal ...] [-I INCLUDE_DIR] [-j JOBS]
 
 Each program is assembled, run on the model, and run on the RTL simulation in
@@ -78,9 +78,9 @@ def main():
     if a[0] == 'rand':
         first, last = int(a[1]), int(a[2])
         n = a[a.index('-n') + 1] if '-n' in a else '200'
-        opts = [x for x in a if x in ('--no-vector', '--no-float', '--no-mem')]
+        opts = [x for x in a if x in ('--no-vector', '--no-float', '--no-mem', '--chain')]
         for seed in range(first, last + 1):
-            name = 'r%d' % seed
+            name = ('c%d' if '--chain' in opts else 'r%d') % seed
             cal = os.path.join(OUT, name + '.cal')
             subprocess.run([sys.executable, os.path.join(ROOT, 'tools/py/randprog.py'), str(seed), '-n', n, '-o', cal] + opts, check=True)
             work.append((name, cal))

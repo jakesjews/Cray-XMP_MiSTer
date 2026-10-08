@@ -1,17 +1,26 @@
 // One vector operation on its way through a functional unit.
 //
 // A vector instruction issues in some clock t.  Its operand registers present
-// element 0 from t+1 to t+3, so the operands of element n are at the unit's
+// element 0 from t+1, and the unit takes it in during clock t+4; the elements
+// behind it follow one a clock, so the operands of element n are at the unit's
 // inputs during clock t+4+n, and with a unit time of L clocks the result of
 // element n is at the unit's output during clock t+4+n+L.  This block says so:
 // it marks which clocks carry operands (o_in_*) and results (o_out_*), numbers
 // the elements, and carries the destination register beside the data.
 //
+// That is when every operand is in its register.  An operand register may
+// still be receiving the result of an earlier instruction (chaining,
+// CSM-0111000 page 4-12): the operation then takes each element when it is
+// there, which i_ok says of the element o_ask, and the clocks without operands
+// go through the unit as gaps.  Whether an operand register was receiving a
+// result when the instruction issued is kept (o_chain_j, o_chain_k); one that
+// was not has all its elements, and may be the operation's own result register.
+//
 // The unit is busy from the clock after issue until its last operand pair has
-// gone in: (VL) + 4 clocks from issue, the X-MP's "unit ready" (CSM-0111000
-// section 5).  A new operation can then follow straight behind the old one in
-// the pipeline, which is why the output side is a shift register and not a
-// counter.
+// gone in: (VL) + 4 clocks from issue when nothing was waited for, the X-MP's
+// "unit ready" (CSM-0111000 section 5).  A new operation can then follow
+// straight behind the old one in the pipeline, which is why the output side is
+// a shift register and not a counter.
 //
 // An operation that issues with i_short takes one clock less than L: three of
 // the four shifts do.  The first operands of an operation are at the unit at
@@ -35,6 +44,9 @@ module v_optrack #(
 	input wire [23:0] i_ak,
 	input wire        i_wr_v,   // the instruction in CIP sends results to a V register (175 does not)
 	input wire        i_short,  // the unit takes L - 1 clocks for it
+	input wire [ 7:0] i_vj,     // the V registers the instruction in CIP reads, one bit a register
+	input wire [ 7:0] i_vk,
+	input wire [ 7:0] i_result, // the V registers reserved as a result now
 
 	output wire o_busy,
 
@@ -42,10 +54,18 @@ module v_optrack #(
 	output reg [63:0] o_sj,
 	output reg [23:0] o_ak,
 
-	output wire       o_in_valid,
-	output wire [5:0] o_in_idx,
+	// the element the operand registers are asked for
+	output wire [5:0] o_ask,
+	output wire       o_ask_last,  // it is the last of the operation
+	output reg        o_chain_j,   // Vj was receiving a result when the instruction issued
+	output reg        o_chain_k,   // Vk was
+	input  wire       i_ok,        // the element is in the operand registers
+	output wire [7:0] o_step,      // it is taken: those registers go on to the next
+
+	output reg        o_in_valid,
+	output reg  [5:0] o_in_idx,
 	output wire       o_in_first,
-	output wire       o_in_last,
+	output reg        o_in_last,
 
 	output wire       o_out_valid,
 	output wire [5:0] o_out_idx,
@@ -54,23 +74,33 @@ module v_optrack #(
 	output wire       o_out_wr_v
 );
 
-	localparam IDLE = 2'd0, LEAD = 2'd1, RUN = 2'd2;
+	// LEAD: the two clocks before element 0 can be taken.  RUN: elements are taken
+	// as they are there.  DONE: the last of them is at the unit.
+	localparam IDLE = 2'd0, LEAD = 2'd1, RUN = 2'd2, DONE = 2'd3;
 
 	reg [1:0] state;
-	reg [5:0] idx;
+	reg [5:0] ask;
 	reg [6:0] len;
 	reg [2:0] dest;
 	reg       wr_v;
 	reg       short;
-	reg [1:0] lead;  // clocks before the first operands are at the unit
+	reg       lead;
+	reg [7:0] reads;
+
+	wire go = (state == RUN) && i_ok;
 
 	assign o_busy     = (state != IDLE);
-	assign o_in_valid = (state == RUN);
-	assign o_in_idx   = idx;
-	assign o_in_first = (idx == 6'd0);
-	assign o_in_last  = ({1'b0, idx} == len - 7'd1);
+	assign o_ask      = ask;
+	assign o_ask_last = ({1'b0, ask} == len - 7'd1);
+	assign o_step     = {8{go}} & reads;
+	assign o_in_first = (o_in_idx == 6'd0);
 
 	always @(posedge clk) begin
+		// an element taken from the registers in one clock is at the unit in the next
+		o_in_valid <= !rst && go;
+		o_in_idx   <= ask;
+		o_in_last  <= o_ask_last;
+
 		if (rst) state <= IDLE;
 		else
 			case (state)
@@ -78,25 +108,30 @@ module v_optrack #(
 				// every clock; the instruction that starts it leaves what it supplied.
 				// So nothing wide waits for the decision to issue.
 				IDLE: begin
-					len     <= i_len;
-					dest    <= i_cip[8:6];
-					wr_v    <= i_wr_v;
-					short   <= i_short;
-					o_instr <= i_cip;
-					o_sj    <= i_sj;
-					o_ak    <= i_ak;
-					lead    <= 2'd2;
+					len       <= i_len;
+					dest      <= i_cip[8:6];
+					wr_v      <= i_wr_v;
+					short     <= i_short;
+					reads     <= i_vj | i_vk;
+					o_chain_j <= |(i_vj & i_result);
+					o_chain_k <= |(i_vk & i_result);
+					o_instr   <= i_cip;
+					o_sj      <= i_sj;
+					o_ak      <= i_ak;
+					ask       <= 6'd0;
+					lead      <= 1'b1;
 					if (i_start) state <= LEAD;
 				end
 				LEAD: begin
-					idx  <= 6'd0;
-					lead <= lead - 2'd1;
-					if (lead == 2'd0) state <= RUN;
+					lead <= 1'b0;
+					if (!lead) state <= RUN;
 				end
-				RUN: begin
-					idx <= idx + 6'd1;
-					if (o_in_last) state <= IDLE;
+				RUN:
+				if (go) begin
+					ask <= ask + 6'd1;
+					if (o_ask_last) state <= DONE;
 				end
+				DONE:    state <= IDLE;
 				default: state <= IDLE;
 			endcase
 	end
@@ -107,7 +142,7 @@ module v_optrack #(
 	reg     [W:0] pipe[0:L-1];
 	integer       n;
 	always @(posedge clk) begin
-		pipe[0] <= rst ? {(W + 1) {1'b0}} : {short, o_in_valid, o_in_last, idx, dest, wr_v};
+		pipe[0] <= rst ? {(W + 1) {1'b0}} : {short, o_in_valid, o_in_last, o_in_idx, dest, wr_v};
 		for (n = 1; n < L; n = n + 1) pipe[n] <= rst ? {(W + 1) {1'b0}} : pipe[n-1];
 	end
 

@@ -76,6 +76,34 @@ ONE_BUFFER = [
     (11, '175, VL 5, then 073', ['VM V1,Z', 'S1 VM'], 5),
     # 076: Si ready in 4 CPs (X 5-63)
     (5, '076, then its result used', ['S1 V2,A2', 'S2 S1&S1']),
+    # Chaining, X 4-12.  A register that is still to receive the result of an earlier
+    # instruction does not hold issue as an operand: the operation takes each element when
+    # it is there, and has it at its unit 4 CPs after it arrived at the register, as it has
+    # an element 4 CPs after issue.  Element 0 of a 155 arrives 8 CPs after issue.  A 141
+    # that issues by then loses nothing (full chaining): its result is ready (VL) + 15 CPs
+    # after the 155 issued, its operand (VL) + 11 and its unit (VL) + 12.  One that issues
+    # later is as much behind (partial chaining).
+    (17, '155, VL 1, a 141 chained to it, and its element read back', ['V2 V1+V3', 'V4 V2&V5', 'S1 V4,A2']),
+    (21, '155, VL 5, a 141 chained to it, and an element read back', ['V2 V1+V3', 'V4 V2&V5', 'S1 V4,A2'], 5),
+    (17, '155, VL 5, a 141 chained to it, then the register between them read', ['V2 V1+V3', 'V4 V2&V5', 'V6 V2+V7'], 5),
+    (18, '155, VL 5, a 141 chained to it, then its unit used again', ['V2 V1+V3', 'V4 V2&V5', 'V6 V7&V7'], 5),
+    (21, '155, VL 5, 4 CPs, a 141 chained to it', ['V2 V1+V3'] + PASS * 4 + ['V4 V2&V5', 'S1 V4,A2'], 5),
+    (21, '155, VL 5, a 141 that issues as element 0 arrives', ['V2 V1+V3'] + PASS * 7 + ['V4 V2&V5', 'S1 V4,A2'], 5),
+    (22, '155, VL 5, a 141 a CP after element 0 arrived', ['V2 V1+V3'] + PASS * 8 + ['V4 V2&V5', 'S1 V4,A2'], 5),
+    (24, '155, VL 5, a 141 3 CPs after element 0 arrived', ['V2 V1+V3'] + PASS * 10 + ['V4 V2&V5', 'S1 V4,A2'], 5),
+    (22, '155, VL 5, a 150 chained to it', ['V2 V1+V3', 'V4 V2<A1', 'S1 V4,A2'], 5),
+    (23, '155, VL 5, a 152 chained to it', ['V2 V1+V3', 'V4 V2,V2<A1', 'S1 V4,A2'], 5),
+    (22, '155, VL 5, a 153 chained to it', ['V2 V1+V3', 'V4 V2,V2>A1', 'S1 V4,A2'], 5),
+    (24, '155, VL 5, a 174ij1 chained to it', ['V2 V1+V3', 'V4 PV2', 'S1 V4,A2'], 5),
+    (19, '155, VL 5, a 175 chained to it, then 073', ['V2 V1+V3', 'VM V2,Z', 'S1 VM'], 5),
+    (37, '174, VL 5, a 161 chained to it', ['V3 /HV2', 'V5 V1*FV3', 'S1 V5,A2'], 5),
+    (32, '155, 141 and 171 in a chain, VL 5', ['V2 V1+V3', 'V4 V2&V5', 'V6 V4+FV7', 'S1 V6,A2'], 5),
+    # the unit of the second 155 is busy for (VL) + 4 CPs: it issues with the result on its way
+    (23, '155, VL 5, a 155 of its result', ['V2 V1+V3', 'V4 V2+V5', 'S1 V4,A2'], 5),
+    # The divide of X 4-36: reciprocal, a product chained to it, the correction when the
+    # multiply unit is free, and the product of the two.  3 * 64 CPs and 39 (the manual has
+    # the 38 of the CRAY-1, whose chaining was another).
+    (232, 'a divide of 64 elements', ['V3 /HV2', 'V5 V1*FV3', 'V4 V3*IV2', 'V6 V4*FV5', 'S1 V6,A2'], 64),
 ]
 # Cases over two blocks X and Y, both in buffers: (clock periods, what, instructions, how it ends)
 #   'fall'      the sequence ends with the last parcel of X; the second reading is the first parcel of Y
@@ -118,7 +146,7 @@ def main():
     for n, (cps, what, seq, *vl) in enumerate(ONE_BUFFER):
         src.append('* %d clock periods: %s' % (cps, what))
         src.append(line('', 'ORG', '%o' % (BASE + BLOCK * n)))
-        src += [line('C%d' % n, 'A4', '%d' % (vl[0] if vl else 1)), line('', 'VL', 'A4')]
+        src += [line('C%d' % n, 'A4', "D'%d" % (vl[0] if vl else 1)), line('', 'VL', 'A4')]
         src += [line('', 'A4', 'L%d' % n), line('', 'B02', 'A4'), line('', 'A0', '0'), line('', 'S0', '0')]
         src += [line('', 'PASS')] * 16                 # what the block before left on its way is done
         src.append(line('', 'S6', 'RT'))

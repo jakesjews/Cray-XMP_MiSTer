@@ -14,7 +14,10 @@
 // its last word is done, and issues in the DONE clock.  A vector transfer
 // issues three clocks after it starts and goes on in the background while
 // other instructions issue, as on the real machine (manual 4-70); the V
-// register stays reserved and other memory instructions wait.  The exception
+// register stays reserved and other memory instructions wait.  A register
+// being loaded can be the operand of an instruction behind the load, and a
+// store can be of a register that is still receiving its result: both take
+// the elements as they come (chaining, CSM-0111000 page 4-12).  The exception
 // is a vector transfer whose first or last address is outside the field: it
 // stays the current instruction to its end, so that the range error
 // interrupt is taken right behind it.  Nothing here assumes how long memory
@@ -70,6 +73,7 @@ module mem_fu (
 	o_v_wr,
 	o_v_wr_idx,
 	o_v_rd_idx,
+	i_v_avail,
 	//interface to B rf
 	o_b_rd_addr,
 	i_b_rd_data,
@@ -136,6 +140,7 @@ module mem_fu (
 	output reg o_v_wr;  //176: o_mem_data holds element o_v_wr_idx
 	output wire [5:0] o_v_wr_idx;
 	output wire [5:0] o_v_rd_idx;  //177: the element about to be stored
+	input wire i_v_avail;  //and it is in its register
 	output wire [5:0] o_b_rd_addr;
 	input wire [23:0] i_b_rd_data;
 	output wire [5:0] o_b_wr_addr;
@@ -333,14 +338,16 @@ module mem_fu (
 				//A store.  The register word for reg_idx is ready when wait_cnt
 				//reaches zero.  It moves into wr_word when that is free or being
 				//taken, and the register is asked for the word after it.  `remaining`
-				//counts the words not yet written or dropped.
+				//counts the words not yet written or dropped.  The V register a 177
+				//stores may still be receiving a result (chaining): its element is
+				//taken when it is in.
 				WR: begin
 					if (wait_cnt != 4'd0) wait_cnt <= wait_cnt - 4'd1;
 					if (wr_gone) begin
 						address  <= address + stride;
 						wr_valid <= 1'b0;
 					end
-					if ((wait_cnt == 4'd0) && (fetch_left != 7'd0) && (!wr_valid || wr_gone)) begin
+					if ((wait_cnt == 4'd0) && (fetch_left != 7'd0) && (!wr_valid || wr_gone) && (!r_v || i_v_avail)) begin
 						wr_word    <= src_word;
 						wr_valid   <= 1'b1;
 						reg_idx    <= reg_idx + 6'd1;

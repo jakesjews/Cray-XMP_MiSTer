@@ -345,8 +345,13 @@ module func_top (
 	wire [       7:0] vread_start;
 	wire [       7:0] vfu_start;
 	wire [       7:0] vreg_busy;
-	wire [       7:0] vreg_chain_n;
 	wire [       7:0] vreg_reading;
+	wire [       7:0] vreg_result;
+	wire [       7:0] vreg_coming;
+	wire [   7*8-1:0] vreg_come;
+	wire [       7:0] vreg_filling;
+	wire [   7*8-1:0] vreg_filled;
+	wire [       7:0] vreg_step;
 	wire [       7:0] vfu_busy;
 	wire [(64*8-1):0] v_rd_data;
 	wire              v_issue;
@@ -927,7 +932,7 @@ module func_top (
 		.o_vfu_start   (vfu_start),
 		.o_v_issue     (v_issue),
 		.i_vreg_busy   (vreg_busy),
-		.i_vreg_chain_n(vreg_chain_n),
+		.i_vreg_reading(vreg_reading),
 		.i_vfu_busy    (vfu_busy)
 	);
 	/*
@@ -983,6 +988,18 @@ localparam VLOG      = 3'b000,   //vector logical
 	//A vector instruction issues once (v_issue).  From then on its functional unit's
 	//tracker (v_optrack) says in which clocks operands are at the unit and results
 	//come out, and each V register follows its own read or write role.
+	//
+	//Chaining (CSM-0111000 page 4-12).  An operand register may be one that an
+	//earlier instruction is still to fill.  The operation then runs as the data
+	//becomes available: its tracker asks for one element after the other, and an
+	//element is taken once it is in every operand register that was receiving a
+	//result when the instruction issued.  A register says how far its result has
+	//come two clocks late (vreg_filling, vreg_filled), so an element is at the
+	//unit that takes it as an operand four clocks after it arrived at its
+	//register: as long as an element takes from the issue of an instruction.  An
+	//instruction that issues by the time element 0 arrives so follows the result
+	//stream with nothing lost (full chaining); one that issues later runs behind
+	//it (partial chaining).
 
 	//Number of elements a vector instruction processes: VL of 0 means 64 (manual 4-10)
 	wire [6:0] vl_count = (vector_length[5:0] == 6'd0) ? 7'd64 : {1'b0, vector_length[5:0]};
@@ -994,6 +1011,12 @@ localparam VLOG      = 3'b000,   //vector logical
 	wire [   15:0] tk_instr     [0:NTK-1];
 	wire [   63:0] tk_sj        [0:NTK-1];
 	wire [   23:0] tk_ak        [0:NTK-1];
+	wire [    5:0] tk_ask       [0:NTK-1];
+	wire [NTK-1:0] tk_ask_last;
+	wire [NTK-1:0] tk_chain_j;
+	wire [NTK-1:0] tk_chain_k;
+	wire [NTK-1:0] tk_ok;
+	wire [    7:0] tk_step      [0:NTK-1];
 	wire [NTK-1:0] tk_in_valid;
 	wire [    5:0] tk_in_idx    [0:NTK-1];
 	wire [NTK-1:0] tk_in_first;
@@ -1028,10 +1051,19 @@ localparam VLOG      = 3'b000,   //vector logical
 				.i_ak       (a_k_data),
 				.i_wr_v     (|pd[PD_V_I+:8]),
 				.i_short    ((gu == 1) && (cip[10:9] != 2'd2)),  //the shifts but 152
+				.i_vj       (pd[PD_V_J+:8]),
+				.i_vk       (pd[PD_V_K+:8]),
+				.i_result   (vreg_result),
 				.o_busy     (tk_busy[gu]),
 				.o_instr    (tk_instr[gu]),
 				.o_sj       (tk_sj[gu]),
 				.o_ak       (tk_ak[gu]),
+				.o_ask      (tk_ask[gu]),
+				.o_ask_last (tk_ask_last[gu]),
+				.o_chain_j  (tk_chain_j[gu]),
+				.o_chain_k  (tk_chain_k[gu]),
+				.i_ok       (tk_ok[gu]),
+				.o_step     (tk_step[gu]),
 				.o_in_valid (tk_in_valid[gu]),
 				.o_in_idx   (tk_in_idx[gu]),
 				.o_in_first (tk_in_first[gu]),
@@ -1042,8 +1074,23 @@ localparam VLOG      = 3'b000,   //vector logical
 				.o_out_dest (tk_out_dest[gu]),
 				.o_out_wr_v (tk_out_wr_v[gu])
 			);
+
+			//Is the element the operation asks for in its operand registers?  One that
+			//was not receiving a result when the instruction issued has it.
+			wire [2:0] rj = tk_instr[gu][5:3];
+			wire [2:0] rk = tk_instr[gu][2:0];
+			wire       ok_j = !tk_chain_j[gu] || !vreg_filling[rj] || ({1'b0, tk_ask[gu]} < vreg_filled[7*rj+:7]);
+			wire       ok_k = !tk_chain_k[gu] || !vreg_filling[rk] || ({1'b0, tk_ask[gu]} < vreg_filled[7*rk+:7]);
+			//The double left shift 152 joins an element with the one behind it, which
+			//it reads from the register a clock later: that one has to be in by then.
+			wire       joins = (gu == 1) && (tk_instr[gu][10:9] == 2'd2) && tk_chain_j[gu] && !tk_ask_last[gu];
+			wire [6:0] behind = {1'b0, tk_ask[gu]} + 7'd1;
+			wire       ok_behind = !joins || !vreg_coming[rj] || (behind < vreg_come[7*rj+:7]);
+			assign tk_ok[gu] = ok_j && ok_k && ok_behind;
 		end
 	endgenerate
+
+	assign vreg_step = tk_step[0] | tk_step[1] | tk_step[2] | tk_step[3] | tk_step[4] | tk_step[5] | tk_step[6];
 
 	//a vector load (176) writes one element per word read; a vector store (177) reads
 	//the element the memory unit is about to write
@@ -1125,6 +1172,7 @@ localparam VLOG      = 3'b000,   //vector logical
 				.clk       (clk),
 				.rst       (rst),
 				.i_rd_start(vread_start[gr] && !mem_type),
+				.i_rd_step (vreg_step[gr]),
 				.i_len     (vl_count),
 				.i_elem_idx(a_k_data[5:0]),
 				.i_mem_rd  (vmem_reads[gr]),
@@ -1135,26 +1183,13 @@ localparam VLOG      = 3'b000,   //vector logical
 				.i_wr_idx  (wr_idx),
 				.i_wr_data (wr_data),
 				.o_busy    (vreg_busy[gr]),
-				.o_reading (vreg_reading[gr])
+				.o_reading (vreg_reading[gr]),
+				.o_result  (vreg_result[gr]),
+				.o_coming  (vreg_coming[gr]),
+				.o_come    (vreg_come[7*gr+:7]),
+				.o_filling (vreg_filling[gr]),
+				.o_filled  (vreg_filled[7*gr+:7])
 			);
-
-			//Chaining.  Once a functional unit has delivered element 0 of this
-			//register it delivers one element every clock, so an operation that
-			//starts now reads each element after it was written and need not wait
-			//for the whole result.  A vector load does not deliver at a steady
-			//rate and is never chained.
-			reg     fu_wr;
-			reg     chain;
-			integer c;
-			always @* begin
-				fu_wr = 1'b0;
-				for (c = 0; c < NVW; c = c + 1) if (vw_valid[c] && (vw_dest[c] == gr)) fu_wr = 1'b1;
-				if (pop_valid && (tk_out_dest[NVW] == gr)) fu_wr = 1'b1;
-			end
-			always @(posedge clk)
-				if (rst || vwrite_start[gr]) chain <= 1'b0;
-				else if (fu_wr) chain <= 1'b1;
-			assign vreg_chain_n[gr] = !(chain && !vreg_reading[gr]);
 		end
 	endgenerate
 
@@ -1546,6 +1581,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_v_wr           (vmem_wr),
 		.o_v_wr_idx       (vmem_wr_idx),
 		.o_v_rd_idx       (vmem_rd_idx),
+		.i_v_avail        (!vreg_filling[vmem_num] || ({1'b0, vmem_rd_idx} < vreg_filled[7*vmem_num+:7])),
 		//interface to A rf
 		.i_a0_data        (a_a0_data),
 		.i_ai_data        (a_i_data),

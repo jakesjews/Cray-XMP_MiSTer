@@ -3,15 +3,17 @@
 
     runtests.py quick [-j JOBS]   smoke tests under every start-up, the directed tests,
                                   the self-checking clock and interrupt tests, the
-                                  floating-point reference vectors, 300 random programs;
+                                  floating-point reference vectors, 300 random programs
+                                  and 100 of chained vector instructions;
                                   then the I/O Processor: 400 random programs, and
                                   the self-check of three of them together; then
                                   the X-MP core: its terminal on 400 random screens,
                                   its message when no boot file is loaded, and the
                                   self-check on the whole core with what it prints
     runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
-                                  floating-point operation and 12,000 random
-                                  programs; then, if the COS 1.17
+                                  floating-point operation, 12,000 random programs
+                                  and 2,000 of chained vector instructions; then,
+                                  if the COS 1.17
                                   software is there (in the directory the environment
                                   variable CRAY_XMP_SYSTEM names), the system
                                   model dead starts it and runs a job, the I/O
@@ -120,6 +122,7 @@ def main():
     ok &= step('X-MP core: the self-check, with its printing on the screen and in the file', [PY, CORE, 'printer'])
     if a[0] == 'quick':
         ok &= step('300 random programs', [PY, DIFF, 'rand', '1', '300', '-n', '250', '-j', jobs])
+        ok &= step('100 random programs of chained vector instructions', [PY, DIFF, 'rand', '1', '100', '-n', '250', '--chain', '-j', jobs])
     else:
         vec = os.path.join(ROOT, 'build/fpvec')
         ok &= step('generate floating-point vectors',
@@ -129,6 +132,8 @@ def main():
             ok &= step('floating point: ' + os.path.basename(f), [FPBENCH, f])
             ok &= step('floating point with gaps: ' + os.path.basename(f), [FPBENCH, f, '--gaps'])
         ok &= step('12,000 random programs', [PY, DIFF, 'rand', '1', '12000', '-n', '250', '-j', jobs])
+        ok &= step('2,000 random programs of chained vector instructions',
+                   [PY, DIFF, 'rand', '1', '2000', '-n', '250', '--chain', '-j', jobs])
         ok &= step('I/O Processor: 4,000 random programs', [PY, IOP, 'rand', '201', '2200', '-j', jobs])
         if os.path.exists(os.path.join(SYSTEM, 'boot_tape.tap')):
             ok &= step('system model: COS 1.17 dead starts and runs a job',

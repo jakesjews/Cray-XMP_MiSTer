@@ -16,10 +16,13 @@
 //                right, shifted right, lower 64 bits kept; element 0 is joined
 //                with zeros
 //
-// The double shifts need a neighbouring element.  Elements arrive one per
-// clock.  For 153 the previous one is still in hand when an element has been
-// taken in.  For 152 the unit holds the element a clock longer, until the next
-// one is at the input: that is its fourth clock.
+// The double shifts need a neighbouring element.  For 153 the previous one is
+// still in hand when an element has been taken in.  For 152 the unit holds the
+// element a clock longer, until the next one is at the input: that is its
+// fourth clock.  Elements arrive one per clock, or with gaps when the register
+// they come from is still being filled; the next element is at the input in
+// the clock after an element was taken in all the same, because its register
+// has been asked for it and it is there (func_top sees to that).
 
 module vector_shift (
 	input  wire        clk,
@@ -38,16 +41,19 @@ module vector_shift (
 	reg [ 1:0] op1;
 	reg [23:0] cnt1;
 	always @(posedge clk) begin
-		cur       <= i_d;
-		prev      <= cur;
-		cur_first <= i_first;
-		cur_last  <= i_last;
-		op1       <= i_op;
-		cnt1      <= i_cnt;
+		if (i_valid) begin
+			cur       <= i_d;
+			prev      <= cur;
+			cur_first <= i_first;
+			cur_last  <= i_last;
+		end
+		op1  <= i_op;
+		cnt1 <= i_cnt;
 	end
 
-	// stage 2, for 152 only: join the element with the next one.  While cur holds
-	// element n the input carries element n+1, unless cur is the last one.
+	// stage 2, for 152 only: join the element with the next one.  In the clock
+	// after cur took element n the input carries element n+1, unless cur is the
+	// last one.
 	// The operation and the count are a clock old here as well; they do not change
 	// while an operation is in the unit, so the stage behind uses these for 150,
 	// 151 and 153 too, whose element comes to it straight from stage 1.
@@ -57,7 +63,7 @@ module vector_shift (
 	always @(posedge clk) begin
 		op2  <= op1;
 		cnt2 <= cnt1;
-		pair <= {cur, (cur_last || !i_valid) ? 64'd0 : i_d};
+		pair <= {cur, cur_last ? 64'd0 : i_d};
 	end
 
 	// the shift: of the pair for 152, of the element in hand for the others, for

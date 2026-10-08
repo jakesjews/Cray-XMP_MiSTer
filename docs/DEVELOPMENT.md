@@ -231,7 +231,9 @@ time, and a second random seed. All five must agree with the model.
   short user programs and look at the flags they come back with.
 - `tools/py/randprog.py` writes random programs, shared registers and
   semaphores included. `tools/py/difftest.py rand FIRST LAST` runs a range of
-  seeds and keeps failing cases in `build/diff`.
+  seeds and keeps failing cases in `build/diff`. With `--chain` the programs
+  are mostly vector instructions on a few V registers, so that operations
+  take their operands from results, loads and stores still on their way.
 - `tests/fp/xmp_ref.vec` holds 79 floating-point cases whose results come from
   the cray-sim project's test program.
 
