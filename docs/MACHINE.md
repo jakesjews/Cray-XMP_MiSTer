@@ -209,7 +209,9 @@ measures cases of each kind below with the real-time clock, and
   an A or S register issues in the clock period that result arrives, and the
   functional units take the clock periods of the manual. Results of
   different units that are due in the same clock period all arrive in it:
-  every unit has its own way into the registers.
+  only units that can never deliver together share a way into the registers
+  (two that write as many clock periods after their instruction issued would
+  have had to issue in the same one).
 - **Memory instructions.** A scalar reference (10h to 13h) issues in 2 clock
   periods and a block transfer (034 to 037) or a vector transfer (176, 177)
   in 1, and the instructions behind them go on while memory is at work

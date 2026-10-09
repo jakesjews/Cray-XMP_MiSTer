@@ -13,8 +13,11 @@
                                   self-check on the whole core with what it prints
     runtests.py full [-j JOBS]    quick, then 200,000 generated vectors for each
                                   floating-point operation, 12,000 random programs
-                                  and 2,000 of chained vector instructions; then,
-                                  if the COS 1.17
+                                  and 2,000 of chained vector instructions; if the
+                                  program ROMs of the Ampex Dialogue 80 are there
+                                  (joined into the one file the environment variable
+                                  CRAY_XMP_D80_ROM names), the terminal model against
+                                  them on 600 random streams; then, if the COS 1.17
                                   software is there (in the directory the environment
                                   variable CRAY_XMP_SYSTEM names), the system
                                   model dead starts it and runs a job, the I/O
@@ -41,6 +44,7 @@ CORE = os.path.join(ROOT, 'tools/py/coretest.py')
 FPBENCH = os.path.join(ROOT, 'sim/build/fp/Vfp_tb')
 SYS = os.path.join(ROOT, 'tools/target/release/cray-xmp-sys')
 SYSTEM = os.environ.get('CRAY_XMP_SYSTEM', '')
+D80_ROM = os.environ.get('CRAY_XMP_D80_ROM', '')                # the Dialogue 80's program ROMs, joined
 
 
 def smoke_variants(out):
@@ -139,6 +143,9 @@ def main():
         ok &= step('2,000 random programs of chained vector instructions',
                    [PY, DIFF, 'rand', '1', '2000', '-n', '250', '--chain', '-j', jobs])
         ok &= step('I/O Processor: 4,000 random programs', [PY, IOP, 'rand', '201', '2200', '-j', jobs])
+        if os.path.exists(D80_ROM):
+            ok &= step('the terminal model against the terminal\'s firmware, 600 streams',
+                       [PY, os.path.join(ROOT, 'tools/py/d80test.py'), '1', '600', '-j', jobs])
         if os.path.exists(os.path.join(SYSTEM, 'boot_tape.tap')):
             ok &= step('system model: COS 1.17 dead starts and runs a job',
                        [SYS, SYSTEM, '--script', 'tests/sys/cos.script', '--quiet'])
