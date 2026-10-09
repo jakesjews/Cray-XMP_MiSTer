@@ -56,7 +56,8 @@ module emu #(
 	// stay on the SD card: slot 0 the disk on the Peripheral Expander, slot 1 the
 	// nine DD-29 drives on the BIOP's channels 20 to 32 (octal), one after
 	// another in one file.  Slot 2 is a text file that takes what the printer
-	// on the Peripheral Expander prints.
+	// on the Peripheral Expander prints.  Slot 3 is a tape for the drive on the
+	// Peripheral Expander, a .tap file, in place of the boot tape.
 	`include "build_id.v"
 	localparam CONF_STR = {
 		"Cray-XMP;;",
@@ -65,13 +66,14 @@ module emu #(
 		"S0,IMG,Expander disk;",
 		"S1,IMG,Disk drives;",
 		"S2,TXT,Printer file;",
+		"S3,TAP,Tape;",
 		"-;",
 		"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 		"O[6:5],Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
 		"O[9:7],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 		"O[4:3],Text color,White,Green,Amber,Cyan;",
 		"O[14],Font,8x16 (31kHz),8x8 (15kHz);",
-		"O[15],Disk drives,Fast,As a DD-29;",
+		"O[15],Device times,Fast,Real;",
 		"-;",
 		"T[0],Reset;",
 		"R[0],Reset and close OSD;",
@@ -128,19 +130,20 @@ module emu #(
 
 	// the disks: 512-byte blocks, one for a sector of the expander disk and
 	// eight for a sector of a DD-29
-	wire [31:0] sd_lba    [3];
-	wire [ 5:0] sd_blk_cnt[3];
-	wire [2:0] sd_rd, sd_wr, sd_ack;
+	wire [31:0] sd_lba    [4];
+	wire [ 5:0] sd_blk_cnt[4];
+	wire [3:0] sd_rd, sd_wr, sd_ack;
 	wire [13:0] sd_buff_addr;
 	wire [ 7:0] sd_buff_dout;
-	wire [ 7:0] sd_buff_din  [3];
+	wire [ 7:0] sd_buff_din  [4];
 	wire        sd_buff_wr;
-	wire [ 2:0] img_mounted;
+	wire [ 3:0] img_mounted;
 	wire [63:0] img_size;
+	wire        img_readonly;
 
 	hps_io #(
 		.CONF_STR(CONF_STR),
-		.VDNUM   (3),
+		.VDNUM   (4),
 		.BLKSZ   (2)
 	) hps_io (
 		.clk_sys  (clk_ios),
@@ -159,6 +162,7 @@ module emu #(
 
 		.img_mounted (img_mounted),
 		.img_size    (img_size),
+		.img_readonly(img_readonly),
 		.sd_lba      (sd_lba),
 		.sd_blk_cnt  (sd_blk_cnt),
 		.sd_rd       (sd_rd),
@@ -321,8 +325,9 @@ module emu #(
 	wire [5:0] key_valid, key_ready, char_valid, char_ready;
 	wire [41:0] key, char;
 
-	wire [31:0] exp_lba, drive_lba;
-	wire [7:0] exp_din, drive_din;
+	wire [31:0] exp_lba, drive_lba, reel_lba;
+	wire [7:0] exp_din, drive_din, reel_din;
+	wire reel_rd, reel_wr;
 	wire [8:0] drive_rd, drive_wr;
 	wire exp_rd, exp_wr;
 	wire cpu_held;
@@ -333,10 +338,10 @@ module emu #(
 	xmp_machine #(
 		.CLOCKS_PER_MS(IOS_HZ / 1000)
 	) machine (
-		.clk         (clk_cpu),
-		.clk_ios     (clk_ios),
-		.rst         (reset_cpu | ~boot_done),
-		.i_real_disks(status[15]),
+		.clk    (clk_cpu),
+		.clk_ios(clk_ios),
+		.rst    (reset_cpu | ~boot_done),
+		.i_real (status[15]),
 
 		.o_mem_req  (mem_req),
 		.o_mem_we   (mem_we),
@@ -372,6 +377,18 @@ module emu #(
 		.i_tape_ack  (tape_ack),
 		.i_tape_data (mem_rdata),
 		.i_tape_bytes(tape_bytes),
+
+		.i_reel_mounted  (img_mounted[3]),
+		.i_reel_blocks   (img_size[63:9]),
+		.i_reel_readonly (img_readonly),
+		.o_reel_lba      (reel_lba),
+		.o_reel_rd       (reel_rd),
+		.o_reel_wr       (reel_wr),
+		.i_reel_ack      (sd_ack[3]),
+		.i_reel_buff_addr(sd_buff_addr[8:0]),
+		.i_reel_buff_dout(sd_buff_dout),
+		.o_reel_buff_din (reel_din),
+		.i_reel_buff_wr  (sd_buff_wr),
 
 		.o_sd_lba      (exp_lba),
 		.o_sd_rd       (exp_rd),
@@ -436,17 +453,20 @@ module emu #(
 		.i_buff_wr  (sd_buff_wr && sd_ack[2])
 	);
 
-	assign sd_rd          = {spool_rd, |drive_rd, exp_rd};
-	assign sd_wr          = {spool_wr, |drive_wr, exp_wr};
+	assign sd_rd          = {reel_rd, spool_rd, |drive_rd, exp_rd};
+	assign sd_wr          = {reel_wr, spool_wr, |drive_wr, exp_wr};
 	assign sd_lba[0]      = exp_lba;
 	assign sd_lba[1]      = drive_base + drive_lba;
 	assign sd_lba[2]      = spool_lba;
+	assign sd_lba[3]      = reel_lba;
 	assign sd_blk_cnt[0]  = 6'd0;
 	assign sd_blk_cnt[1]  = 6'd7;
 	assign sd_blk_cnt[2]  = 6'd0;
+	assign sd_blk_cnt[3]  = 6'd0;
 	assign sd_buff_din[0] = exp_din;
 	assign sd_buff_din[1] = drive_din;
 	assign sd_buff_din[2] = spool_din;
+	assign sd_buff_din[3] = reel_din;
 
 	// stretch activity so it is visible
 	reg [19:0] act_cnt, disk_cnt;

@@ -7,7 +7,7 @@
 //   Vemu [BOOTFILE] [--disk N=FILE]... [--drive N=FILE]... [--type TEXT=KEYS]...
 //        [--press TEXT=KEYS]... [--until TEXT] [--ms N] [--reset-at MS] [--reset-on TEXT] [--screen C]...
 //        [--printed BLOCKS] [--printer OUT] [--until-printed TEXT] [--frame OUT.ppm] [--ddr fast|normal|slow]
-//        [--disk-wait CLOCKS] [--burst] [--seed N] [--quiet]
+//        [--disk-wait CLOCKS] [--burst] [--seed N] [--quiet] [--mount TEXT=FILE]... [--tape-out FILE]
 //
 // BOOTFILE (tools/py/mkboot.py) is put where the menu loads it; without one
 // nothing is loaded.  Memory is full of junk otherwise, as DDR3 is.  --disk
@@ -18,7 +18,9 @@
 // Slot 2, the printer's file, is 64 blocks of line feeds, of which --printed
 // says how many an earlier session has used; --printer writes the file out at
 // the end, without the line feeds behind what was printed.  --until-printed
-// ends the run when the file holds TEXT, in place of --until.
+// ends the run when the file holds TEXT, in place of --until.  --mount chooses
+// FILE as the tape of slot 3 once TEXT has been shown, in its turn among the
+// --type and --press; --tape-out writes that tape as it is at the end.
 //
 // --type sends KEYS on the serial port once a console has shown TEXT (\r is
 // RETURN); --press types them on the keyboard, where {f1}, {f2} and {f3} are
@@ -33,7 +35,7 @@
 // the menu's reset at that time, --reset-on when the operator's console has
 // shown TEXT.  --screen C prints a console's 24 lines at the end, and
 // --screen 2 the printer's screen as the core holds it; --frame writes the
-// last video frame.  --real-disks chooses the menu's "Disk drives: As a DD-29".
+// last video frame.  --real-times chooses the menu's "Device times: Real".
 //
 // At the end the two screens in the core are compared with what the serial
 // port carried.  The CPU must not run before the operator has typed START:
@@ -139,10 +141,12 @@ int main(int argc, char **argv) {
     int printed_blocks = 0;
     std::string printer_out, until_printed;
     bool printer_screen = false;
-    bool quiet = false, burst = false, real_disks = false;
+    bool quiet = false, burst = false, real_times = false;
     uint32_t seed = 1;
     int until_console = 0, disk_wait = 200;
-    struct Typing { int console; bool pressed; std::string wait, keys; long delay; };
+    struct Typing { int console; bool pressed; std::string wait, keys; long delay; std::string mount; };
+    std::string tape_path, tape_out;
+    int mounting = 0;
     std::vector<Typing> typing;
     std::vector<int> screens;
     std::vector<std::pair<int, std::string>> disk_files, drive_files;
@@ -169,8 +173,16 @@ int main(int argc, char **argv) {
             std::string wait = t.substr(0, eq);
             int c = on_console(wait);
             long delay = wait.size() > 1 && wait[0] == '+' ? atol(wait.c_str() + 1) * CPU_KHZ : 0;
-            typing.push_back({c, a == "--press", squeeze(wait), keys, delay});
+            typing.push_back({c, a == "--press", squeeze(wait), keys, delay, ""});
         }
+        else if (a == "--mount") {
+            std::string t = next(); size_t eq = t.find('=');
+            if (eq == std::string::npos) { fprintf(stderr, "--mount takes TEXT=FILE\n"); return 2; }
+            std::string wait = t.substr(0, eq);
+            int c = on_console(wait);
+            typing.push_back({c, false, squeeze(wait), "", 0, t.substr(eq + 1)});
+        }
+        else if (a == "--tape-out") tape_out = next();
         else if (a == "--ms") ms = atol(next().c_str());
         else if (a == "--reset-at") reset_at = atol(next().c_str());
         else if (a == "--reset-on") reset_on = squeeze(next());
@@ -180,7 +192,7 @@ int main(int argc, char **argv) {
         else if (a == "--seed") seed = (uint32_t)atol(next().c_str());
         else if (a == "--quiet") quiet = true;
         else if (a == "--burst") burst = true;
-        else if (a == "--real-disks") real_disks = true;
+        else if (a == "--real-times") real_times = true;
         else if (a == "--disk") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) disk_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a == "--drive") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) drive_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a[0] == '-') { fprintf(stderr, "unknown option %s\n", a.c_str()); return 2; }
@@ -193,7 +205,7 @@ int main(int argc, char **argv) {
     else if (ddr == "slow") { ram.prof.lat_min = 8; ram.prof.lat_max = 40; ram.prof.busy_pct = 30; ram.prof.gap_pct = 30; ram.prof.stall_pct_x1000 = 500; }
     if (!boot.empty() && !ram.load(boot, 0x4000000)) { fprintf(stderr, "cannot read %s\n", boot.c_str()); return 2; }
 
-    HpsDisks disks(3);
+    HpsDisks disks(4);
     disks.latency = disk_wait;
     // the printer's file: line feeds, behind what an earlier session printed
     disks.printer.assign(64 * 512, '\n');
@@ -239,7 +251,7 @@ int main(int argc, char **argv) {
     top->RESET = 1;
     top->UART_RXD = 1;
     top->DDRAM_BUSY = 0;
-    if (real_disks) r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u << 15;
+    if (real_times) r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u << 15;
     top->DDRAM_DOUT_READY = 0;
     double cpu_acc = 0, ios_acc = 0;
     const double cpu_ratio = CPU_KHZ / 58800.0;  // CPU clock cycles per video clock cycle
@@ -322,8 +334,9 @@ int main(int argc, char **argv) {
                 unsigned sd_rd = r->emu__DOT__hps_io__DOT__sim_sd_rd, sd_wr = r->emu__DOT__hps_io__DOT__sim_sd_wr;
                 const auto &sd_lba = r->emu__DOT__hps_io__DOT__sim_sd_lba;
                 unsigned sd_cnt = r->emu__DOT__hps_io__DOT__sim_sd_blk_cnt, sd_din = r->emu__DOT__hps_io__DOT__sim_sd_din;
-                const uint32_t lbas[3] = {sd_lba[0], sd_lba[1], sd_lba[2]};
-                const unsigned counts[3] = {sd_cnt & 0xFF, sd_cnt >> 8 & 0xFF, sd_cnt >> 16}, dins[3] = {sd_din & 0xFF, sd_din >> 8 & 0xFF, sd_din >> 16};
+                const uint32_t lbas[4] = {sd_lba[0], sd_lba[1], sd_lba[2], sd_lba[3]};
+                const unsigned counts[4] = {sd_cnt & 0xFF, sd_cnt >> 8 & 0xFF, sd_cnt >> 16 & 0xFF, sd_cnt >> 24};
+                const unsigned dins[4] = {sd_din & 0xFF, sd_din >> 8 & 0xFF, sd_din >> 16 & 0xFF, sd_din >> 24};
                 r->emu__DOT__pll_ios__DOT__sim_clk = 1; top->eval();
                 disks.clock(sd_rd, sd_wr, lbas, counts, dins);
                 r->emu__DOT__hps_io__DOT__sim_sd_ack = disks.ack;
@@ -333,6 +346,8 @@ int main(int argc, char **argv) {
                 top->eval();
                 r->emu__DOT__pll_ios__DOT__sim_clk = 0; top->eval();
             }
+
+            if (mounting > 0 && --mounting == 0) r->emu__DOT__hps_io__DOT__sim_img_mounted = 0;
 
             // the menu's reset: everything the consoles showed is gone
             if (reset_at >= 0 && clocks == reset_at * CPU_KHZ) { r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u; reset_left = 2000; }
@@ -357,7 +372,19 @@ int main(int argc, char **argv) {
                 bool there = ty.delay ? waited >= ty.delay : on[c].has(ty.wait);
                 if (!asked && !there) key_gap = 4096;
                 else if (!asked) { asked = true; key_gap = 800000; }
-                else {
+                else if (!ty.mount.empty()) {
+                    // a tape file is chosen in the menu: slot 3, its length, then the notice
+                    if (disks.file[3]) fclose(disks.file[3]);
+                    disks.written[3].clear();
+                    tape_path = ty.mount;
+                    long bytes = 0;
+                    if ((disks.file[3] = fopen(tape_path.c_str(), "rb"))) { fseek(disks.file[3], 0, SEEK_END); bytes = ftell(disks.file[3]); }
+                    else fprintf(stderr, "cannot read the tape file %s\n", tape_path.c_str());
+                    r->emu__DOT__hps_io__DOT__sim_img_size = bytes;
+                    r->emu__DOT__hps_io__DOT__sim_img_mounted = 8; mounting = 8;
+                    said++; asked = false; waited = 0;
+                    for (int n = 0; n < 2; n++) on[n].typed();
+                } else {
                     bool pressed = ty.pressed;
                     unsigned char key = at_key < ty.keys.size() ? ty.keys[at_key] : 0;
                     // what the last key brings is looked for from here on
@@ -425,6 +452,13 @@ int main(int argc, char **argv) {
         size_t end = disks.printer.size();
         while (end > 0 && disks.printer[end - 1] == '\n') end--;
         if (FILE *f = fopen(printer_out.c_str(), "wb")) { fwrite(disks.printer.data(), 1, end, f); fclose(f); }
+    }
+    if (!tape_out.empty() && disks.file[3]) {
+        // the tape file with what was written to it
+        std::vector<uint8_t> bytes;
+        if (FILE *f = fopen(tape_path.c_str(), "rb")) { int ch; while ((ch = fgetc(f)) != EOF) bytes.push_back(ch); fclose(f); }
+        for (auto &w : disks.written[3]) if ((size_t)w.first * 512 + 512 <= bytes.size()) std::copy(w.second.begin(), w.second.end(), bytes.begin() + (size_t)w.first * 512);
+        if (FILE *f = fopen(tape_out.c_str(), "wb")) { fwrite(bytes.data(), 1, bytes.size(), f); fclose(f); }
     }
     if (!frame.empty()) vid.write_ppm(frame.c_str());
     printf("\n%.3f s of machine time; memory: %llu reads, %llu writes%s; disk requests: %ld read, %ld written; %d frames (%ld lines, hsync every %ld pixels)\n",

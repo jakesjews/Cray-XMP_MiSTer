@@ -269,15 +269,12 @@ What they are made of (`rtl/ios/`):
   processor, over which one can master clear and dead start another.
 - Buffer Memory, shared by the three, in DDR3.
 - On the MIOP: the Peripheral Expander with a tape drive (the boot tape, which
-  holds the kernel's overlays), a disk (the COS binary, parameter files and
-  jobs) and a printer; the channel pair to the mainframe's channels 10 and
-  11, with the lines that master clear the CPU; four consoles, of which the
-  operator's and the station are shown.
+  holds the kernel's overlays, or a tape file from the menu), a disk (the
+  COS binary, parameter files and jobs) and a printer; the channel pair to
+  the mainframe's channels 10 and 11, with the lines that master clear the
+  CPU; four consoles, of which the operator's and the station are shown.
 - On the BIOP: nine DD-29 disk drives and the channel pair into central
-  memory. With the menu's "Disk drives: As a DD-29" a drive takes its own
-  times (HR-0077): a seek 15 ms and up to 80 ms across all cylinders, a
-  revolution 16.6 ms, and a sector is done when it has next passed under the
-  heads. With "Fast" a drive answers as fast as the SD card does.
+  memory.
 
 The consoles are Ampex Dialogue 80 terminals (`rtl/terminal/term_ampex.v`).
 
@@ -347,6 +344,54 @@ are dots, 1,056 to a row. The banner page of a job has a picture drawn that
 way. Here a character stands for eight dots, `X` if any is set, so a row of
 dots is as wide as a line of text and the file stays text.
 
+### Tapes
+
+The tape drive on the Peripheral Expander reads, writes, writes file marks,
+spaces over records in both directions and rewinds (`rtl/ios/ios_expander.v`).
+After a reset the boot tape is on it, as an operator puts it on for a dead
+start. It has no write ring: the kernel answers `@MT0: NO WRITE RING` to an
+attempt to write on it.
+
+A tape file chosen in the menu takes its place until the next reset
+(`rtl/ios/ios_reel.v`). It is a file in `.tap` form: a record is its length
+in four bytes, low byte first, its bytes and the length again, and a length
+of zero alone is a file mark. The file keeps its length. Its whole blocks of
+512 bytes are the tape, 16 Mbytes of them at most, and what is on the tape
+ends at the first length whose fourth byte is not zero: the drive writes
+four bytes of all ones behind what it writes. A blank tape is therefore a
+file of bytes of all ones; [tools/py/mktape.py](../tools/py/mktape.py) makes
+one, and lists what a tape holds. A file that is read-only on the SD card is
+a tape without a write ring.
+
+The kernel's commands for the drive are `FDUMP` and `FLOAD`, which copy files
+of the expander disk to a tape and back, `DDUMP` and `DLOAD` for whole
+directories, and `COPY`; the station has `SUBMIT,@MT0:n` and `SAVE,@MT0:n,dsn`
+for a job or a dataset in a tape file. `HELP` on either console lists them.
+
+### Device times
+
+With the menu's "Device times: Fast" a device is done as soon as the board
+has moved its data. With "Real" these take the times of the real ones:
+
+- **The DD-29 drives** (HR-0077): a seek 15 ms and up to 80 ms across all
+  cylinders, a revolution 16.6 ms, and a sector is done when it has next
+  passed under the heads.
+- **The consoles**: a character to a display takes ten bits at 9,600 baud.
+- **The tape drive**, Data General's 9-track drive of 800 bytes an inch
+  (SG-0051 page 1-2; its manual, 015-000040, has the times): 75 inches a
+  second, so 60,000 bytes a second, 5 ms to start and to stop, and a rewind
+  at 200 inches a second. A record takes 8 ms, which are a start and what is
+  left of the gap, and its bytes, read, written or spaced over; the boot
+  tape's 152 records take 12 seconds.
+- **The printer**, a Gould 5000: 1,200 lines a minute, so a new line takes
+  50 ms, and a row of dots in graphics mode 3 ms.
+- **The channel pair to the CPU**: 6 Mbytes a second at most, a parcel every
+  27 clock periods of the I/O Subsystem (HR-0030 page 1-3).
+
+The disk on the Peripheral Expander stays as fast as the SD card: the times
+of its 80 Mbyte drive are in none of the manuals at hand. Buffer Memory and
+the 100 Mbyte channel move a word as fast as DDR3 gives or takes it.
+
 ## Differences from a real X-MP
 
 What is known to differ, for the whole machine: mostly when things happen,
@@ -396,9 +441,10 @@ and what is not there.
   way. There is no instruction stack: a relative branch of up to 11 octal
   parcels forward or 13 back counts as inside it, any other branch as
   leaving it. Local Memory never makes a reference wait.
-- **Devices answer as fast as they can.** The software works with devices
-  from instant to several times slower than real ones. The one exception is
-  the disk drives with the menu's "Disk drives: As a DD-29".
+- **Devices answer as fast as they can** unless the menu's "Device times:
+  Real" is chosen ([Device times](#device-times)). Even then the disk on the
+  Peripheral Expander has no times of its own, and Buffer Memory and the
+  100 Mbyte channel take what DDR3 takes.
 - **Nothing fails.** The Local Memory error flag never sets and the disk
   drives report no faults.
 - **The consoles** are Ampex Dialogue 80 terminals as far as the software
@@ -407,8 +453,7 @@ and what is not there.
   a front-end computer (the kernel says so once, some seconds after COS has
   been started: `Concentrator ordinal 3  VAX interface select error. Command
   aborted.`), the error log channel, the block multiplexer channels and with
-  them the tape units of the XIOP, the clock on the expander, and writing to
-  tape.
+  them the tape units of the XIOP, and the clock on the expander.
 
 ### Where the manuals give no answer
 
@@ -442,6 +487,19 @@ Here the core had to choose, and the real machine may do otherwise:
   the interrupt sequence; it takes the 9 clock periods of a branch that
   leaves the instruction stack. A function that sends takes 1 clock period
   and one that reads 5, after a training workbook (T0201D).
+- **The consoles' line speed.** HR-0030 gives none. 9,600 baud is what the
+  channels of the later Models C and D are set to by Master Clear
+  (CSM-1009-000 page 4-40).
+- **The devices on the Peripheral Expander.** HR-0030 describes the channel
+  and names the devices; their registers are those the software is known to
+  work with. The tape drive's status bits and its answers to what it cannot
+  do (illegal, with the error bit, for writing without a write ring; the end
+  of the tape where a record would not fit) follow Data General's
+  controller, and so do its times; the gap between records is the 0.6 inch
+  of the tape format, and a rewind is Done when the tape is at the load
+  point. The printer's 1,200 lines a minute and 100 dots an inch are from an
+  advertisement of its maker; six lines to the inch are assumed, and a new
+  page counts as a line.
 
 ## Clocks
 

@@ -5,6 +5,7 @@
 //
 //   Vios KERNEL TAPE [DISK] [--drive N=FILE]... [--until TEXT] [--type TEXT=KEYS]...
 //        [--ms N] [--poke PARCEL=VALUE]... [--burst] [--quiet]
+//        [--mount TEXT=FILE]... [--tape-out FILE]
 //
 // KERNEL is the IOP kernel (parcels, high byte first), which is put into
 // Buffer Memory at address 0; TAPE the boot tape in .tap format; DISK the
@@ -22,7 +23,11 @@
 // TEXTs can begin with @C: for another console: 0 is the station, 3 the
 // operator's, 4 the BIOP's, 5 the XIOP's.  --screen C prints that console as
 // its 24 lines at the end.  --poke changes a parcel of the kernel (hexadecimal).
-// --real-disks gives the disk drives the DD-29's times for seeks and sectors.
+// --mount puts the tape file FILE on the Peripheral Expander's drive once TEXT
+// has been shown, in its turn among the --type; the file is not written to:
+// --tape-out writes the tape as it is at the end to another file.
+// --real-times gives the devices the times of the real ones (the menu's
+// "Device times: Real").
 // --quick leaves out what only takes time: the kernel's test of Local Memory,
 // most of its test of Buffer Memory, and 499 of the 500 passes of the BIOP's
 // test of each disk drive (the three changes are the cray-sim project's).
@@ -61,9 +66,10 @@ int main(int argc, char **argv) {
     std::vector<std::string> files;
     std::string until;
     long ms = 20000;
-    bool quiet = false, quick = false, cpu_may_run = false, burst = false, real_disks = false;
+    bool quiet = false, quick = false, cpu_may_run = false, burst = false, real_times = false;
     std::vector<std::pair<unsigned, unsigned>> pokes;
-    struct Typing { int console; std::string wait, keys; long delay; };
+    struct Typing { int console; std::string wait, keys; long delay; std::string mount; };
+    std::string tape_out;
     std::vector<Typing> typing;
     int until_console = 3;
     std::vector<int> screens;
@@ -84,12 +90,20 @@ int main(int argc, char **argv) {
             std::string wait = t.substr(0, eq);
             int c = on_console(wait);
             long delay = wait.size() > 1 && wait[0] == '+' ? atol(wait.c_str() + 1) * 80000 : 0;
-            typing.push_back({c, squeeze(wait), keys, delay});
+            typing.push_back({c, squeeze(wait), keys, delay, ""});
         }
+        else if (a == "--mount") {
+            std::string t = next(); size_t eq = t.find('=');
+            if (eq == std::string::npos) { fprintf(stderr, "--mount takes TEXT=FILE\n"); return 2; }
+            std::string wait = t.substr(0, eq);
+            int c = on_console(wait);
+            typing.push_back({c, squeeze(wait), "", 0, t.substr(eq + 1)});
+        }
+        else if (a == "--tape-out") tape_out = next();
         else if (a == "--ms") ms = atol(next().c_str());
         else if (a == "--quiet") quiet = true;
         else if (a == "--quick") quick = true;
-        else if (a == "--real-disks") real_disks = true;
+        else if (a == "--real-times") real_times = true;
         else if (a == "--cpu-may-run") cpu_may_run = true;
         else if (a == "--burst") burst = true;
         else if (a == "--drive") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) drive_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
@@ -100,7 +114,9 @@ int main(int argc, char **argv) {
     std::vector<uint8_t> kernel = read_file(files[0]);
     std::vector<uint8_t> tape = read_file(files[1]);
     if (kernel.empty() || tape.empty()) { fprintf(stderr, "cannot read the kernel or the tape\n"); return 2; }
-    SectorDisks disk(1, 512), drives(9, 4096);
+    SectorDisks disk(1, 512), drives(9, 4096), reel(1, 512);
+    std::string reel_path;
+    int mounting = 0;
     if (files.size() == 3 && !(disk.file[0] = fopen(files[2].c_str(), "rb"))) { fprintf(stderr, "cannot read the disk\n"); return 2; }
     for (auto &d : drive_files)
         if (d.first < 0 || d.first > 8 || !(drives.file[d.first] = fopen(d.second.c_str(), "rb"))) { fprintf(stderr, "cannot read drive %d\n", d.first); return 2; }
@@ -127,11 +143,13 @@ int main(int argc, char **argv) {
     // Local Memory holds something at power-up; zero is as good as anything
     for (int i = 0; i < 65536; i++) { LOCAL_MEMORY(0)[i] = 0; LOCAL_MEMORY(1)[i] = 0; LOCAL_MEMORY(2)[i] = 0; }
     CLK(0); top->rst = 1;
-    top->i_real_disks = real_disks;
+    top->i_real = real_times;
     top->i_bm_ack = 0; top->i_bm_rdata = 0;
     top->i_key_valid = 0; top->i_key = 0; top->i_char_ready = 077;
     top->i_tape_ack = 0; top->i_tape_data = 0; top->i_tape_bytes = tape.size();
     top->i_sd_ack = 0; top->i_sd_buff_addr = 0; top->i_sd_buff_dout = 0; top->i_sd_buff_wr = 0;
+    top->i_reel_mounted = 0; top->i_reel_blocks = 0; top->i_reel_readonly = 0;
+    top->i_reel_ack = 0; top->i_reel_buff_addr = 0; top->i_reel_buff_dout = 0; top->i_reel_buff_wr = 0;
     top->i_print_ready = 0;
     std::string printed_text;            // what the printer was given
     int print_wait = 0;
@@ -166,6 +184,7 @@ int main(int argc, char **argv) {
         bool tape_req = top->o_tape_req && !top->i_tape_ack; uint32_t tape_addr = top->o_tape_addr;
         bool sd_rd = top->o_sd_rd, sd_wr = top->o_sd_wr; uint32_t sd_lba = top->o_sd_lba; uint8_t sd_din = top->o_sd_buff_din;
         unsigned dr_rd = top->o_drive_rd, dr_wr = top->o_drive_wr; uint32_t dr_lba = top->o_drive_lba; uint8_t dr_din = top->o_drive_buff_din;
+        bool rl_rd = top->o_reel_rd, rl_wr = top->o_reel_wr; uint32_t rl_lba = top->o_reel_lba; uint8_t rl_din = top->o_reel_buff_din;
         bool cm_req = top->o_cm_req && !top->i_cm_ack, cm_we = top->o_cm_we; uint32_t cm_addr = top->o_cm_addr; uint64_t cm_wdata = top->o_cm_wdata;
 #ifdef XMP_MACHINE
         bool mem_req = top->o_mem_req, mem_we = top->o_mem_we, mem_burst = top->o_mem_burst;
@@ -190,7 +209,17 @@ int main(int argc, char **argv) {
             bool there = t.delay ? waited >= t.delay : on[c].has(t.wait);
             if (!asked && !there) key_gap = 4096;
             else if (!asked) { asked = true; key_gap = 800000; }
-            else {
+            else if (!t.mount.empty()) {
+                // the operator puts a tape on the drive
+                if (reel.file[0]) fclose(reel.file[0]);
+                reel.written[0].clear();
+                reel_path = t.mount;
+                long bytes = 0;
+                if ((reel.file[0] = fopen(reel_path.c_str(), "rb"))) { fseek(reel.file[0], 0, SEEK_END); bytes = ftell(reel.file[0]); }
+                else fprintf(stderr, "cannot read the tape file %s\n", reel_path.c_str());
+                top->i_reel_blocks = bytes / 512; top->i_reel_mounted = 1; mounting = 2;
+                said++; asked = false; waited = 0; on[c].typed();
+            } else {
                 top->i_key = (QData)(t.keys[at_key++] & 0x7F) << (7 * c); top->i_key_valid = 1 << c;
                 // what the last key brings is looked for from here on
                 if (at_key == t.keys.size()) { said++; at_key = 0; asked = false; waited = 0; on[c].typed(); }
@@ -205,6 +234,9 @@ int main(int argc, char **argv) {
         if (tape_req) top->i_tape_data = tape_addr < tape_words.size() ? tape_words[tape_addr] : 0;
         disk.clock(sd_rd, sd_wr, sd_lba, sd_din);
         top->i_sd_ack = disk.ack; top->i_sd_buff_addr = disk.buff_addr; top->i_sd_buff_dout = disk.buff_dout; top->i_sd_buff_wr = disk.buff_wr;
+        reel.clock(rl_rd, rl_wr, rl_lba, rl_din);
+        top->i_reel_ack = reel.ack; top->i_reel_buff_addr = reel.buff_addr; top->i_reel_buff_dout = reel.buff_dout; top->i_reel_buff_wr = reel.buff_wr;
+        if (mounting > 0 && --mounting == 0) top->i_reel_mounted = 0;
         drives.clock(dr_rd, dr_wr, dr_lba, dr_din);
         top->i_drive_ack = drives.ack; top->i_drive_buff_addr = drives.buff_addr; top->i_drive_buff_dout = drives.buff_dout; top->i_drive_buff_wr = drives.buff_wr;
         top->i_cm_ack = cm_req;
@@ -252,6 +284,13 @@ int main(int argc, char **argv) {
         printf("printed: ");
         for (unsigned char c : printed_text) { if (c == '\n') printf("<nl>"); else if (c >= 0x20 && c < 0x7F) putchar(c); else if (c != 0 && c != '\r') printf("<%02x>", c); }
         printf("\n");
+    }
+    if (!tape_out.empty() && reel.file[0]) {
+        // the tape file with what was written to it
+        std::vector<uint8_t> bytes = read_file(reel_path);
+        for (auto &w : reel.written[0]) if ((size_t)w.first * 512 + 512 <= bytes.size()) std::copy(w.second.begin(), w.second.end(), bytes.begin() + (size_t)w.first * 512);
+        if (FILE *f = fopen(tape_out.c_str(), "wb")) { fwrite(bytes.data(), 1, bytes.size(), f); fclose(f); }
+        printf("tape file blocks read %ld, written %ld\n", reel.reads, reel.writes);
     }
     if (said < typing.size()) printf("`%s` did not appear on console %d\n", typing[said].wait.c_str(), typing[said].console);
     if (!shown) printf("`%s` did not appear on console %d\n", until.c_str(), until_console);

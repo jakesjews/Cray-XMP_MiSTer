@@ -11,15 +11,21 @@
 // channel is Busy until the terminal has taken the character and then Done.
 // Function 0 clears Busy and Done.  A character always goes out, whether or
 // not anything shows it: the kernel stops if its display never answers.
+// With i_real the channel is also Busy for the time the character takes on
+// its serial line, CHAR_TIME: ten bits at 9,600 baud.  HR-0030 has no rate
+// for these channels; 9,600 is what those of the later Models C and D are set
+// to by Master Clear (CSM-1009-000 page 4-40).
 //
 // The Interrupt Enable flags of both channels are kept with those of the
 // other channels, in iop.v.
 
 module ios_console #(
-	parameter KEY_GAP = 400000  // 5 ms
+	parameter KEY_GAP   = 400000,  // 5 ms
+	parameter CHAR_TIME = 83333    // clocks a character to the display takes with i_real
 ) (
 	input wire clk,
-	input wire rst,  // Master Clear of the I/O Processor
+	input wire rst,    // Master Clear of the I/O Processor
+	input wire i_real, // a character to the display takes the time of its serial line
 
 	// from the I/O Processor: a function for one of the two channels
 	input  wire        i_keyboard,      // one clock: for the keyboard channel
@@ -40,16 +46,20 @@ module ios_console #(
 	input  wire       i_char_ready
 );
 
-	reg [ 6:0] key;
-	reg [19:0] gap;  // clocks until the next key may come
+	reg  [ 6:0] key;
+	reg  [19:0] gap;  // clocks until the next key may come
+	reg  [16:0] sending;  // clocks the character is still on its line
+	wire        char_out = o_char_valid && i_char_ready;
 
 	assign o_key_ready = !o_key_done && (gap == 20'd0) && !rst;
 
 	always @(posedge clk) begin
 		o_data <= 16'd0;
 		if (gap != 20'd0) gap <= gap - 20'd1;
+		if (sending != 17'd0) sending <= sending - 17'd1;
 		if (rst) begin
 			gap            <= 20'd0;
+			sending        <= 17'd0;
 			o_key_done     <= 1'b0;
 			o_display_busy <= 1'b0;
 			o_display_done <= 1'b0;
@@ -59,8 +69,8 @@ module ios_console #(
 				key        <= i_key;
 				o_key_done <= 1'b1;
 			end
-			if (o_char_valid && i_char_ready) begin
-				o_char_valid   <= 1'b0;
+			if (char_out) o_char_valid <= 1'b0;
+			if (o_display_busy && (char_out || !o_char_valid) && (sending == 17'd0)) begin
 				o_display_busy <= 1'b0;
 				o_display_done <= 1'b1;
 			end
@@ -76,6 +86,7 @@ module ios_console #(
 						o_display_done <= 1'b0;
 					end
 					4'o14: begin
+						if (i_real) sending <= CHAR_TIME[16:0];
 						o_char         <= i_a;
 						o_char_valid   <= 1'b1;
 						o_display_busy <= 1'b1;

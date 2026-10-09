@@ -22,6 +22,9 @@
 //!   run MS               let MS milliseconds pass
 //!   screen CONSOLE       print CONSOLE as a screen
 //!   printer              print what the printer has printed
+//!   tape FILE            put the tape file FILE on the Peripheral Expander's
+//!                        drive in place of the boot tape; FILE is not written to
+//!   save-tape FILE       write the tape on the drive to FILE
 //!   ```
 //!
 //!   `CONSOLE` is `kernel` (MIOP channels 46 and 47), `station` (MIOP
@@ -219,7 +222,8 @@ fn save(system: &System, o: &Options, dir: &Path) -> Result<(), String> {
 
 fn build(o: &Options) -> Result<System, String> {
     let kernel = read(&o.system.join("target/cos_117/iop_kern.bin"))?;
-    let tape = Tape::from_tap(&read(&o.system.join("boot_tape.tap"))?)?;
+    // the boot tape has no write ring
+    let tape = Tape::from_tap(&read(&o.system.join("boot_tape.tap"))?)?.without_ring();
     let disk = o.system.join("exp_disk.img");
     let disk =
         Image::open(&disk, DISK_SECTOR_BYTES).map_err(|e| format!("{}: {}", disk.display(), e))?;
@@ -467,6 +471,14 @@ impl Runner {
                     );
                     println!("{}", Screen::of(self.system.console(i, k)).text());
                     println!("----");
+                }
+                "tape" => {
+                    let bytes = read(Path::new(rest)).map_err(fail)?;
+                    self.system.mount_tape(Tape::from_file(&bytes));
+                }
+                "save-tape" => {
+                    std::fs::write(rest, self.system.tape().to_file())
+                        .map_err(|e| fail(format!("{}: {}", rest, e)))?;
                 }
                 "printer" => {
                     println!("\n---- printer at {:.3} s", self.system.time() as f64 / 8e7);

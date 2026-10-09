@@ -18,7 +18,9 @@ const MILLISECOND: u64 = 80_000;
 fn config() -> Option<Config> {
     let dir = PathBuf::from(std::env::var_os("CRAY_XMP_SYSTEM")?);
     let kernel = std::fs::read(dir.join("target/cos_117/iop_kern.bin")).ok()?;
-    let tape = Tape::from_tap(&std::fs::read(dir.join("boot_tape.tap")).ok()?).ok()?;
+    let tape = Tape::from_tap(&std::fs::read(dir.join("boot_tape.tap")).ok()?)
+        .ok()?
+        .without_ring();
     let disk = Image::open(&dir.join("exp_disk.img"), DISK_SECTOR_BYTES).ok()?;
     Some(Config::new(kernel, tape, disk))
 }

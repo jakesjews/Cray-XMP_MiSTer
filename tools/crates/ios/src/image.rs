@@ -129,11 +129,25 @@ pub enum TapeState {
 /// The `.tap` format is a sequence of records, each a 4-byte little-endian
 /// length, the data, and the same length again; a length of 0 alone is a
 /// file mark.
+///
+/// A tape file that is mounted on the drive has a fixed length, of which
+/// the whole blocks of 512 bytes are the tape.  What is on it ends at the
+/// first length whose fourth byte is not zero, or that leads past the end;
+/// the drive writes four bytes of all ones behind what it writes.
 pub struct Tape {
     /// `None` is a file mark.
     items: Vec<Option<Vec<u8>>>,
     position: usize,
     state: TapeState,
+    /// It has no write ring.
+    locked: bool,
+    /// The bytes its file has room for.
+    room: Option<usize>,
+}
+
+/// The bytes a record or a file mark takes in a file.
+fn file_bytes(item: &Option<Vec<u8>>) -> usize {
+    item.as_ref().map_or(4, |data| data.len() + 8)
 }
 
 impl Tape {
@@ -143,7 +157,74 @@ impl Tape {
             items: Vec::new(),
             position: 0,
             state: TapeState::Beginning,
+            locked: false,
+            room: None,
         }
+    }
+
+    /// The tape in a file of fixed length, as the drive reads a tape that
+    /// is mounted on it.
+    pub fn from_file(bytes: &[u8]) -> Tape {
+        let room = bytes.len() / 512 * 512;
+        let mut items = Vec::new();
+        let mut at = 0;
+        while at + 4 <= room {
+            let n = u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+            let n = n as usize;
+            if n >> 24 != 0 {
+                break;
+            }
+            if n == 0 {
+                items.push(None);
+                at += 4;
+                continue;
+            }
+            if at + n + 8 > room {
+                break;
+            }
+            items.push(Some(bytes[at + 4..at + 4 + n].to_vec()));
+            at += n + 8;
+        }
+        Tape {
+            items,
+            room: Some(room),
+            ..Tape::blank()
+        }
+    }
+
+    /// The tape as a file: its records and file marks, and behind them
+    /// the four bytes that end it if there is room for them.
+    pub fn to_file(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        for item in &self.items {
+            let n = item.as_ref().map_or(0, |data| data.len()) as u32;
+            out.extend(n.to_le_bytes());
+            if let Some(data) = item {
+                out.extend(data);
+                out.extend(n.to_le_bytes());
+            }
+        }
+        if self.room.is_none_or(|room| out.len() + 4 <= room) {
+            out.extend([0xFF; 4]);
+        }
+        out
+    }
+
+    /// The same tape without a write ring.
+    pub fn without_ring(mut self) -> Tape {
+        self.locked = true;
+        self
+    }
+
+    /// Whether it has no write ring.
+    pub fn locked(&self) -> bool {
+        self.locked
+    }
+
+    /// Whether `bytes` more fit behind the heads.
+    fn fits(&self, bytes: usize) -> bool {
+        let at: usize = self.items[..self.position].iter().map(file_bytes).sum();
+        self.room.is_none_or(|room| at + bytes <= room)
     }
 
     /// The tape in a `.tap` file's bytes.
@@ -176,8 +257,7 @@ impl Tape {
         }
         Ok(Tape {
             items,
-            position: 0,
-            state: TapeState::Beginning,
+            ..Tape::blank()
         })
     }
 
@@ -276,21 +356,31 @@ impl Tape {
     }
 
     /// Write a record at the heads; what was on the tape from there on is
-    /// gone.
-    pub fn write(&mut self, parcels: &[u16]) {
+    /// gone.  False if the tape has no room for it: it is at its end then.
+    pub fn write(&mut self, parcels: &[u16]) -> bool {
+        if !self.fits(2 * parcels.len() + 8) {
+            self.state = TapeState::End;
+            return false;
+        }
         self.items.truncate(self.position);
         self.items
             .push(Some(parcels.iter().flat_map(|p| p.to_be_bytes()).collect()));
         self.position += 1;
         self.state = TapeState::Record;
+        true
     }
 
-    /// Write a file mark at the heads.
-    pub fn write_mark(&mut self) {
+    /// Write a file mark at the heads.  False if the tape has no room.
+    pub fn write_mark(&mut self) -> bool {
+        if !self.fits(4) {
+            self.state = TapeState::End;
+            return false;
+        }
         self.items.truncate(self.position);
         self.items.push(None);
         self.position += 1;
         self.state = TapeState::FileMark;
+        true
     }
 }
 
@@ -358,6 +448,37 @@ mod tests {
         tape.read(1);
         assert_eq!(tape.read(1), [0xABCD]);
         assert!(!tape.space_forward());
+    }
+
+    #[test]
+    fn tape_files() {
+        // a file of two blocks: a record, a file mark, the end, and what does not count
+        let mut bytes = tap(&[Some(&[1, 2, 3, 4]), None]);
+        bytes.extend([0xFF; 4]);
+        bytes.extend([7, 0, 0, 0, 9, 9]);
+        bytes.resize(1024 + 100, 0x55);
+        let mut tape = Tape::from_file(&bytes);
+        assert!(!tape.locked());
+        assert_eq!(tape.read(10), [0x0102, 0x0304]);
+        assert_eq!(tape.read(10), []);
+        assert_eq!(tape.state(), TapeState::FileMark);
+        assert_eq!(tape.read(10), []);
+        assert_eq!(tape.state(), TapeState::End);
+        // what is written ends the tape behind it
+        assert!(tape.write(&[0xABCD]));
+        let file = tape.to_file();
+        assert_eq!(
+            file[16..30],
+            [2, 0, 0, 0, 0xAB, 0xCD, 2, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]
+        );
+        // 1,024 bytes are the tape: 26 are used, and a record of 990 with its lengths is the last that fits
+        assert!(!tape.write(&[0; 496]));
+        assert_eq!(tape.state(), TapeState::End);
+        assert!(tape.write(&[0; 495]));
+        assert!(!tape.write_mark());
+        assert_eq!(tape.to_file().len(), 1024);
+        assert!(Tape::from_file(&tape.to_file()).space_forward());
+        assert!(Tape::blank().without_ring().locked());
     }
 
     #[test]

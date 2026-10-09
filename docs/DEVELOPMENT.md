@@ -304,9 +304,17 @@ python3 tools/py/ioptest.py kernel         # the real kernel's boot on each of t
 - `python3 tools/py/ioptest.py disks` runs the BIOP's disk drives by
   themselves (`rtl/ios/ios_disks.v`): what they read and write, and the
   clocks a seek and a sector take, fast and with the DD-29's own times of
-  the menu's "Disk drives: As a DD-29". The simulations of the subsystem, the
-  machine and the core take `--real-disks` for that option, and
-  `cray-xmp-sys` takes `--timing disk_real=1`.
+  the menu's "Device times: Real". `python3 tools/py/ioptest.py times` does
+  the same for a console, the tape and the printer of the Peripheral
+  Expander and the channel pair to the mainframe. The simulations of the
+  subsystem, the machine and the core take `--real-times` for that option,
+  and `cray-xmp-sys` takes `--timing disk_real=1` for the drives.
+- `python3 tools/py/ioptest.py tape` runs the tape drive with the reel on it
+  (`rtl/ios/ios_expander.v`, `rtl/ios/ios_reel.v`) through random commands on
+  tape files and on the boot tape, against a tape kept in the bench
+  (`sim/harness/tape_main.cpp`). With the COS 1.17 software it also has the
+  kernel dump a file to a blank tape, delete it and load it back, on the
+  system model and on the machine, and compares the two tapes.
 
 ### The core
 

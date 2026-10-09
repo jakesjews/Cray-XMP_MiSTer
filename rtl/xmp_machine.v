@@ -27,10 +27,10 @@ module xmp_machine #(
 	parameter EXPANDER_DELAY = 82,
 	parameter DISK_SETTLE    = 200
 ) (
-	input wire clk,          // the CPU's clock; the four memory ports are in it
-	input wire clk_ios,      // the I/O Subsystem's; all other ports are in it
-	input wire rst,          // of clk
-	input wire i_real_disks, // of clk_ios: the disk drives take the DD-29's times
+	input wire clk,      // the CPU's clock; the four memory ports are in it
+	input wire clk_ios,  // the I/O Subsystem's; all other ports are in it
+	input wire rst,      // of clk
+	input wire i_real,   // of clk_ios: the devices take the times of the real ones
 
 	// central memory for the CPU: a word, or a burst of 16 words read
 	output wire        o_mem_req,
@@ -72,6 +72,21 @@ module xmp_machine #(
 	input  wire        i_tape_ack,
 	input  wire [63:0] i_tape_data,
 	input  wire [23:0] i_tape_bytes,
+
+	// a tape file for that drive in place of the boot tape (rtl/ios/ios_reel.v),
+	// of clk_ios:
+	// blocks of 512 bytes, as hps_io moves them
+	input  wire        i_reel_mounted,    // one clock: a file of i_reel_blocks blocks was chosen; none if that is zero
+	input  wire [54:0] i_reel_blocks,
+	input  wire        i_reel_readonly,
+	output wire [31:0] o_reel_lba,
+	output wire        o_reel_rd,
+	output wire        o_reel_wr,
+	input  wire        i_reel_ack,
+	input  wire [ 8:0] i_reel_buff_addr,
+	input  wire [ 7:0] i_reel_buff_dout,
+	output wire [ 7:0] o_reel_buff_din,
+	input  wire        i_reel_buff_wr,
 
 	// the disk of the Peripheral Expander
 	output wire [31:0] o_sd_lba,
@@ -287,7 +302,7 @@ module xmp_machine #(
 	) subsystem (
 		.clk               (clk_ios),
 		.rst               (rst_ios),
-		.i_real_disks      (i_real_disks),
+		.i_real            (i_real),
 		.o_bm_req          (bm_req),
 		.o_bm_we           (bm_we),
 		.o_bm_addr         (bm_addr),
@@ -305,6 +320,17 @@ module xmp_machine #(
 		.i_tape_ack        (tape_ack),
 		.i_tape_data       (tape_rdata),
 		.i_tape_bytes      (tape_bytes),
+		.i_reel_mounted    (i_reel_mounted),
+		.i_reel_blocks     (i_reel_blocks),
+		.i_reel_readonly   (i_reel_readonly),
+		.o_reel_lba        (o_reel_lba),
+		.o_reel_rd         (o_reel_rd),
+		.o_reel_wr         (o_reel_wr),
+		.i_reel_ack        (i_reel_ack),
+		.i_reel_buff_addr  (i_reel_buff_addr),
+		.i_reel_buff_dout  (i_reel_buff_dout),
+		.o_reel_buff_din   (o_reel_buff_din),
+		.i_reel_buff_wr    (i_reel_buff_wr),
 		.o_sd_lba          (o_sd_lba),
 		.o_sd_rd           (o_sd_rd),
 		.o_sd_wr           (o_sd_wr),

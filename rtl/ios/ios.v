@@ -25,7 +25,7 @@ module ios #(
 ) (
 	input wire clk,
 	input wire rst,
-	input wire i_real_disks, // the drives take the DD-29's times for seeks and sectors
+	input wire i_real, // the devices take the times of the real ones
 
 	// Buffer Memory
 	output wire        o_bm_req,
@@ -51,6 +51,20 @@ module ios #(
 	input  wire        i_tape_ack,
 	input  wire [63:0] i_tape_data,
 	input  wire [23:0] i_tape_bytes,
+
+	// a tape file for that drive in place of the boot tape (rtl/ios/ios_reel.v):
+	// blocks of 512 bytes, as hps_io moves them
+	input  wire        i_reel_mounted,    // one clock: a file of i_reel_blocks blocks was chosen; none if that is zero
+	input  wire [54:0] i_reel_blocks,
+	input  wire        i_reel_readonly,
+	output wire [31:0] o_reel_lba,
+	output wire        o_reel_rd,
+	output wire        o_reel_wr,
+	input  wire        i_reel_ack,
+	input  wire [ 8:0] i_reel_buff_addr,
+	input  wire [ 7:0] i_reel_buff_dout,
+	output wire [ 7:0] o_reel_buff_din,
+	input  wire        i_reel_buff_wr,
 
 	// the disk of the Peripheral Expander: sectors of 512 bytes, as hps_io
 	// moves them
@@ -237,11 +251,18 @@ module ios #(
 		.o_p           (o_p)
 	);
 
+	wire t_req, t_ack, t_locked, t_change, t_put, t_sync, t_wack;
+	wire [20:0] t_addr;
+	wire [63:0] t_data;
+	wire [23:0] t_bytes, t_at;
+	wire [7:0] t_wdata;
 	ios_expander #(
-		.DELAY(EXPANDER_DELAY)
+		.DELAY        (EXPANDER_DELAY),
+		.CLOCKS_PER_MS(CLOCKS_PER_MS)
 	) expander (
 		.clk           (clk),
 		.rst           (master_clear[0]),
+		.i_real        (i_real),
 		.i_strobe      (strobe[0] && (number[5:0] == EXB)),
 		.i_function    (fn[3:0]),
 		.i_a           (a[15:0]),
@@ -255,11 +276,18 @@ module ios #(
 		.o_dma_wdata   (x_dma_wdata),
 		.i_dma_ack     (x_dma_ack),
 		.i_dma_rdata   (dma_rdata[15:0]),
-		.o_tape_req    (o_tape_req),
-		.o_tape_addr   (o_tape_addr),
-		.i_tape_ack    (i_tape_ack),
-		.i_tape_data   (i_tape_data),
-		.i_tape_bytes  (i_tape_bytes),
+		.o_tape_req    (t_req),
+		.o_tape_addr   (t_addr),
+		.i_tape_ack    (t_ack),
+		.i_tape_data   (t_data),
+		.i_tape_bytes  (t_bytes),
+		.i_tape_locked (t_locked),
+		.i_tape_change (t_change),
+		.o_tape_put    (t_put),
+		.o_tape_sync   (t_sync),
+		.o_tape_at     (t_at),
+		.o_tape_wdata  (t_wdata),
+		.i_tape_wack   (t_wack),
 		.o_sd_lba      (o_sd_lba),
 		.o_sd_rd       (o_sd_rd),
 		.o_sd_wr       (o_sd_wr),
@@ -273,10 +301,47 @@ module ios #(
 		.i_print_ready (i_print_ready)
 	);
 
-	ios_link mainframe (
+	// the reel on the tape drive: the boot tape, or a tape file
+	ios_reel reel (
+		.clk           (clk),
+		.rst           (rst),
+		.i_req         (t_req),
+		.i_addr        (t_addr),
+		.o_ack         (t_ack),
+		.o_data        (t_data),
+		.i_put         (t_put),
+		.i_sync        (t_sync),
+		.i_at          (t_at),
+		.i_wdata       (t_wdata),
+		.o_wack        (t_wack),
+		.o_bytes       (t_bytes),
+		.o_locked      (t_locked),
+		.o_change      (t_change),
+		.o_boot_req    (o_tape_req),
+		.o_boot_addr   (o_tape_addr),
+		.i_boot_ack    (i_tape_ack),
+		.i_boot_data   (i_tape_data),
+		.i_boot_bytes  (i_tape_bytes),
+		.i_mounted     (i_reel_mounted),
+		.i_blocks      (i_reel_blocks),
+		.i_readonly    (i_reel_readonly),
+		.o_sd_lba      (o_reel_lba),
+		.o_sd_rd       (o_reel_rd),
+		.o_sd_wr       (o_reel_wr),
+		.i_sd_ack      (i_reel_ack),
+		.i_sd_buff_addr(i_reel_buff_addr),
+		.i_sd_buff_dout(i_reel_buff_dout),
+		.o_sd_buff_din (o_reel_buff_din),
+		.i_sd_buff_wr  (i_reel_buff_wr)
+	);
+
+	ios_link #(
+		.PARCEL((CLOCKS_PER_MS + 2999) / 3000)  // 6 Mbytes a second
+	) mainframe (
 		.clk               (clk),
 		.rst               (master_clear[0]),
 		.i_power_on        (rst),
+		.i_real            (i_real),
 		.i_in              (strobe[0] && (number[5:0] == CIA)),
 		.i_out             (strobe[0] && (number[5:0] == COA)),
 		.i_function        (fn[3:0]),
@@ -332,7 +397,7 @@ module ios #(
 	) drives (
 		.clk           (clk),
 		.rst           (master_clear[1]),
-		.i_real        (i_real_disks),
+		.i_real        (i_real),
 		.i_strobe      (strobe[1] && (k_drive != 4'd15)),
 		.i_drive       (k_drive),
 		.i_function    (fn[7:4]),
@@ -364,10 +429,12 @@ module ios #(
 			wire       here = strobe[IOP];
 			wire [5:0] channel = number[6*IOP+:6];
 			ios_console #(
-				.KEY_GAP(5 * CLOCKS_PER_MS)
+				.KEY_GAP  (5 * CLOCKS_PER_MS),
+				.CHAR_TIME(CLOCKS_PER_MS * 25 / 24)  // ten bits at 9,600 baud
 			) console (
 				.clk           (clk),
 				.rst           (master_clear[IOP]),
+				.i_real        (i_real),
 				.i_keyboard    (here && (channel == KEYBOARD)),
 				.i_display     (here && (channel == KEYBOARD + 6'd1)),
 				.i_function    (fn[4*IOP+:4]),

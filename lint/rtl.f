@@ -28,6 +28,7 @@ rtl/ios/iop.v
 rtl/ios/iop_cpu.v
 rtl/ios/ios_console.v
 rtl/ios/ios_expander.v
+rtl/ios/ios_reel.v
 rtl/ios/ios_hsp.v
 rtl/ios/ios_disks.v
 rtl/ios/ios_link.v

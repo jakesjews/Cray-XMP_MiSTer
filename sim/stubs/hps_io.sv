@@ -30,6 +30,7 @@ module hps_io #(
 
 	output wire [VDNUM-1:0] img_mounted,
 	output wire [     63:0] img_size,
+	output wire             img_readonly,
 
 	input  wire [     31:0] sd_lba      [VDNUM],
 	input  wire [      5:0] sd_blk_cnt  [VDNUM],
@@ -85,6 +86,8 @@ module hps_io #(
 	reg [     63:0] sim_img_size  /* verilator public_flat_rw */ = 0;
 	assign img_mounted = sim_img_mounted;
 	assign img_size    = sim_img_size;
+	reg sim_img_readonly  /* verilator public_flat_rw */ = 0;
+	assign img_readonly = sim_img_readonly;
 
 	assign sd_ack       = sim_sd_ack;
 	assign sd_buff_addr = sim_sd_buff_addr;

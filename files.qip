@@ -11,6 +11,7 @@ set_global_assignment -name VERILOG_FILE rtl/ios/iop.v
 set_global_assignment -name VERILOG_FILE rtl/ios/iop_cpu.v
 set_global_assignment -name VERILOG_FILE rtl/ios/ios_console.v
 set_global_assignment -name VERILOG_FILE rtl/ios/ios_expander.v
+set_global_assignment -name VERILOG_FILE rtl/ios/ios_reel.v
 set_global_assignment -name VERILOG_FILE rtl/ios/ios_hsp.v
 set_global_assignment -name VERILOG_FILE rtl/ios/ios_disks.v
 set_global_assignment -name VERILOG_FILE rtl/ios/ios_link.v

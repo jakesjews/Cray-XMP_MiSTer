@@ -25,11 +25,20 @@
 // that parcel is the first of the next transfer.  COA sends its count of
 // parcels and then Disconnect; the mainframe's channel holds a Ready that
 // finds it stopped, so COA is Busy until the program there takes the data.
+//
+// The parcels cross as fast as the two ends answer each other, unless i_real
+// asks for the rate of the real channel, 6 Mbytes a second at most (HR-0030
+// page 1-3, CSM-0111000 page 2-13): then COA sends a parcel no sooner than
+// PARCEL clocks after the one before, and CIA answers one no sooner than that
+// after its last answer, which holds the mainframe's channel to the same rate.
 
-module ios_link (
+module ios_link #(
+	parameter PARCEL = 27  // clocks a parcel takes at 6 Mbytes a second
+) (
 	input wire clk,
-	input wire rst,        // Master Clear of the MIOP
-	input wire i_power_on, // the machine is switched on or reset as a whole
+	input wire rst,         // Master Clear of the MIOP
+	input wire i_power_on,  // the machine is switched on or reset as a whole
+	input wire i_real,      // parcels cross at the real channel's rate
 
 	input  wire        i_in,        // one clock: a function for CIA
 	input  wire        i_out,       // one clock: a function for COA
@@ -75,18 +84,23 @@ module ios_link (
 	assign o_io_master_clear  = clear_io;
 
 	localparam I_IDLE = 2'd0, I_WAIT = 2'd1, I_PUT = 2'd2;
-	localparam O_IDLE = 3'd0, O_GET = 3'd1, O_GOT = 3'd2, O_SENT = 3'd3;
+	localparam O_IDLE = 3'd0, O_GET = 3'd1, O_GOT = 3'd2, O_SENT = 3'd3, O_HOLD = 3'd4;
 	reg [1:0] in_state;
 	reg [2:0] out_state;
 	// Local Memory serves one of the two at a time
 	reg       put;  // the request under way is CIA's store
+	reg [7:0] in_gap, out_gap;  // clocks until the next parcel may be answered, or sent
 
 	always @(posedge clk) begin
 		o_data       <= 16'd0;
 		o_resume     <= 1'b0;
 		o_ready      <= 1'b0;
 		o_disconnect <= 1'b0;
+		if (in_gap != 8'd0) in_gap <= in_gap - 8'd1;
+		if (out_gap != 8'd0) out_gap <= out_gap - 8'd1;
 		if (rst) begin
+			in_gap    <= 8'd0;
+			out_gap   <= 8'd0;
 			o_busy    <= 2'b0;
 			o_done    <= 2'b0;
 			in_state  <= I_IDLE;
@@ -110,7 +124,7 @@ module ios_link (
 			// ---- CIA
 			case (in_state)
 				I_WAIT:
-				if (waiting && !o_dma_req) begin
+				if (waiting && !o_dma_req && (in_gap == 8'd0)) begin
 					o_dma_req   <= 1'b1;
 					o_dma_we    <= 1'b1;
 					o_dma_addr  <= in_addr;
@@ -129,8 +143,9 @@ module ios_link (
 					put       <= 1'b0;
 					waiting   <= 1'b0;
 					o_resume  <= 1'b1;
-					in_addr   <= in_addr + 16'd1;
-					in_left   <= in_left - 17'd1;
+					if (i_real) in_gap <= PARCEL[7:0] - 8'd2;  // the next store takes two clocks
+					in_addr <= in_addr + 16'd1;
+					in_left <= in_left - 17'd1;
 					if (in_left == 17'd1) begin
 						o_busy[0] <= 1'b0;
 						o_done[0] <= 1'b1;
@@ -152,10 +167,14 @@ module ios_link (
 					o_dma_req <= 1'b0;
 					out_state <= O_GOT;
 				end
-				O_GOT: begin
-					o_parcel  <= i_dma_rdata;
-					o_ready   <= 1'b1;
-					out_state <= O_SENT;
+				// the parcel is put on the lines; its Ready may have to wait
+				O_GOT, O_HOLD: begin
+					if (out_state == O_GOT) o_parcel <= i_dma_rdata;
+					if (out_gap == 8'd0) begin
+						o_ready   <= 1'b1;
+						out_state <= O_SENT;
+						if (i_real) out_gap <= PARCEL[7:0] - 8'd1;
+					end else out_state <= O_HOLD;
 				end
 				O_SENT:
 				if (i_resume) begin

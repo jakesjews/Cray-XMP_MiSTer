@@ -1063,6 +1063,15 @@ impl System {
     pub fn printed(&self) -> &[u8] {
         self.side.expander.printed()
     }
+    /// Put another tape on the Peripheral Expander's drive; the one that
+    /// was on it comes back.
+    pub fn mount_tape(&mut self, tape: Tape) -> Tape {
+        self.side.expander.mount_tape(tape)
+    }
+    /// The tape on the drive.
+    pub fn tape(&self) -> &Tape {
+        self.side.expander.tape()
+    }
     /// Sectors written to the expander disk and to each DD-29.
     pub fn written(&self) -> (usize, Vec<usize>) {
         (

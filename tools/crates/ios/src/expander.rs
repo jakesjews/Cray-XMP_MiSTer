@@ -82,6 +82,8 @@ struct TapeDrive {
 
 /// Tape status bits.
 const TAPE_READY: u16 = 0x0001;
+const TAPE_LOCKED: u16 = 0x0004;
+const TAPE_ILLEGAL: u16 = 0x1000;
 const TAPE_BEGINNING: u16 = 0x0080;
 const TAPE_FILE_MARK: u16 = 0x0100;
 const TAPE_END: u16 = 0x0200;
@@ -90,6 +92,7 @@ const TAPE_ERROR: u16 = 0x8000;
 impl TapeDrive {
     fn dia(&self) -> u16 {
         self.status
+            | if self.tape.locked() { TAPE_LOCKED } else { 0 }
             | match self.tape.state() {
                 TapeState::Beginning => TAPE_BEGINNING,
                 TapeState::FileMark => TAPE_FILE_MARK,
@@ -143,19 +146,28 @@ impl TapeDrive {
                 }
                 status
             }
+            // a tape without a write ring takes no writing; one that has
+            // no room for it is at its end
+            5 | 6 if self.tape.locked() => TAPE_READY | TAPE_ILLEGAL | TAPE_ERROR,
+            5 if self.c == 0 => TAPE_READY,
             5 => {
-                let mut record = Vec::with_capacity(self.count());
-                while self.c != 0 {
-                    record.push(mem[self.b as usize]);
-                    self.b = self.b.wrapping_add(1);
-                    self.c = self.c.wrapping_add(1);
+                let record: Vec<u16> = (0..self.count())
+                    .map(|n| mem[self.b.wrapping_add(n as u16) as usize])
+                    .collect();
+                if self.tape.write(&record) {
+                    self.b = self.b.wrapping_add(record.len() as u16);
+                    self.c = 0;
+                    TAPE_READY
+                } else {
+                    TAPE_READY | TAPE_ERROR
                 }
-                self.tape.write(&record);
-                TAPE_READY
             }
             6 => {
-                self.tape.write_mark();
-                TAPE_READY
+                if self.tape.write_mark() {
+                    TAPE_READY
+                } else {
+                    TAPE_READY | TAPE_ERROR
+                }
             }
             _ => TAPE_READY,
         };
@@ -422,6 +434,17 @@ impl Expander {
             printer: Printer::default(),
             clock,
         }
+    }
+
+    /// Another tape on the drive, at its load point.  The one that was on
+    /// it comes back.
+    pub fn mount_tape(&mut self, tape: Tape) -> Tape {
+        std::mem::replace(&mut self.tape.tape, tape)
+    }
+
+    /// The tape on the drive.
+    pub fn tape(&self) -> &Tape {
+        &self.tape.tape
     }
 
     /// Master Clear of the MIOP.

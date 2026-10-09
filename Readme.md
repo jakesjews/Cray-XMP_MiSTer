@@ -119,7 +119,12 @@ Keys go to the station while it is shown, and to the operator's console otherwis
   other cores. The scandoubler is for the 8x8 font.
 - Text color: white, green, amber or cyan
 - Font: 8x16 (31 kHz) or 8x8 (15 kHz)
-- Disk drives: Fast, or As a DD-29 with the seek and rotation times of the real drive
+- Device times: Fast, or Real: the disk drives, the tape, the printer, the consoles and the
+  channel to the CPU take as long as the real ones did
+- Tape: a `.tap` file for the tape drive, in place of the boot tape until the next reset.
+  `tape.tap` in `games/Cray-XMP` is a blank one. On the operator's console
+  `FDUMP STATION/name @MT0:` copies a file of the kernel's disk to the tape and
+  `FLOAD @MT0:` copies what is on the tape back.
 
 ## Troubleshooting
 

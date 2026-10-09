@@ -1,0 +1,11 @@
+// Verilator arguments for the bench of the tape drive of the Peripheral Expander and the reel
+// on it (module ios_tape_tb).
+--cc --exe --build -j 0
+--top-module ios_tape_tb
+-Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-DECLFILENAME -Wno-PINCONNECTEMPTY
+-O3 --x-assign unique --x-initial unique
+-CFLAGS "-O2 -std=c++17"
+sim/tb/ios_tape_tb.v
+rtl/ios/ios_expander.v
+rtl/ios/ios_reel.v
+sim/harness/tape_main.cpp

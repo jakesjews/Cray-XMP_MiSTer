@@ -9,6 +9,7 @@
     coretest.py start [SYSTEM]
     coretest.py start-real [SYSTEM]
     coretest.py restart [SYSTEM]
+    coretest.py tape [SYSTEM]
 
 screens checks the core's terminal (rtl/terminal/term_ampex.v) against the
 reference model's: random character streams, CASES of them (default 400), and
@@ -38,12 +39,16 @@ pressed and the kernel has to ask again.
 start goes on from the date and the time: START COS_117 DEADSTART on the serial
 port, STATION when COS has been started, then F2 and LOGON on the keyboard.
 The run ends when the station shows the banner of COS.  About four minutes.
-start-real does the same with the menu's "Disk drives: As a DD-29", where
+start-real does the same with the menu's "Device times: Real", where
 seeks and sectors take the drive's times; it takes longer.
 
 restart starts COS the same way and presses the menu's reset when the kernel
 reports START COMPLETE, with the CPU running.  The kernel has to come up again
 and ask for the date, and the CPU has to wait.  About three minutes.
+
+tape boots the same way and then chooses a blank tape file in the menu.  The
+kernel dumps a file of its disk to it, and the tape has to be the one the
+system model writes when it is asked the same.  About three minutes.
 
 Each run also compares the two screens in the core with what the serial port
 carried, and fails if the CPU runs before START has been typed.  Needs make
@@ -133,15 +138,39 @@ def boot(system):
     return report(r, ['I/O SUBSYSTEM DEAD START', '10/05/89  01:02:03', 'the text was shown'])
 
 
-def start(system, real_disks=False):
-    """COS is started and the station logs on; with real_disks the drives take the DD-29's times."""
+def start(system, real_times=False):
+    """COS is started and the station logs on; with real_times the devices take the real ones' times."""
     cmd = [boot_file(system), '--disk', '0=' + os.path.join(system, 'exp_disk.img')]
     for n, channel in enumerate(DRIVES):
         cmd += ['--drive', '%d=%s' % (n, os.path.join(system, 'biop_dk%o.img' % channel))]
     cmd += DATE + ['--type', '10/05/89  01:02:03=START COS_117 DEADSTART\\r', '--type', 'START COMPLETE=STATION\\r',
                    '--press', '@0:CRAY STATION={f2}LOGON\\r', '--until', '@0:COS 1.17', '--screen', '0']
-    cmd += ['--real-disks', '--ms', '30000'] if real_disks else ['--ms', '9000']
+    cmd += ['--real-times', '--ms', '30000'] if real_times else ['--ms', '9000']
     return report(run(cmd), ['MFINIT: COMPLETE', 'CPU <-> MIOP LINKAGE COMPLETE', 'START COMPLETE', '>LOGON', 'the text was shown'])
+
+
+def tape(system):
+    """A tape file from the menu, written by the kernel; the model's tape is what it has to hold."""
+    blank, by_model, by_core = (os.path.join(OUT, 'tape_%s.tap' % n) for n in ('blank', 'model', 'core'))
+    with open(blank, 'wb') as f:
+        f.write(b'\xff' * (64 * 512))
+    script = os.path.join(OUT, 'tape.script')
+    with open(script, 'w') as f:
+        f.write('wait kernel ENTER DATE [MM/DD/YY]\nrun 100\ntype kernel 10/05/89\nwait kernel ENTER TIME [HH:MM:SS]\nrun 100\n'
+                'type kernel 01:02:03\nrun 500\ntape %s\ntype kernel FDUMP STATION/JINSTALL @MT0:\nwait kernel FDUMP COMPLETE\n'
+                'save-tape %s\n' % (blank, by_model))
+    subprocess.run([os.path.join(ROOT, 'tools/target/release/cray-xmp-sys'), system, '--script', script, '--quiet'],
+                   check=True, capture_output=True)
+    r = run([boot_file(system), '--disk', '0=' + os.path.join(system, 'exp_disk.img')] + DATE +
+            ['--mount', '10/05/89  01:02:03=' + blank, '--type', '+300=FDUMP STATION/JINSTALL @MT0:\\r',
+             '--until', 'FDUMP COMPLETE', '--tape-out', by_core, '--ms', '4000'])
+    ok = report(r, ['FDUMP COMPLETE', 'the text was shown'])
+    a = open(by_model, 'rb').read()
+    b = open(by_core, 'rb').read() if os.path.exists(by_core) else b''
+    if len(a) < 4000 or b[:len(a)] != a:
+        print('FAIL: the tape the core wrote is not the model\'s (%s, %s)' % (by_model, by_core))
+        return False
+    return ok
 
 
 def restart(system):
@@ -163,10 +192,10 @@ def main():
         ok = nofile()
     elif a == ['printer']:
         ok = printer()
-    elif a and a[0] in ('boot', 'start', 'restart', 'start-real'):
+    elif a and a[0] in ('boot', 'start', 'restart', 'start-real', 'tape'):
         if len(a) < 2 and not system:
             sys.exit('coretest: name the directory of the COS 1.17 software, or set CRAY_XMP_SYSTEM')
-        kinds = {'boot': boot, 'start': start, 'restart': restart, 'start-real': lambda s: start(s, True)}
+        kinds = {'boot': boot, 'start': start, 'restart': restart, 'start-real': lambda s: start(s, True), 'tape': tape}
         ok = kinds[a[0]](a[1] if len(a) > 1 else system)
     else:
         sys.exit(__doc__)

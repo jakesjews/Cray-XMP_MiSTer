@@ -8,6 +8,8 @@
     ioptest.py machine [SYSTEM] [--start]
     ioptest.py bridges [CASES]
     ioptest.py disks
+    ioptest.py times
+    ioptest.py tape [SYSTEM]
 
 rand runs random programs, seeds FIRST to LAST, each in two kinds (every parcel
 random; mostly register work with functions on the processor's own channels)
@@ -54,7 +56,17 @@ clocks of random periods, requests that are taken back, and resets
 
 disks runs the BIOP's disk drives by themselves (rtl/ios/ios_disks.v): what
 they read and write, and how long a seek and a sector take, fast and with the
-DD-29's own times (sim/harness/disks_main.cpp).
+DD-29's own times (sim/harness/disks_main.cpp).  times does the same for a
+console, the Peripheral Expander's tape and printer and the channel pair to
+the mainframe (sim/harness/times_main.cpp).
+
+tape runs the tape drive of the Peripheral Expander with the reel on it
+(rtl/ios/ios_expander.v, rtl/ios/ios_reel.v) through random commands on tape
+files and on the boot tape, against a tape kept in the bench
+(sim/harness/tape_main.cpp).  With SYSTEM, or CRAY_XMP_SYSTEM set, the kernel
+then dumps a file of its disk to a blank tape, deletes it and loads it back,
+on the system model and on the machine; the two tapes have to be the same and
+the file has to be back.
 
 The model writes a record of each step (tools/crates/ios/src/replay.rs) and
 the simulation of the hardware description follows it: same interrupts, same
@@ -75,6 +87,8 @@ BOOT = os.environ.get('CRAY_IOS_SIM', os.path.join(ROOT, 'sim/build/ios/Vios'))
 MACHINE = os.environ.get('CRAY_XMP_SIM', os.path.join(ROOT, 'sim/build/xmp/Vxmp_machine'))
 BRIDGE = os.environ.get('CRAY_BRIDGE_SIM', os.path.join(ROOT, 'sim/build/bridge/Vxmp_bridge_tb'))
 DISKS = os.environ.get('CRAY_DISKS_SIM', os.path.join(ROOT, 'sim/build/disks/Vios_disks'))
+TIMES = os.environ.get('CRAY_TIMES_SIM', os.path.join(ROOT, 'sim/build/times/Vios_times_tb'))
+TAPE = os.environ.get('CRAY_TAPE_SIM', os.path.join(ROOT, 'sim/build/tape/Vios_tape_tb'))
 # the channels of the BIOP's nine drives, in order
 DRIVES = [0o20, 0o21, 0o22, 0o24, 0o25, 0o26, 0o30, 0o31, 0o32]
 OUT = os.path.join(ROOT, 'build/iop')
@@ -239,6 +253,64 @@ def disks():
     return r.returncode == 0
 
 
+def times():
+    r = subprocess.run([TIMES], capture_output=True, text=True)
+    lines = (r.stdout + r.stderr).strip().splitlines()
+    print('\n'.join([l for l in lines if 'WRONG' in l or 'OUT OF RANGE' in l or 'should be' in l] + lines[-1:]))
+    print('1 runs, %d failed' % (r.returncode != 0))
+    return r.returncode == 0
+
+
+# what the operator types to dump a file to tape, delete it and load it back, and what the kernel answers
+TAPE_STEPS = [('FDUMP STATION/JINSTALL @MT0:', 'FDUMP COMPLETE'), ('DELETE STATION/JINSTALL', 'DELETE COMPLETE'),
+              ('FSTAT STATION/JINSTALL', 'FSTAT COMPLETE'), ('FLOAD @MT0:', 'FLOAD COMPLETE'),
+              ('FSTAT STATION/JINSTALL', 'TOTAL')]
+
+
+def tape(system):
+    r = subprocess.run([TAPE], capture_output=True, text=True)
+    print((r.stdout + r.stderr).strip())
+    failed = r.returncode != 0
+    runs = 1
+    if system:
+        runs += 1
+        blank, by_model, by_machine = (os.path.join(OUT, 'tape_%s.tap' % n) for n in ('blank', 'model', 'machine'))
+        with open(blank, 'wb') as f:
+            f.write(b'\xff' * (64 * 512))
+        script = os.path.join(OUT, 'tape.script')
+        with open(script, 'w') as f:
+            f.write('wait kernel ENTER DATE [MM/DD/YY]\nrun 100\ntype kernel 10/05/89\n'
+                    'wait kernel ENTER TIME [HH:MM:SS]\nrun 100\ntype kernel 01:02:03\nrun 500\ntape %s\n' % blank)
+            for keys, answer in TAPE_STEPS:
+                f.write('type kernel %s\nwait kernel %s\nrun 200\n' % (keys, answer))
+            f.write('screen kernel\nsave-tape %s\n' % by_model)
+        model = subprocess.run([SYS, system, '--script', script, '--quiet'], capture_output=True, text=True, errors='replace')
+        cmd = [MACHINE, os.path.join(system, 'target/cos_117/iop_kern.bin'), os.path.join(system, 'boot_tape.tap'),
+               os.path.join(system, 'exp_disk.img'), '--quick', '--quiet', '--screen', '3', '--ms', '20000',
+               '--type', 'ENTER DATE [MM/DD/YY]=10/05/89\\r', '--type', 'ENTER TIME [HH:MM:SS]=01:02:03\\r',
+               '--mount', '10/05/89  01:02:03=' + blank, '--tape-out', by_machine]
+        wait = '+300'
+        for keys, answer in TAPE_STEPS:
+            cmd += ['--type', '%s=%s\\r' % (wait, keys)]
+            wait = answer
+        machine = subprocess.run(cmd + ['--until', TAPE_STEPS[-1][1]], capture_output=True, text=True, errors='replace')
+        back = 'JINSTALL              10/05/89'
+        for name, ran in (('the model', model), ('the machine', machine)):
+            if ran.returncode != 0 or 'NO WRITE RING' in ran.stdout or back not in ran.stdout or 'NOT FOUND' not in ran.stdout:
+                print('FAIL: on %s the file did not go to the tape and come back' % name)
+                print('\n'.join(ran.stdout.strip().splitlines()[-16:]))
+                failed = True
+        if not failed:
+            a, b = open(by_model, 'rb').read(), open(by_machine, 'rb').read()
+            if len(a) < 4000 or b[:len(a)] != a:
+                print('FAIL: the tape the machine wrote is not the model\'s (%s, %s)' % (by_model, by_machine))
+                failed = True
+            else:
+                print('the kernel dumped a file to tape and loaded it back: %d bytes of tape, the same on the model and the machine' % len(a))
+    print('%d runs, %d failed' % (runs, failed))
+    return not failed
+
+
 def main():
     a = sys.argv[1:]
     os.makedirs(OUT, exist_ok=True)
@@ -252,6 +324,10 @@ def main():
         ok = bridges(int(a[1]) if len(a) > 1 else 2000)
     elif a == ['disks']:
         ok = disks()
+    elif a == ['times']:
+        ok = times()
+    elif a and a[0] == 'tape':
+        ok = tape(a[1] if len(a) > 1 else os.environ.get('CRAY_XMP_SYSTEM', ''))
     elif a and a[0] in ('kernel', 'boot', 'machine'):
         rest = [x for x in a[1:] if not x.startswith('--')]
         system = rest[0] if rest else os.environ.get('CRAY_XMP_SYSTEM', '')

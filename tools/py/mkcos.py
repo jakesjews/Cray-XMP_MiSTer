@@ -17,7 +17,10 @@ Written are
   OUT_DIR/games/Cray-XMP/printer.txt   takes what the printer prints: 8 MB of
                                        empty lines, which the core fills from
                                        the top
-  OUT_DIR/_Computer/COS 1.17.mgl       starts the core with all four in place
+  OUT_DIR/games/Cray-XMP/tape.tap      a blank tape for the menu's Tape: 8 MB
+                                       of bytes of all ones (tools/py/mktape.py)
+  OUT_DIR/_Computer/COS 1.17.mgl       starts the core with the first four in
+                                       place
   OUT_DIR/games/Cray-XMP/licenses/     the notices of what is in the files
 
 and with --zip all of that in one file, which is what a release carries.
@@ -69,6 +72,7 @@ MODEL = os.path.join(ROOT, 'tools', 'target', 'release', 'cray-xmp-sys')
 CORE = 'Cray-XMP'
 DRIVE_BYTES = 823 * 10 * 18 * 4096      # cylinders, head groups, sectors, bytes
 PRINTER_BYTES = 8 << 20
+TAPE_BYTES = 8 << 20
 STAMP = ('01/01/89', '01:01:01')        # the date of the files that come on the disk
 
 MGL = '''<mistergamedescription>
@@ -367,6 +371,8 @@ def main(argv):
     print('drives.img')
     open(os.path.join(games, 'printer.txt'), 'wb').write(b'\n' * PRINTER_BYTES)
     print('printer.txt')
+    open(os.path.join(games, 'tape.tap'), 'wb').write(b'\xff' * TAPE_BYTES)
+    print('tape.tap')
     open(os.path.join(computer, 'COS 1.17.mgl'), 'w').write(MGL)
     print('COS 1.17.mgl')
     for directory in (TOOLS, SYSTEM):

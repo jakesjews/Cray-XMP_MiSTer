@@ -8,11 +8,17 @@
 // registers A, B and C, a Busy and a Done flag and an interrupt request, and
 // takes Start (bit 0) and Clear (bit 1) and Pulse (bit 2) through function 17.
 //
-//   22  tape    A bits 5-3: 0 read a record, 1 rewind.  B the Local Memory
-//               address, C the count of parcels, negative.  A read back is the
-//               status: bit 0 ready, 7 at the load point, 8 file mark, 9 end
-//               of tape, 15 error.  Only reading and rewinding are done here;
-//               the other commands answer ready and move nothing.
+//   22  tape    A bits 5-3: 0 read a record, 1 rewind, 3 space forward, 4
+//               space backward, 5 write a record, 6 write a file mark.  B the
+//               Local Memory address, C the count, negative: of parcels, or
+//               of records to space over.  A read back is the status: bit 0
+//               ready, 2 no write ring, 7 at the load point, 8 file mark, 9
+//               end of tape, 12 illegal, 15 error.  A read passes over what
+//               is left of a record that is longer than the count.  Spacing
+//               stops behind a file mark, with the error bit, and so does a
+//               read that finds one.  Writing ends the tape behind what was
+//               written.  On a tape without a write ring it is illegal.  The
+//               other commands answer ready and move nothing.
 //   60  disk    B goes to the register C then names: 5 cylinder, 1 head,
 //               2 sector, 3 count of sectors.  With a command in C (0 read,
 //               10 write, 20 format, 120 return to cylinder 0) B is the Local
@@ -27,20 +33,47 @@
 //               What is printed leaves here a character at a time, a form
 //               feed for a new page and a line feed for a new line.
 //
-// The tape is a file in .tap form in a memory of 64-bit words, the first byte
-// of the file in bits 63 to 56 of word 0: a record is its length in bytes (4
-// bytes, low byte first), the bytes, and the length again; a length of zero
-// alone is a file mark.  The disk is read and written a sector of 512 bytes at
-// a time through signals like those of the MiSTer framework's hps_io.
+// The tape is a file in .tap form, read in words of eight bytes, the first
+// byte of the file in bits 63 to 56 of word 0, and written a byte at a time
+// (rtl/ios/ios_reel.v has the file): a record is its length in bytes (4 bytes,
+// low byte first), the bytes, and the length again; a length of zero alone is
+// a file mark.  A length whose fourth byte is not zero, or one that leads
+// past the end of the file, is the end of the tape: writing puts four bytes
+// of all ones behind what it wrote.  The disk is read and written a sector of
+// 512 bytes at a time through signals like those of the MiSTer framework's
+// hps_io.
 //
 // Functions 1 to 4, 6 and 14 to 17 are delayed functions: the channel is Busy
 // for DELAY clocks and then Done.
+//
+// Time.  The devices answer as fast as their files do, unless i_real asks for
+// the times of the real tape drive and printer:
+//
+//   tape    Data General's 9-track drive of 800 bytes an inch (SG-0051 page
+//           1-2), whose manual (015-000040, the 6020 series) gives 75 inches a
+//           second, 5 ms to start and to stop, and 200 inches a second for a
+//           rewind.  A read then takes 8 ms to the record, a start and what
+//           is left of the 0.6 inch gap behind a stop, and its bytes at
+//           60,000 a second, to the end of the record even if the count is
+//           used up before; one that follows within 5 ms waits for the tape
+//           to stop first.  A file mark is a gap and a parcel long.  A write
+//           and a record spaced over, either way, take what a read takes.
+//           A rewind is Done when the tape is back at the load point.
+//   printer the Gould 5000's 1,200 lines a minute, its maker's figure, with
+//           six lines and 100 dots to the inch: a new line takes 50 ms, in
+//           graphics mode the 3 ms of a row of dots.  A new page counts as a
+//           line: how far the paper runs then is not known.
+//
+// The disk has no times of its own: those of the 80 Mbyte drive are in no
+// manual at hand.
 
 module ios_expander #(
-	parameter DELAY = 82  // at least a microsecond
+	parameter DELAY         = 82,    // at least a microsecond
+	parameter CLOCKS_PER_MS = 80000  // of clk, for the times of the real devices
 ) (
 	input wire clk,
-	input wire rst,  // Master Clear of the MIOP
+	input wire rst,    // Master Clear of the MIOP
+	input wire i_real, // the tape and the printer take the times of the real ones
 
 	// channel 17
 	input  wire        i_strobe,
@@ -59,12 +92,19 @@ module ios_expander #(
 	input  wire        i_dma_ack,
 	input  wire [15:0] i_dma_rdata,
 
-	// the tape: a word of the file
+	// the tape: a word of the file to read, a byte to write
 	output reg         o_tape_req,
 	output reg  [20:0] o_tape_addr,
 	input  wire        i_tape_ack,
 	input  wire [63:0] i_tape_data,
-	input  wire [23:0] i_tape_bytes, // the length of the file
+	input  wire [23:0] i_tape_bytes,   // the length of the file
+	input  wire        i_tape_locked,  // the tape has no write ring
+	input  wire        i_tape_change,  // one clock: another tape has been put on the drive
+	output reg         o_tape_put,     // write the byte o_tape_wdata at o_tape_at; held until i_tape_wack
+	output reg         o_tape_sync,    // what was written has to be in the file; held until i_tape_wack
+	output reg  [23:0] o_tape_at,
+	output reg  [ 7:0] o_tape_wdata,
+	input  wire        i_tape_wack,
 
 	// the disk
 	output reg  [31:0] o_sd_lba,
@@ -97,6 +137,18 @@ module ios_expander #(
 	reg t_busy, t_done, t_int;
 	reg [23:0] t_pos;  // the byte of the file the heads are at
 	reg [ 1:0] t_state;  // 0 load point, 1 behind a record, 2 behind a file mark, 3 end of tape
+	// the times of the real tape drive: a parcel is two bytes
+	localparam [20:0] T_PARCEL = CLOCKS_PER_MS / 30, T_START = 8 * CLOCKS_PER_MS, T_STOP = 5 * CLOCKS_PER_MS;
+	localparam [20:0] T_REWIND = CLOCKS_PER_MS / 160;  // the length of a byte at 200 inches a second
+	localparam [25:0] T_GAP = 26'd480;  // 0.6 inch in bytes
+	reg [20:0] t_time;  // clocks until the tape is where it is wanted
+	reg [25:0] t_far;  // how far the tape is from the load point, in bytes and gaps
+	reg        t_rewinding;
+	reg [23:0] t_skip;  // bytes of the record behind those that were asked for
+	// and of the real printer
+	localparam [22:0] P_LINE = 50 * CLOCKS_PER_MS, P_ROW = 3 * CLOCKS_PER_MS;
+	reg [22:0] p_time;
+	reg        p_moving;  // the paper moves
 	reg [15:0] d_a, d_b, d_c;
 	reg d_busy, d_done, d_int;
 	reg [15:0] d_cylinder, d_head, d_sector, d_count;
@@ -122,7 +174,8 @@ module ios_expander #(
 	};
 	// the highest priority device that asks: the lowest address
 	wire [5:0] asking = p_int ? PRINTER : t_int ? TAPE : d_int ? DISK : 6'd0;
-	wire [15:0] t_now = t_status | ((t_state == 2'd0) ? 16'h0080 : (t_state == 2'd2) ? 16'h0100 : (t_state == 2'd3) ? 16'h0200 : 16'h0000);
+	wire [15:0] t_now = t_status | (i_tape_locked ? 16'h0004 : 16'h0000) |
+		((t_state == 2'd0) ? 16'h0080 : (t_state == 2'd2) ? 16'h0100 : (t_state == 2'd3) ? 16'h0200 : 16'h0000);
 
 	assign o_ask = (channel_ints && o_done) || (device_ints && ((p_int && !masked[0]) || (t_int && !masked[1]) || (d_int && !masked[2])));
 
@@ -157,6 +210,9 @@ module ios_expander #(
 	end
 
 	// ---- the work of the devices
+	localparam X_T_MARK = 5'd21, X_T_PASS = 5'd22, X_T_NEXT = 5'd23, X_T_BACK = 5'd24, X_T_REC = 5'd25, X_T_WSEQ = 5'd26,
+		X_T_WGET = 5'd27, X_T_WGOT = 5'd28, X_T_WHI = 5'd29, X_T_WLO = 5'd30, X_T_SYNC = 5'd31;
+	localparam [2:0] T_READ = 3'd0, T_BACKWIND = 3'd1, T_FORWARD = 3'd3, T_BACK = 3'd4, T_WRITE = 3'd5, T_WMARK = 3'd6;
 	localparam X_IDLE = 5'd0, X_T_LEN = 5'd1, X_T_FETCH = 5'd2, X_T_HIGH = 5'd3, X_T_LOW = 5'd4, X_T_PUT = 5'd5,
 		X_D_NEXT = 5'd6, X_D_READ = 5'd7, X_D_WAIT = 5'd8, X_D_HIGH = 5'd9, X_D_LOW = 5'd10, X_D_PUT = 5'd11,
 		X_D_GET = 5'd12, X_D_GOT = 5'd13, X_D_FILL = 5'd14, X_D_WRITE = 5'd15, X_D_SENT = 5'd16,
@@ -171,10 +227,18 @@ module ios_expander #(
 	reg [23:0] t_at;  // the byte wanted
 	reg [ 1:0] t_n;
 	reg [23:0] t_len, t_done_bytes;
-	reg [15:0] t_left;  // parcels still to store
+	reg [15:0] t_left;  // parcels still to store, or to write
 	reg [7:0] t_high;
+	reg [2:0] t_op;  // the command under way
+	reg [1:0] t_part;  // of a write: 0 the length in front, 1 the length behind, 2 the end of what is written, 3 a file mark
+	reg [15:0] t_out;  // the parcel being written
 	wire t_hit = t_word_valid && (t_word_at == t_at[23:3]);
 	wire [7:0] t_byte = t_word[8*(7-t_at[2:0])+:8];
+	wire [23:0] t_past = t_len + 24'd8;  // a record with its two lengths
+	wire [15:0] t_count = 16'd0 - t_c;
+	wire [23:0] t_writes = {7'b0, t_count, 1'b0};  // the bytes of the record a write makes
+	wire [24:0] t_room = {1'b0, t_pos} + ((t_command == T_WRITE) ? {1'b0, t_writes} + 25'd8 : 25'd4);  // where a write would end
+	wire [25:0] t_span = {2'b0, t_len} + T_GAP;
 	// the disk
 	reg [15:0] d_left;  // sectors still to move
 	reg [8:0] d_n;  // parcel of the sector
@@ -215,7 +279,14 @@ module ios_expander #(
 			o_print_valid           <= 1'b0;
 			t_pos                   <= 24'd0;
 			t_state                 <= 2'd0;
+			t_time                  <= 21'd0;
+			t_far                   <= 26'd0;
+			t_rewinding             <= 1'b0;
+			p_time                  <= 23'd0;
+			p_moving                <= 1'b0;
 			t_word_valid            <= 1'b0;
+			o_tape_put              <= 1'b0;
+			o_tape_sync             <= 1'b0;
 			x                       <= X_IDLE;
 			t_wait                  <= 1'b0;
 			d_wait                  <= 1'b0;
@@ -231,6 +302,29 @@ module ios_expander #(
 					o_busy <= 1'b0;
 					o_done <= 1'b1;
 				end
+			end
+
+			// ---- the times of the real devices
+			if (t_time != 21'd0) t_time <= t_time - 21'd1;
+			if (p_time != 23'd0) p_time <= p_time - 23'd1;
+			// the tape on its way back to the load point, a byte's length at a time
+			if (t_rewinding && (t_time == 21'd0)) begin
+				if (t_far == 26'd0) begin
+					t_rewinding             <= 1'b0;
+					t_pos                   <= 24'd0;
+					t_state                 <= 2'd0;
+					t_status                <= 16'h0001;
+					{t_busy, t_done, t_int} <= 3'b011;
+				end else begin
+					t_far  <= t_far - 26'd1;
+					t_time <= T_REWIND - 21'd1;
+				end
+			end
+			// the paper has moved
+			if (p_moving && (p_time == 23'd0)) begin
+				p_moving                <= 1'b0;
+				{p_busy, p_done, p_int} <= 3'b011;
+				p_status                <= 16'h4000;
 			end
 
 			// ---- functions
@@ -326,25 +420,51 @@ module ios_expander #(
 			// ---- what the devices do
 			case (x)
 				X_IDLE:
-				if (t_wait) begin
+				if (t_wait && !t_rewinding) begin
 					t_wait <= 1'b0;
-					t_n    <= 2'd0;
-					t_at   <= t_pos;
-					t_len  <= 24'd0;
-					t_left <= 16'd0 - t_c;
+					t_op   <= t_command;
+					t_left <= t_count;
 					case (t_command)
-						// read: nothing is left of the tape, or a record or a file mark follows
-						3'd0:
-						if (t_pos + 24'd4 > i_tape_bytes) begin
-							t_state                 <= 2'd3;
-							t_status                <= 16'h8001;
-							{t_busy, t_done, t_int} <= 3'b011;
-						end else x <= X_T_LEN;
-						3'd1: begin
+						T_READ: x <= X_T_NEXT;
+						T_BACKWIND:
+						if (i_real && (t_far != 26'd0)) t_rewinding <= 1'b1;
+						else begin
+							t_far                   <= 26'd0;
 							t_pos                   <= 24'd0;
 							t_state                 <= 2'd0;
 							t_status                <= 16'h0001;
 							{t_busy, t_done, t_int} <= 3'b011;
+						end
+						// records to space over; none is no motion
+						T_FORWARD, T_BACK:
+						if (t_c == 16'd0) begin
+							t_status                <= 16'h0001;
+							{t_busy, t_done, t_int} <= 3'b011;
+						end else begin
+							t_left <= 16'd0;
+							x      <= (t_command == T_FORWARD) ? X_T_NEXT : X_T_BACK;
+						end
+						// a tape without a write ring takes no writing, and one
+						// that has no room for it is at its end
+						T_WRITE, T_WMARK:
+						if (i_tape_locked) begin
+							t_status                <= 16'h9001;
+							{t_busy, t_done, t_int} <= 3'b011;
+						end else if ((t_command == T_WRITE) && (t_c == 16'd0)) begin
+							t_status                <= 16'h0001;
+							{t_busy, t_done, t_int} <= 3'b011;
+						end else if (t_room > {1'b0, i_tape_bytes}) begin
+							t_state                 <= 2'd3;
+							t_status                <= 16'h8001;
+							{t_busy, t_done, t_int} <= 3'b011;
+						end else begin
+							t_word_valid <= 1'b0;
+							t_at         <= t_pos;
+							t_n          <= 2'd0;
+							t_len        <= (t_command == T_WRITE) ? t_writes : 24'd0;
+							t_part       <= (t_command == T_WRITE) ? 2'd0 : 2'd3;
+							if (i_real) t_time <= t_time + T_START + T_PARCEL;
+							x <= X_T_WSEQ;
 						end
 						default: begin
 							t_status                <= 16'h0001;
@@ -362,7 +482,7 @@ module ios_expander #(
 						d_left     <= 16'd0;
 					end
 					x <= X_D_NEXT;
-				end else if (p_wait) begin
+				end else if (p_wait && !p_moving) begin
 					p_wait <= 1'b0;
 					if (!p_text) x <= X_P_LOW;
 					else if (p_b == 16'd0) begin
@@ -384,7 +504,44 @@ module ios_expander #(
 					x            <= x_back;
 				end
 
-				// the length of the record, low byte first; its fourth byte is zero
+				// forward: the record or the file mark behind the heads, if the
+				// tape goes on
+				X_T_NEXT: begin
+					t_n   <= 2'd0;
+					t_at  <= t_pos;
+					t_len <= 24'd0;
+					if ({1'b0, t_pos} + 25'd4 > {1'b0, i_tape_bytes}) begin
+						t_state                 <= 2'd3;
+						t_status                <= 16'h8001;
+						{t_busy, t_done, t_int} <= 3'b011;
+						x                       <= X_IDLE;
+					end else begin
+						// the tape stops if it still moves, starts, and the first parcel passes
+						if (i_real) t_time <= t_time + T_START + T_PARCEL;
+						x <= X_T_LEN;
+					end
+				end
+
+				// backward: the one before the heads, by the length behind it,
+				// unless the tape is at the load point
+				X_T_BACK: begin
+					t_n   <= 2'd0;
+					t_at  <= t_pos - 24'd4;
+					t_len <= 24'd0;
+					if (t_pos < 24'd4) begin
+						t_state                 <= 2'd0;
+						t_status                <= 16'h8001;
+						{t_busy, t_done, t_int} <= 3'b011;
+						x                       <= X_IDLE;
+					end else begin
+						if (i_real) t_time <= t_time + T_START + T_PARCEL;
+						x <= X_T_LEN;
+					end
+				end
+
+				// the length of the record, low byte first; its fourth byte is
+				// zero.  One that is no length, or leads off the tape, is the
+				// end of what is on it.
 				X_T_LEN:
 				if (!t_hit) begin
 					x_back <= X_T_LEN;
@@ -393,27 +550,44 @@ module ios_expander #(
 					t_n  <= t_n + 2'd1;
 					t_at <= t_at + 24'd1;
 					if (t_n != 2'd3) t_len <= {t_byte, t_len[23:8]};
-					else if (t_len == 24'd0) begin
-						t_pos                   <= t_pos + 24'd4;
-						t_state                 <= 2'd2;
+					else if ((t_op != T_BACK) && ((t_byte != 8'd0) || ((t_len != 24'd0) && ({1'b0, t_pos} + {1'b0, t_past} > {1'b0, i_tape_bytes})))) begin
+						t_state                 <= 2'd3;
 						t_status                <= 16'h8001;
 						{t_busy, t_done, t_int} <= 3'b011;
 						x                       <= X_IDLE;
-					end else begin
+					end else if (t_len == 24'd0) x <= X_T_MARK;
+					else begin
 						t_done_bytes <= 24'd0;
 						x            <= X_T_HIGH;
 					end
+				end
+
+				// a file mark, when the tape has come to it
+				X_T_MARK:
+				if (t_time == 21'd0) begin
+					if (t_op == T_BACK) begin
+						t_pos   <= t_pos - 24'd4;
+						t_far   <= (t_far < T_GAP) ? 26'd0 : t_far - T_GAP;
+						t_state <= (t_pos == 24'd4) ? 2'd0 : 2'd2;
+					end else begin
+						t_pos   <= t_pos + 24'd4;
+						t_far   <= t_far + T_GAP;
+						t_state <= 2'd2;
+					end
+					t_status                <= 16'h8001;
+					{t_busy, t_done, t_int} <= 3'b011;
+					if (i_real) t_time <= T_STOP;
+					x <= X_IDLE;
 				end
 
 				// two bytes are a parcel, the high one first; the record is
 				// passed over when the count is used up or the record ends
 				X_T_HIGH:
 				if ((t_done_bytes >= t_len) || (t_left == 16'd0)) begin
-					t_pos                   <= t_pos + t_len + 24'd8;
-					t_state                 <= 2'd1;
-					t_status                <= 16'h0001;
-					{t_busy, t_done, t_int} <= 3'b011;
-					x                       <= X_IDLE;
+					if (i_real && (t_done_bytes < t_len)) begin
+						t_skip <= t_len - t_done_bytes;
+						x      <= X_T_PASS;
+					end else x <= X_T_REC;
 				end else if (!t_hit) begin
 					x_back <= X_T_HIGH;
 					x      <= X_T_FETCH;
@@ -423,17 +597,19 @@ module ios_expander #(
 					x      <= X_T_LOW;
 				end
 
+				// the parcel is stored when it has passed the heads
 				X_T_LOW:
 				if ((t_done_bytes + 24'd1 < t_len) && !t_hit) begin
 					x_back <= X_T_LOW;
 					x      <= X_T_FETCH;
-				end else begin
+				end else if (t_time == 21'd0) begin
 					o_dma_req   <= 1'b1;
 					o_dma_we    <= 1'b1;
 					o_dma_addr  <= t_b;
 					o_dma_wdata <= {t_high, (t_done_bytes + 24'd1 < t_len) ? t_byte : 8'd0};
 					t_at        <= t_at + 24'd1;
-					x           <= X_T_PUT;
+					if (i_real) t_time <= T_PARCEL - 21'd1;
+					x <= X_T_PUT;
 				end
 
 				X_T_PUT:
@@ -444,6 +620,112 @@ module ios_expander #(
 					t_left       <= t_left - 16'd1;
 					t_done_bytes <= t_done_bytes + 24'd2;
 					x            <= X_T_HIGH;
+				end
+
+				// the rest of a record that is longer than the count, or one
+				// that is spaced over
+				X_T_PASS:
+				if (t_time == 21'd0) begin
+					if (t_skip <= 24'd2) x <= X_T_REC;
+					else begin
+						t_skip <= t_skip - 24'd2;
+						t_time <= T_PARCEL - 21'd1;
+					end
+				end
+
+				// a record has passed the heads: the end of a read, and of
+				// spacing when it was the last to pass
+				X_T_REC: begin
+					if (t_op == T_BACK) begin
+						t_pos   <= (t_pos < t_past) ? 24'd0 : t_pos - t_past;
+						t_far   <= (t_far < t_span) ? 26'd0 : t_far - t_span;
+						t_state <= (t_pos <= t_past) ? 2'd0 : 2'd1;
+					end else begin
+						t_pos   <= t_pos + t_past;
+						t_far   <= t_far + t_span;
+						t_state <= 2'd1;
+					end
+					if (t_op != T_READ) t_c <= t_c + 16'd1;
+					if ((t_op == T_READ) || (t_c == 16'hFFFF)) begin
+						t_status                <= 16'h0001;
+						{t_busy, t_done, t_int} <= 3'b011;
+						if (i_real) t_time <= T_STOP;
+						x <= X_IDLE;
+					end else x <= (t_op == T_BACK) ? X_T_BACK : X_T_NEXT;
+				end
+
+				// writing: the four bytes of a length, of a file mark, or of
+				// the end of what is written
+				X_T_WSEQ:
+				if (!o_tape_put) begin
+					o_tape_put <= 1'b1;
+					o_tape_at <= t_at;
+					o_tape_wdata <= (t_part == 2'd2) ? 8'hFF : (t_n == 2'd0) ? t_len[7:0] : (t_n == 2'd1) ? t_len[15:8] : (t_n == 2'd2) ? t_len[23:16] : 8'd0;
+				end else if (i_tape_wack) begin
+					o_tape_put <= 1'b0;
+					t_at       <= t_at + 24'd1;
+					t_n        <= t_n + 2'd1;
+					if (t_n == 2'd3)
+						case (t_part)
+							2'd0: x <= X_T_WGET;
+							2'd2: x <= X_T_SYNC;
+							// behind the record or the file mark, if there is room
+							default:
+							if ({1'b0, t_at} + 25'd5 > {1'b0, i_tape_bytes}) x <= X_T_SYNC;
+							else t_part <= 2'd2;
+						endcase
+				end
+
+				// the next parcel of the record, when the tape is there for it
+				X_T_WGET:
+				if (!o_dma_req) begin
+					if (t_time == 21'd0) begin
+						o_dma_req  <= 1'b1;
+						o_dma_we   <= 1'b0;
+						o_dma_addr <= t_b;
+						if (i_real) t_time <= T_PARCEL - 21'd1;
+					end
+				end else if (i_dma_ack) begin
+					o_dma_req <= 1'b0;
+					x         <= X_T_WGOT;
+				end
+				X_T_WGOT: begin
+					t_out  <= i_dma_rdata;
+					t_b    <= t_b + 16'd1;
+					t_c    <= t_c + 16'd1;
+					t_left <= t_left - 16'd1;
+					x      <= X_T_WHI;
+				end
+				X_T_WHI, X_T_WLO:
+				if (!o_tape_put) begin
+					o_tape_put   <= 1'b1;
+					o_tape_at    <= t_at;
+					o_tape_wdata <= (x == X_T_WHI) ? t_out[15:8] : t_out[7:0];
+				end else if (i_tape_wack) begin
+					o_tape_put <= 1'b0;
+					t_at       <= t_at + 24'd1;
+					if (x == X_T_WHI) x <= X_T_WLO;
+					else if (t_left != 16'd0) x <= X_T_WGET;
+					else begin
+						t_part <= 2'd1;
+						t_n    <= 2'd0;
+						x      <= X_T_WSEQ;
+					end
+				end
+
+				// what was written is in the file, and a file mark has passed
+				X_T_SYNC:
+				if (!o_tape_sync) begin
+					if ((t_op == T_WRITE) || (t_time == 21'd0)) o_tape_sync <= 1'b1;
+				end else if (i_tape_wack) begin
+					o_tape_sync             <= 1'b0;
+					t_pos                   <= t_pos + ((t_op == T_WRITE) ? t_past : 24'd4);
+					t_far                   <= t_far + t_span;
+					t_state                 <= (t_op == T_WRITE) ? 2'd1 : 2'd2;
+					t_status                <= 16'h0001;
+					{t_busy, t_done, t_int} <= 3'b011;
+					if (i_real) t_time <= T_STOP;
+					x <= X_IDLE;
 				end
 
 				// the next sector, or the end of the operation
@@ -558,14 +840,28 @@ module ios_expander #(
 					o_print_valid <= 1'b0;
 					if (p_text && (p_b != 16'd0)) x <= X_P_GET;
 					else begin
-						{p_busy, p_done, p_int} <= 3'b011;
-						p_status                <= 16'h4000;
-						x                       <= X_IDLE;
+						// a new line or a new page is done when the paper has moved
+						if (i_real && !p_text) begin
+							p_moving <= 1'b1;
+							p_time   <= p_graphics ? P_ROW : P_LINE;
+						end else begin
+							{p_busy, p_done, p_int} <= 3'b011;
+							p_status                <= 16'h4000;
+						end
+						x <= X_IDLE;
 					end
 				end
 
 				default: x <= X_IDLE;
 			endcase
+
+			// another tape on the drive is at its load point
+			if (i_tape_change) begin
+				t_pos        <= 24'd0;
+				t_state      <= 2'd0;
+				t_far        <= 26'd0;
+				t_word_valid <= 1'b0;
+			end
 		end
 	end
 

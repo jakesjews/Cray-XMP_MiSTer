@@ -2,7 +2,7 @@
 ROOT  := $(abspath ..)
 BUILD := $(ROOT)/sim/build
 
-.PHONY: core ampex spool cpu fp iop ios xmp bridge disks clean
+.PHONY: core ampex spool cpu fp iop ios xmp bridge disks times tape clean
 
 # Core-level simulation of the CRAY X-MP core
 core: $(BUILD)/core/Vemu
@@ -49,6 +49,16 @@ $(BUILD)/xmp/Vxmp_machine: $(ROOT)/sim/xmp.vc $(wildcard $(ROOT)/sim/harness/ios
 disks: $(BUILD)/disks/Vios_disks
 $(BUILD)/disks/Vios_disks: $(ROOT)/sim/disks.vc $(ROOT)/sim/harness/disks_main.cpp $(ROOT)/sim/harness/ios_media.h $(ROOT)/rtl/ios/ios_disks.v
 	mkdir -p $(BUILD)/disks && cd $(ROOT) && verilator -f sim/disks.vc --Mdir $(BUILD)/disks -o Vios_disks
+
+# The console, the Peripheral Expander and the channel pair to the mainframe: their times
+times: $(BUILD)/times/Vios_times_tb
+$(BUILD)/times/Vios_times_tb: $(ROOT)/sim/times.vc $(ROOT)/sim/harness/times_main.cpp $(ROOT)/sim/tb/ios_times_tb.v $(ROOT)/rtl/ios/ios_console.v $(ROOT)/rtl/ios/ios_expander.v $(ROOT)/rtl/ios/ios_link.v
+	mkdir -p $(BUILD)/times && cd $(ROOT) && verilator -f sim/times.vc --Mdir $(BUILD)/times -o Vios_times_tb
+
+# The tape drive of the Peripheral Expander and the reel on it against what a tape does
+tape: $(BUILD)/tape/Vios_tape_tb
+$(BUILD)/tape/Vios_tape_tb: $(ROOT)/sim/tape.vc $(ROOT)/sim/harness/tape_main.cpp $(ROOT)/sim/harness/ios_media.h $(ROOT)/sim/tb/ios_tape_tb.v $(ROOT)/rtl/ios/ios_expander.v $(ROOT)/rtl/ios/ios_reel.v
+	mkdir -p $(BUILD)/tape && cd $(ROOT) && verilator -f sim/tape.vc --Mdir $(BUILD)/tape -o Vios_tape_tb
 
 # The bridges between the CPU's clock and the I/O Subsystem's against what they promise
 bridge: $(BUILD)/bridge/Vxmp_bridge_tb

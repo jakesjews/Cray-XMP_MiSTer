@@ -1,0 +1,12 @@
+// Verilator arguments for the bench of the times of the console, the Peripheral Expander and
+// the channel pair to the mainframe (module ios_times_tb).
+--cc --exe --build -j 0
+--top-module ios_times_tb
+-Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-DECLFILENAME -Wno-PINCONNECTEMPTY
+-O3 --x-assign unique --x-initial unique
+-CFLAGS "-O2 -std=c++17"
+sim/tb/ios_times_tb.v
+rtl/ios/ios_console.v
+rtl/ios/ios_expander.v
+rtl/ios/ios_link.v
+sim/harness/times_main.cpp
