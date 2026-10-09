@@ -3,7 +3,7 @@
 //
 //   Vxmp_bridge_tb [CASES] [--seed N]
 //
-// Each case gives the two sides clocks of its own: the machine's 9.524 and
+// Each case gives the two sides clocks of its own: the machine's 9.5 and
 // 12.5 ns, one clock for both, or two periods picked at random, with any
 // phase between them.
 //
@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
         // the clocks, in picoseconds: f is the CPU's side, s the I/O Subsystem's
         long pf, ps; int kind = (int)pick(0, 5);
         if (kind == 0) pf = ps = pick(3000, 30000);
-        else if (kind == 1) { pf = 9524; ps = 12500; }
+        else if (kind == 1) { pf = 9500; ps = 12500; }
         else { pf = pick(3000, 30000); ps = pick(3000, 30000); }
         long tf = pick(1, pf), ts = kind == 0 ? tf : pick(1, ps), slow = pf > ps ? pf : ps;
         bool failed = false;

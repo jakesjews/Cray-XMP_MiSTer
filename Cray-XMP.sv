@@ -86,10 +86,10 @@ module emu #(
 
 	// clk_sys is the video clock and runs the screens, the keyboard and the
 	// serial port: 58.8 MHz, two clocks to a pixel of the 8x16 font and four to
-	// one of the 8x8 font.  clk_cpu is the CPU's, with the port to DDR3: 105 MHz, the
-	// X-MP's 9.5 ns.  clk_ios is the I/O Subsystem's, with the HPS interface,
-	// which brings the disks' sectors: 80 MHz, the 12.5 ns of its own oscillator,
-	// from a second PLL.  No two of the three are in step.  What passes between
+	// one of the 8x8 font.  clk_cpu is the CPU's, with the port to DDR3: 105.263 MHz,
+	// the X-MP's 9.5 ns.  clk_ios is the I/O Subsystem's, with the HPS interface,
+	// which brings the disks' sectors: 80 MHz, the 12.5 ns of its own oscillator.
+	// Each has a PLL of its own, and no two of the three are in step.  What passes between
 	// the CPU and the I/O Subsystem goes through rtl/xmp_bridge.v inside the
 	// machine; what passes between either and the video clock goes through
 	// rtl/mister/cdc.v.
@@ -101,7 +101,12 @@ module emu #(
 		.refclk  (CLK_50M),
 		.rst     (1'b0),
 		.outclk_0(clk_sys),
-		.outclk_1(clk_cpu),
+		.locked  ()
+	);
+	pll_cpu pll_cpu (
+		.refclk  (CLK_50M),
+		.rst     (1'b0),
+		.outclk_0(clk_cpu),
 		.locked  ()
 	);
 	pll_ios pll_ios (

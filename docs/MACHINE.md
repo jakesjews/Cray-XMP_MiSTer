@@ -354,7 +354,6 @@ and what is not there.
 
 ### The CPU
 
-- **The clock period** is 9.52 ns, not 9.5: 105 MHz.
 - **Central memory is slower and not steady.** It is in the MiSTer's DDR3.
   The X-MP has a word in its A or S register 17 clock periods after a load
   issues, moves a word a clock period in a vector transfer, and takes 19
@@ -448,12 +447,11 @@ Here the core had to choose, and the real machine may do otherwise:
 
 Three clocks, and none is in step with another:
 
-- **The CPU's, 105 MHz**: the X-MP's 9.5 ns clock period (9.52 ns here). The
-  port to DDR3 runs on it.
+- **The CPU's, 105.263 MHz**: the X-MP's 9.5 ns clock period. The port to
+  DDR3 runs on it.
 - **The I/O Subsystem's, 80 MHz**: the 12.5 ns of the I/O Processors' own
   oscillator (HR-0030). The HPS interface, which brings the disks' blocks,
-  and the printer's file run on it too. It comes from a second PLL
-  (`rtl/pll_ios.v`), because 80 and 105 MHz do not both divide out of one.
+  and the printer's file run on it too.
 - **The video clock, 58.8 MHz**, for the screens, the keyboard and the serial
   port. A pixel of the 8x16 font is two of its periods (29.4 MHz, 31 kHz
   lines) and one of the 8x8 font four (14.7 MHz, 15 kHz lines), which is
@@ -477,12 +475,15 @@ framework's own constraints know the core's first PLL only. The core-level
 simulation runs all three. The benches of the machine without the MiSTer give
 the CPU and the I/O Subsystem one clock, which the bridges take as well.
 
-The CPU's clock is set in `rtl/pll/pll_0002.v` (`output_clock_frequency1`).
-The I/O Subsystem's is set in `rtl/pll_ios.v` and named in `Cray-XMP.sv`
-(`IOS_HZ`), from which the I/O Processors' clocks count their milliseconds.
+Each clock has a PLL of its own, because no two of the three divide out of
+one oscillator. The CPU's is set in `rtl/pll_cpu.v`; 9.5 ns is 2000/19 MHz,
+which takes a PLL with a fractional multiplier. The I/O Subsystem's is set in
+`rtl/pll_ios.v` and named in `Cray-XMP.sv` (`IOS_HZ`), from which the I/O
+Processors' clocks count their milliseconds. The video clock is the
+framework's usual `rtl/pll.v`.
 
 The first build with the I/O Subsystem missed 81.67 MHz by 0.99 ns. What
-took the CPU from there to 105 MHz:
+took the CPU from there to the X-MP's clock:
 
 - The decision to issue an instruction starts from flip-flops. The
   instruction is decoded while it is still the next instruction parcel
@@ -520,7 +521,7 @@ took the CPU from there to 105 MHz:
 
 COS keeps its own time of day by counting the CPU's clock periods as an
 X-MP's, and the station's clock is the I/O Subsystem's, in real milliseconds.
-With the CPU at 105 MHz the two agree: in runs on a DE10-Nano the times in a
+With the CPU at the X-MP's clock the two agree: in runs on a DE10-Nano the times in a
 job's log were within the few seconds that could be told of the station's.
 (At 73.5 MHz COS's clock had been about a quarter slow.)
 

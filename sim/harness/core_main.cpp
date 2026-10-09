@@ -130,7 +130,7 @@ struct HpsDisks {
 };
 
 // clocks of the CPU and of the I/O Subsystem in a millisecond, as the core's PLLs make them
-static const long CPU_KHZ = 105000, IOS_KHZ = 80000;
+static const long CPU_KHZ = 105263, IOS_KHZ = 80000;   // 9.5 ns and 12.5 ns
 
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
@@ -300,7 +300,7 @@ int main(int argc, char **argv) {
         // The CPU's clock is a separate, faster one.  Its edges fall between
         // the video clock's, sometimes before the falling edge and sometimes after.
         // The I/O Subsystem's clock, which is also the HPS interface's, is a third
-        // one: 80 MHz against the CPU's 105, its edges between the CPU's.
+        // one: 80 MHz against the CPU's 105.263, its edges between the CPU's.
         cpu_acc += cpu_ratio;
         int n_cpu = (int)cpu_acc;
         cpu_acc -= n_cpu;
@@ -310,7 +310,7 @@ int main(int argc, char **argv) {
             bool rd = top->DDRAM_RD, we = top->DDRAM_WE;      // driven during the CPU clock that ends here
             uint32_t addr = top->DDRAM_ADDR; uint8_t bc = top->DDRAM_BURSTCNT, be = top->DDRAM_BE;
             uint64_t din = top->DDRAM_DIN;
-            r->emu__DOT__pll__DOT__sim_clk1 = 1; top->eval();
+            r->emu__DOT__pll_cpu__DOT__sim_clk = 1; top->eval();
             ram.step(rd, we, addr, bc, din, be);
             top->DDRAM_BUSY = ram.busy;
             top->DDRAM_DOUT_READY = ram.dout_ready;
@@ -371,7 +371,7 @@ int main(int argc, char **argv) {
             }
 
             top->eval();
-            r->emu__DOT__pll__DOT__sim_clk1 = 0; top->eval();
+            r->emu__DOT__pll_cpu__DOT__sim_clk = 0; top->eval();
             clocks++;
             if (!until.empty() && (clocks & 0xFFFF) == 0 && said == typing.size() && ending < 0 &&
                 on[until_console].has(until)) shown = true;

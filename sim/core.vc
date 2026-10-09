@@ -1,7 +1,7 @@
 // Verilator arguments for the core-level simulation of the CRAY X-MP core
 // (module emu of Cray-XMP.sv).  The HDL file list comes from files.qip (see
 // tools/py/qip2vc.py); the framework's modules are stand-ins (sim/stubs).  A
-// millisecond is 105,000 clocks of the CPU, as in
+// millisecond is 105,263 clocks of the CPU, as in
 // the core.  Of the memories only the first 4,096 words are zeroed at the
 // start, not all eight million: the model of DDR3 holds zeros anyway.
 --cc --exe --build -j 0

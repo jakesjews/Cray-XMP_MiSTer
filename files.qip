@@ -1,6 +1,7 @@
 set_global_assignment -name SEARCH_PATH rtl/cray/cray-1x
 set_global_assignment -name SDC_FILE Cray-XMP.sdc
 set_global_assignment -name QIP_FILE rtl/pll_ios.qip
+set_global_assignment -name QIP_FILE rtl/pll_cpu.qip
 set_global_assignment -name SYSTEMVERILOG_FILE Cray-XMP.sv
 set_global_assignment -name VERILOG_FILE rtl/xmp_machine.v
 set_global_assignment -name VERILOG_FILE rtl/xmp_bridge.v

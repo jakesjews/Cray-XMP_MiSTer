@@ -1,8 +1,9 @@
-// The oscillator of the I/O Subsystem: 80 MHz, a clock period of 12.5 ns, as the
-// real one has (HR-0030).  A PLL of its own, as the CPU's clock has
-// (rtl/pll_cpu.v).  Written after rtl/pll/pll_0002.v.
+// The CPU's clock: 105.263158 MHz, the X-MP's clock period of 9.5 ns.  A PLL of
+// its own, with a fractional multiplier: 2000/19 MHz does not divide out of
+// 50 MHz, nor out of one oscillator together with the video clock or the I/O
+// Subsystem's 80 MHz.  Written after rtl/pll/pll_0002.v.
 `timescale 1ns / 10ps
-module pll_ios (
+module pll_cpu (
 
 	// interface 'refclk'
 	input wire refclk,
@@ -18,11 +19,11 @@ module pll_ios (
 );
 
 	altera_pll #(
-		.fractional_vco_multiplier("false"),
+		.fractional_vco_multiplier("true"),
 		.reference_clock_frequency("50.0 MHz"),
 		.operation_mode           ("direct"),
 		.number_of_clocks         (1),
-		.output_clock_frequency0  ("80.000000 MHz"),
+		.output_clock_frequency0  ("105.263158 MHz"),
 		.phase_shift0             ("0 ps"),
 		.duty_cycle0              (50),
 		.output_clock_frequency1  ("0 MHz"),
