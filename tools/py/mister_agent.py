@@ -121,7 +121,8 @@ UI_SET_EVBIT, UI_SET_KEYBIT, UI_DEV_CREATE, UI_DEV_DESTROY = 0x40045564, 0x40045
 EV_SYN, EV_KEY = 0, 1
 KEY_CTRL, KEY_SHIFT = 29, 42
 NAMED = {'enter': 28, 'esc': 1, 'tab': 15, 'backspace': 14, 'space': 57, 'up': 103, 'down': 108, 'left': 105,
-         'right': 106, 'f1': 59, 'f2': 60, 'f3': 61, 'f12': 88, 'delete': 111}
+         'right': 106, 'f1': 59, 'f2': 60, 'f3': 61, 'f4': 62, 'f5': 63, 'f6': 64, 'f7': 65, 'f8': 66, 'f9': 67,
+         'f10': 68, 'f11': 87, 'f12': 88, 'delete': 111, 'insert': 110, 'home': 102, 'pagedown': 109, 'tab': 15}
 PLAIN = dict(zip('1234567890-=', range(2, 14)))
 PLAIN.update(zip('qwertyuiop[]', range(16, 28)))
 PLAIN.update(zip('asdfghjkl;\'`', range(30, 42)))
@@ -137,16 +138,19 @@ SHIFTED.update(zip('<>?', (51, 52, 53)))
 def key_steps(text):
     """(key code, shift, ctrl) for each key press named by `text`: characters,
     \\r \\n \\t \\xHH (control characters are typed with CTRL) and {name} for a
-    special key such as {f12}, {enter}, {esc}, {up}, {down}."""
+    special key such as {f12}, {enter}, {esc}, {up}, {down}; {s-name},
+    {c-name} and {cs-name} hold SHIFT, CTRL or both with it."""
     text = text.encode().decode('unicode_escape')
     out, i = [], 0
     while i < len(text):
         c = text[i]
-        if c == '{' and '}' in text[i:] and text[i + 1:text.index('}', i)].lower() in NAMED:
+        if c == '{' and '}' in text[i:]:
             j = text.index('}', i)
-            out.append((NAMED[text[i + 1:j].lower()], False, False))
-            i = j + 1
-            continue
+            held, _, name = text[i + 1:j].lower().rpartition('-')
+            if name in NAMED and held in ('', 's', 'c', 'cs'):
+                out.append((NAMED[name], 's' in held, 'c' in held))
+                i = j + 1
+                continue
         i += 1
         if c in PLAIN: out.append((PLAIN[c], False, False))
         elif c in SHIFTED: out.append((SHIFTED[c], True, False))

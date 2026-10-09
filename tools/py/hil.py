@@ -14,7 +14,8 @@
                                    the machine first
   hil.py printed [--new]           what is in the printer's file; --new empties it first
   hil.py keys TEXT [--gap SEC]     type on a virtual keyboard: characters, \\r, \\xHH for
-                                   control keys, {f1} {f2} {f3} {f12} {enter} {esc} {up} {down} {backspace} for others
+                                   control keys, {f1} to {f12} {enter} {esc} {up} {down} {backspace} {insert} for others,
+                                   {s-f10} {c-f11} {cs-f11} with SHIFT, CTRL or both held
   hil.py uart SEC [--break] [--send TEXT] [--until TEXT]
                                    what the serial port carries, as it is
   hil.py peek WORD [COUNT] | poke WORD HEX... | fill WORD COUNT HEX

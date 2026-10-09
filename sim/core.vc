@@ -4,10 +4,12 @@
 // millisecond is 105,263 clocks of the CPU, as in
 // the core.  Of the memories only the first 4,096 words are zeroed at the
 // start, not all eight million: the model of DDR3 holds zeros anyway.
+// Warnings of style are for `make lint`; they are switched off here as a group,
+// because the names of single ones differ from one Verilator to the next.
 --cc --exe --build -j 0
 --top-module emu
 -GCLEAR=25'd4096
--Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-PINMISSING -Wno-DECLFILENAME -Wno-PROCASSINIT -Wno-TIMESCALEMOD
+-Wno-fatal -Wno-lint -Wno-style -Wno-WIDTH -Wno-UNUSED -Wno-PINMISSING -Wno-DECLFILENAME -Wno-TIMESCALEMOD
 -Wno-CASEINCOMPLETE -Wno-CASEX -Wno-BLKSEQ -Wno-UNDRIVEN -Wno-EOFNEWLINE -Wno-PINCONNECTEMPTY
 -O3 --x-assign fast --x-initial fast
 -CFLAGS "-O2 -std=c++17"
