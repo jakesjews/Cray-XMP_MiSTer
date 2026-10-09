@@ -19,8 +19,9 @@ SBUS_NONE = 5'b10101, SBUS_INTERCPU = 5'b10110,  //072: the clock, or an X-MP sh
 SBUS_HI_SR = 5'b10111;  //073i01 - some status bits to Si
 
 // The lanes of results to the S registers (res_lanes.v): one for every unit, as
-// long as the unit takes.  The first SL_LATE deliver in the clock the result is
-// due; the others have it a clock before and write it then (res_regfile.v).
+// long as the unit takes.  The first five deliver in the clock the result is
+// due; the others have it a clock before and write it then (res_regfile.v;
+// func_top says which units share a way into the registers).
 // The lane of memory has no delay line (0): the memory unit says when a word
 // it has read is at the registers.
 localparam SL_LOG = 0,  //the logical unit, 1 clock
@@ -34,8 +35,7 @@ SL_ADD = 7,  //the adder, 3
 SL_VEL = 8,  //an element of a V register, 4
 SL_FMUL = 9,  //the floating point multiplier, 7
 SL_FRA = 10,  //the reciprocal, 14
-SL_N = 11, SL_LATE = 5;
-localparam [SL_LATE-1:0] SL_ONE = 5'b00011;  // the lanes of one clock among the first SL_LATE
+SL_N = 11;
 localparam [4*SL_N-1:0] SL_DELAY = {4'd14, 4'd7, 4'd4, 4'd3, 4'd3, 4'd2, 4'd0, 4'd6, 4'd2, 4'd1, 4'd1};
 
 // The same for the A registers
@@ -52,7 +52,7 @@ ABUS_CHANNEL = 4'b1001,  //033: a 6 Mbyte channel
 ABUS_MEM = 4'b1010,  //memory
 ABUS_NONE = 4'b1011, ABUS_INTERCPU = 4'b1100;  //026ij7: an X-MP shared register
 
-// The lanes of results to the A registers, the first AL_LATE delivering in the
+// The lanes of results to the A registers, the first five delivering in the
 // clock the result is due
 localparam AL_NOW = 0,  //what is there when the instruction issues: an immediate value, (Sj), a B or shared register
 AL_ADD = 1,  //the address adder, 2 clocks
@@ -61,6 +61,5 @@ AL_POP = 3,  //the population count, 4
 AL_MEM = 4,  //a word from memory
 AL_MUL = 5,  //the address multiplier, 4
 AL_CH = 6,  //033: a channel, 4
-AL_N = 7, AL_LATE = 5;
-localparam [AL_LATE-1:0] AL_ONE = 5'b00001;
+AL_N = 7;
 localparam [4*AL_N-1:0] AL_DELAY = {4'd4, 4'd4, 4'd0, 4'd4, 4'd3, 4'd2, 4'd1};

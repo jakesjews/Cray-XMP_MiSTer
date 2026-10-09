@@ -319,7 +319,7 @@ module func_top (
 	assign cip_h     = cip[11:9];
 
 	//A-type scheduler signals: the lanes of results to the A registers
-	wire [  AL_N-1:0] a_next_v;
+	wire [AL_N-1:0] a_head_v, a_next_v;
 	wire [3*AL_N-1:0] a_next_d;
 	wire [8*AL_N-1:0] a_head_hot, a_next_hot;
 	wire a_issue;
@@ -365,15 +365,15 @@ module func_top (
 	//while the instruction is in NIP (cray_predecode) and kept in a register that is
 	//loaded together with CIP, so that the decision to issue starts from flip-flops.
 	wire [PD_W-1:0] pd_nip, pd_none;
-	reg  [   PD_W-1:0] pd;
+	reg  [PD_W-1:0] pd;
 	//the current instruction is one, and its result takes this lane of one clock:
 	//for the read ports of the registers (res_regfile.v), kept beside pd
-	reg  [SL_LATE-1:0] s_now_lane;
-	reg  [AL_LATE-1:0] a_now_lane;
-	wire [        7:0] rd_a = pd[PD_RD_A+:8];  // registers the current instruction reads
-	wire [        7:0] rd_s = pd[PD_RD_S+:8];
-	wire               opnd_busy;  // one of them still has a result on its way
-	wire               cip_issue;  // the current instruction issues this clock
+	reg             s_now_lane;
+	reg             a_now_lane;
+	wire [     7:0] rd_a = pd[PD_RD_A+:8];  // registers the current instruction reads
+	wire [     7:0] rd_s = pd[PD_RD_S+:8];
+	wire            opnd_busy;  // one of them still has a result on its way
+	wire            cip_issue;  // the current instruction issues this clock
 
 	cray_predecode predecode (
 		.i_parcel(nip),
@@ -759,8 +759,8 @@ module func_top (
 			cip_vld    <= 1'b0;
 			lip_vld    <= 1'b0;
 			pd         <= pd_none;
-			s_now_lane <= {SL_LATE{1'b0}};
-			a_now_lane <= {AL_LATE{1'b0}};
+			s_now_lane <= 1'b0;
+			a_now_lane <= 1'b0;
 		end else if (nip_in_vld && issue_vld) begin
 			nip_fault <= p_oof;
 			cip_fault <= nip_fault && nip_vld && !take_branch;
@@ -772,8 +772,8 @@ module func_top (
 			lip_vld <= take_branch ? 1'b0 : two_parcel_nip; //1'b1; //nip_vld;   //Only set it if you have a two_parcel_nip, and you haven't just branched
 			nip_vld <= (two_parcel_nip || take_branch) ? 1'b0 : 1'b1;            //Set it if you didn't branch and the current cycle holds a one parcel nip
 			cip_vld <= take_branch ? 1'b0 : nip_vld;
-			s_now_lane <= {SL_LATE{nip_vld && !take_branch}} & SL_ONE & pd_nip[PD_S_LANE+:SL_LATE];
-			a_now_lane <= {AL_LATE{nip_vld && !take_branch}} & AL_ONE & pd_nip[PD_A_LANE+:AL_LATE];
+			s_now_lane <= nip_vld && !take_branch && (pd_nip[PD_S_LANE+SL_LOG] || pd_nip[PD_S_LANE+SL_NOW]);
+			a_now_lane <= nip_vld && !take_branch && pd_nip[PD_A_LANE+AL_NOW];
 		end  //To catch the case where instruction issues during an I-cache miss.
 			 //Set cip_vld=0, preserve everything else.
 		else if (issue_vld) begin
@@ -784,8 +784,8 @@ module func_top (
 			lip_vld    <= 1'b0;  //lip_vld;
 			nip_vld    <= take_branch ? 1'b0 : nip_vld;  //nip_vld;
 			cip_vld    <= 1'b0;
-			s_now_lane <= {SL_LATE{1'b0}};
-			a_now_lane <= {AL_LATE{1'b0}};
+			s_now_lane <= 1'b0;
+			a_now_lane <= 1'b0;
 		end
 
 	//Two parcel instructions
@@ -862,20 +862,35 @@ module func_top (
 		s_mem_q <= data_from_mem_to_regs;
 	end
 
-	wire [64*SL_N-1:0] s_lane_data;
-	assign s_lane_data[64*SL_LOG+:64]   = s_log_out;
-	assign s_lane_data[64*SL_NOW+:64]   = s_now_q;
-	assign s_lane_data[64*SL_SHIFT+:64] = s_shft_out;
-	assign s_lane_data[64*SL_FADD+:64]  = f_add_out;
-	assign s_lane_data[64*SL_MEM+:64]   = s_mem_q;
-	assign s_lane_data[64*SL_CONST+:64] = s_const_out;
-	assign s_lane_data[64*SL_SH2+:64]   = s_shft_out;
-	assign s_lane_data[64*SL_ADD+:64]   = s_add_out;
-	assign s_lane_data[64*SL_VEL+:64]   = v_elem_q;
-	assign s_lane_data[64*SL_FMUL+:64]  = f_mul_early;
-	assign s_lane_data[64*SL_FRA+:64]   = f_ra_early;
-	//a lane writes at the head, or from stage 1 if it has its value a clock early
-	wire [8*SL_N-1:0] s_lane_wr = {s_next_hot[8*SL_N-1:8*SL_LATE], s_head_hot[8*SL_LATE-1:0]};
+	//A unit that takes n clocks and has its result when it is due writes n clocks
+	//after its instruction issued; one that has it a clock before writes after n - 1.
+	//Two units that write as long after the issue never write in the same clock,
+	//for their instructions would have had to issue together.  So they share a
+	//way into the registers, which keeps the ways few:
+	//  1 clock:   logical unit, what was there at issue; 071 constant
+	//  2 clocks:  single shift; double shift, sum
+	//  6 clocks:  floating sum; floating product
+	//  memory, whenever its word comes
+	//  3 clocks:  element of a V register
+	//  13 clocks: reciprocal
+	localparam SB_N = 6, SB_LATE = 4;  // the first four are read off by an instruction that issues as the result is due
+	wire [64*SB_N-1:0] s_bus_data;
+	assign s_bus_data[64*0+:64] = (s_log_out & {64{s_head_v[SL_LOG]}}) | (s_now_q & {64{s_head_v[SL_NOW]}}) |
+		(s_const_out & {64{s_next_v[SL_CONST]}});
+	assign s_bus_data[64*1+:64] = (s_shft_out & {64{s_head_v[SL_SHIFT] || s_next_v[SL_SH2]}}) | (s_add_out & {64{s_next_v[SL_ADD]}});
+	assign s_bus_data[64*2+:64] = (f_add_out & {64{s_head_v[SL_FADD]}}) | (f_mul_early & {64{s_next_v[SL_FMUL]}});
+	assign s_bus_data[64*3+:64] = s_mem_q;
+	assign s_bus_data[64*4+:64] = v_elem_q;
+	assign s_bus_data[64*5+:64] = f_ra_early;
+	//a unit writes at the head of its lane, or from stage 1 if it has its value a clock early
+	wire [8*SB_N-1:0] s_bus_wr = {
+		s_next_hot[8*SL_FRA+:8],
+		s_next_hot[8*SL_VEL+:8],
+		s_head_hot[8*SL_MEM+:8],
+		s_head_hot[8*SL_FADD+:8] | s_next_hot[8*SL_FMUL+:8],
+		s_head_hot[8*SL_SHIFT+:8] | s_next_hot[8*SL_SH2+:8] | s_next_hot[8*SL_ADD+:8],
+		s_head_hot[8*SL_LOG+:8] | s_head_hot[8*SL_NOW+:8] | s_next_hot[8*SL_CONST+:8]
+	};
 
 
 	//Track A-type related reservations, destination data and if we can issue or not
@@ -896,7 +911,7 @@ module func_top (
 		.i_mem_d      (sc_num),
 		.o_a_issue    (a_issue),
 		.o_a_type     (a_type),
-		.o_head_v     (),
+		.o_head_v     (a_head_v),
 		.o_head_hot   (a_head_hot),
 		.o_next_v     (a_next_v),
 		.o_next_d     (a_next_d),
@@ -924,15 +939,44 @@ module func_top (
 		a_mem_q <= data_from_mem_to_regs[23:0];
 	end
 
-	wire [24*AL_N-1:0] a_lane_data;
-	assign a_lane_data[24*AL_NOW+:24] = a_now_q;
-	assign a_lane_data[24*AL_ADD+:24] = a_add_out;
-	assign a_lane_data[24*AL_LZ+:24]  = a_lz_out;
-	assign a_lane_data[24*AL_POP+:24] = a_pop_out;
-	assign a_lane_data[24*AL_MEM+:24] = a_mem_q;
-	assign a_lane_data[24*AL_MUL+:24] = a_mul_out;
-	assign a_lane_data[24*AL_CH+:24]  = ch_a;
-	wire [8*AL_N-1:0] a_lane_wr = {a_next_hot[8*AL_N-1:8*AL_LATE], a_head_hot[8*AL_LATE-1:0]};
+`ifdef VERILATOR
+	// two units of one way with a result in the same clock: the times in
+	// cray_types.vh and the sharing above do not fit
+	function two_of;
+		input a, b, c;
+		two_of = (a && b) || (a && c) || (b && c);
+	endfunction
+	always @(posedge clk)
+		if (!rst && (two_of(
+				s_head_v[SL_LOG], s_head_v[SL_NOW], s_next_v[SL_CONST]
+			) || two_of(
+				s_head_v[SL_SHIFT], s_next_v[SL_SH2], s_next_v[SL_ADD]
+			) || (s_head_v[SL_FADD] && s_next_v[SL_FMUL]) || two_of(
+				a_head_v[AL_LZ], a_next_v[AL_MUL], a_next_v[AL_CH]
+			))) begin
+			$display("func_top: two results on one way into the registers");
+			$finish;
+		end
+`endif
+
+	//The ways into the A registers, shared as those into the S registers are:
+	//  1 clock: what was there at issue      2 clocks: address sum
+	//  3 clocks: leading zero count; address product, channel
+	//  4 clocks: population count            memory
+	localparam AB_N = 5;
+	wire [24*AB_N-1:0] a_bus_data;
+	assign a_bus_data[24*0+:24] = a_now_q;
+	assign a_bus_data[24*1+:24] = a_add_out;
+	assign a_bus_data[24*2+:24] = (a_lz_out & {24{a_head_v[AL_LZ]}}) | (a_mul_out & {24{a_next_v[AL_MUL]}}) | (ch_a & {24{a_next_v[AL_CH]}});
+	assign a_bus_data[24*3+:24] = a_pop_out;
+	assign a_bus_data[24*4+:24] = a_mem_q;
+	wire [8*AB_N-1:0] a_bus_wr = {
+		a_head_hot[8*AL_MEM+:8],
+		a_head_hot[8*AL_POP+:8],
+		a_head_hot[8*AL_LZ+:8] | a_next_hot[8*AL_MUL+:8] | a_next_hot[8*AL_CH+:8],
+		a_head_hot[8*AL_ADD+:8],
+		a_head_hot[8*AL_NOW+:8]
+	};
 
 	//Track V-type instructions
 	v_scheduler vsched (
@@ -1304,25 +1348,25 @@ localparam VLOG      = 3'b000,   //vector logical
 	wire s_r0_neg, s_r0_zero;
 	res_regfile #(
 		.W   (64),
-		.NL  (SL_N),
-		.NB  (SL_LATE),
-		.ONE (SL_ONE),
+		.NL  (SB_N),
+		.NB  (SB_LATE),
+		.ONE (4'b0001),
 		.NP  (3),
 		.ZERO(3'b011)
 	) s_rf (
 		.clk       (clk),
 		.rst       (rst),
-		.i_data    (s_lane_data),
-		.i_wr      (s_lane_wr),
+		.i_data    (s_bus_data),
+		.i_wr      (s_bus_wr),
 		.i_x_en    (x_load && x_cnt[3]),
 		.i_x_addr  (s_ex_addr),
 		.i_x_data  (x_data),
 		.i_addr    ({cip_i, cip_k, cip_j}),
 		.i_addr_nxt({nip[8:6], nip[2:0], nip[5:3]}),
 		.i_issue   (issue_vld),
-		.i_next_v  (s_next_v[SL_LATE-1:0]),
-		.i_next_d  (s_next_d[3*SL_LATE-1:0]),
-		.i_now_lane(s_now_lane),
+		.i_next_v  ({s_next_v[SL_MEM], s_next_v[SL_FADD], s_next_v[SL_SHIFT], 1'b0}),
+		.i_next_d  ({s_next_d[3*SL_MEM+:3], s_next_d[3*SL_FADD+:3], s_next_d[3*SL_SHIFT+:3], 3'd0}),
+		.i_now_lane({3'b000, s_now_lane}),
 		.i_now_d   (pd[PD_S_DNUM+:3]),
 		.o_data    ({s_i_data, s_k_raw, s_j_raw}),
 		.i_ex_addr (s_ex_addr),
@@ -1376,26 +1420,26 @@ localparam VLOG      = 3'b000,   //vector logical
 	wire a_r0_neg, a_r0_zero;
 	res_regfile #(
 		.W   (24),
-		.NL  (AL_N),
-		.NB  (AL_LATE),
-		.ONE (AL_ONE),
+		.NL  (AB_N),
+		.NB  (AB_N),
+		.ONE (5'b00001),
 		.NP  (5),
 		.ZERO(5'b01011),
 		.LATE(5'b01000)
 	) A_rf (
 		.clk       (clk),
 		.rst       (rst),
-		.i_data    (a_lane_data),
-		.i_wr      (a_lane_wr),
+		.i_data    (a_bus_data),
+		.i_wr      (a_bus_wr),
 		.i_x_en    (x_load && !x_cnt[3]),
 		.i_x_addr  (a_ex_addr),
 		.i_x_data  (x_data[23:0]),
 		.i_addr    ({3'd0, cip_h, cip_i, cip_k, cip_j}),
 		.i_addr_nxt({3'd0, nip[11:9], nip[8:6], nip[2:0], nip[5:3]}),
 		.i_issue   (issue_vld),
-		.i_next_v  (a_next_v[AL_LATE-1:0]),
-		.i_next_d  (a_next_d[3*AL_LATE-1:0]),
-		.i_now_lane(a_now_lane),
+		.i_next_v  ({a_next_v[AL_MEM], a_next_v[AL_POP], a_next_v[AL_LZ], a_next_v[AL_ADD], 1'b0}),
+		.i_next_d  ({a_next_d[3*AL_MEM+:3], a_next_d[3*AL_POP+:3], a_next_d[3*AL_LZ+:3], a_next_d[3*AL_ADD+:3], 3'd0}),
+		.i_now_lane({4'b0000, a_now_lane}),
 		.i_now_d   (pd[PD_A_DNUM+:3]),
 		.o_data    ({a_a0_data, a_h_data, a_i_data, a_k_raw, a_j_data}),
 		.i_ex_addr (a_ex_addr),
