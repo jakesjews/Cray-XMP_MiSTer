@@ -6,9 +6,9 @@ differs from the real thing.
 The machine is a CRAY X-MP with one processor and its I/O Subsystem, as far as
 the operating system COS 1.17 needs one: that is the only operating system
 that survives for these machines, and it is a build for the X-MP. The CPU has
-the instruction set the X-MP shares with the CRAY-1 of 1982 and the X-MP
-features COS was found to use. The I/O Subsystem is three I/O Processors
-with the devices COS and the subsystem's own software work with.
+the instruction set the X-MP shares with the CRAY-1 of 1982 and what the X-MP
+added to it. The I/O Subsystem is three I/O Processors with the devices COS
+and the subsystem's own software work with.
 
 The references are the CRAY X-MP Series Model 14 mainframe reference manual,
 CSM-0111000; for the instructions the X-MP shares with the CRAY-1, the CRAY-1
@@ -81,10 +81,10 @@ shared by four CPUs) did not work and was removed earlier.
 ## What the CPU implements
 
 The instructions and registers the X-MP has in common with the CRAY-1, and
-what a one-processor X-MP has beyond them that COS 1.17 needs. That was found
-by running COS on the cray-sim simulator with one feature after another taken
-out; the specification is [spec/machine-spec.md](spec/machine-spec.md). The
-CPU is tested against the reference model, which with a model of the I/O
+what a one-processor X-MP has beyond them. What COS 1.17 needs of that was
+found by running COS on the cray-sim simulator with one feature after another
+taken out; the specification is [spec/machine-spec.md](spec/machine-spec.md).
+The CPU is tested against the reference model, which with a model of the I/O
 Subsystem dead starts COS 1.17 and runs batch jobs.
 
 - All instructions of Appendix D of the CRAY-1 manual.
@@ -175,84 +175,55 @@ Subsystem dead starts COS 1.17 and runs batch jobs.
   Disconnect and holds a Ready that finds it stopped. A channel that asks
   sets the I/O interrupt flag outside monitor mode. The first pair, 10 and
   11, leads to the MIOP of the I/O Subsystem; the other three lead nowhere.
-
 - **Gather, scatter and compress index** (CSM-0111000 pages 5-87 to 5-92),
   which the X-MP got in 1985 and COS 1.17 does not use: 176i1k `Vi ,A0,Vk`
   reads the words at (A0) + (Vk element), 1771jk `,A0,Vk Vj` writes them, and
   175ijk with k from 4 to 7, `Vi,VM Vj,Z` and so on, makes the mask and puts
   the numbers of the elements that pass into Vi. The low 24 bits of an
-  element of Vk are a signed number. Any other j of 176 and i of 177 is
-  ignored, as before.
-
-Not there: the 100 Mbyte channels of the CPU and channel parity.
-
-## Differences from a real X-MP
-
-- **Timing.** One clock period is one cycle of the CPU's own clock: 105 MHz,
-  9.52 ns against the X-MP's 9.5. An instruction that needs the result of
-  another in an A or S register issues in the clock period that result
-  arrives, as on the real machine, and the functional units take the clock
-  periods of the manual. After a vector instruction has issued, its operand
-  registers are free in (VL) + 3 clock periods, its unit in (VL) + 4 and its
-  result register in (VL) + 5 + the unit time, and the mask of a 175 is ready
-  in (VL) + 4, as the manual has them. So are the branches while their address
-  is in an instruction buffer: 5 clock periods taken, 2 not taken, 7 for 005,
-  2 more across two buffers, and a branch on A0 or S0 waits until its
-  register has not been busy for three clock periods
-  (`tests/rtl_only/timing.cal` measures all of these). What is not the real
-  machine's: memory references take longer and vary, and with them everything
-  that waits for memory, such as a branch to an address that is in no buffer.
-  A gather or a scatter is done before the instruction behind it issues,
-  where the real machine lets it run on: its addresses are not known
-  beforehand, and a range error has to interrupt right behind it. And one
-  result a clock period goes into the A registers and one into the S
-  registers: an instruction whose result would arrive together with that
-  of an earlier one waits a clock period. That is the CRAY-1's "register
-  access conflict"; the X-MP's manual has no such hold among its
-  conditions.
-  Programs get the same results but not always in the same number of clock
-  periods.
-- **Chaining.** As on the X-MP (CSM-0111000 page 4-12), a register that is
-  reserved as a result and not as an operand does not hold the issue of an
-  instruction that reads it, a vector store included. The operation runs as
-  the data becomes available, element by element, also behind a vector load,
-  whose pauses then show in every operation of the chain. The manual gives no
-  clock periods for this but one rule: nothing is lost if the instruction
-  issues before or at the time element 0 arrives at the register. The core
-  keeps that rule exactly. An element is at the unit that takes it 4 clock
-  periods after it arrived at its register, as it is 4 clock periods after
-  issue (`tests/rtl_only/timing.cal` has the cases). With it the manual's
-  divide of two 64-element vectors takes 3 * 64 + 39 clock periods, where
-  the manual says 38: that number is in the CRAY-1 S manual too, and is what
-  the CRAY-1's chaining gives.
-- **The multiply and the reciprocal match Cray's own simulation of them.**
-  Cray's floating-point diagnostic contains a simulation of each unit (the
-  listing found is the 1997 edition for the J90; the code goes back to 1980).
-  The core's units give the same bits as a transcription of it on millions of
-  operands, for 064 to 067 and 070. The complement step of 067 follows it
-  too; with it the statistics W. Kahan published from real machines in 1990
-  come out, which they do not with the rule the cray-sim project guessed.
-  [spec/fp-multiply.md](spec/fp-multiply.md) has the evidence.
-- **Half-precision products** keep 29 bits, as that simulation and the
-  CRAY-1 S and X-MP manuals have it. The 1980 change packet to the CRAY-1
+  element of Vk are a signed number.
+- **The multiply and the reciprocal** give the bits of Cray's own simulation
+  of them. Cray's floating-point diagnostic contains a simulation of each
+  unit (the listing found is the 1997 edition for the J90; the code goes back
+  to 1980). The core's units give the same bits as a transcription of it on
+  millions of operands, for 064 to 067 and 070. The complement step of 067
+  follows it too; with it the statistics W. Kahan published from real
+  machines in 1990 come out, which they do not with the rule the cray-sim
+  project guessed. [spec/fp-multiply.md](spec/fp-multiply.md) has the
+  evidence. Half-precision products keep 29 bits, as that simulation and the
+  CRAY-1 S and X-MP manuals have it; the 1980 change packet to the CRAY-1
   manual says 30.
-- **Interrupts are precise.** The exchange happens right after the instruction
-  that raised the flag. The manual allows a few more parcels to issue.
-- **No memory errors.** The memory error flag and the error fields of the
-  exchange package are always zero.
-- **Encodings the manuals leave undefined.** 0014jk with k = 1 or 2 is a
-  pass. 023ijk other than 023i01 is `Ai Sj`. 026ijk with k = 2 to 6 is the
-  population count. 174ijk with k = 3 to 7 is the reciprocal. Dead start clears the programmable clock's enable and
-  request; on the real machine they are undefined then.
-- **A fetch outside the field in monitor mode** is not checked without
-  interrupt monitor mode, since the program range flag cannot set there.
-- **A store into an instruction** that is already in an instruction buffer
-  does not change what runs, as on the real machine (manual page 3-33): the
-  buffer keeps the old parcels until it is filled again or an exchange voids
-  it. Which blocks are in the four buffers at a given moment follows this
-  core's fetch sequence, not the real machine's.
-  The reference model has no buffers and runs the new parcel at once, so the
-  two can differ on a program that modifies code it is about to run.
+- **Instruction buffers.** Four, of 32 words each. A store into an
+  instruction that is already in a buffer does not change what runs (manual
+  page 3-33): the buffer keeps the old parcels until it is filled again or an
+  exchange voids it.
+
+### The clock periods instructions take
+
+The core takes the clock periods of the manual (CSM-0111000 section 5),
+apart from memory and the other things under
+[Differences](#differences-from-a-real-x-mp). `tests/rtl_only/timing.cal`
+measures cases of each kind below with the real-time clock, and
+`timing_esvl.cal` the second vector logical unit:
+
+- **Scalar instructions.** An instruction that needs the result of another in
+  an A or S register issues in the clock period that result arrives, and the
+  functional units take the clock periods of the manual.
+- **Branches** whose address is in an instruction buffer: 5 clock periods
+  taken, 2 not taken, 7 for 005, 2 more across two buffers. A branch on A0 or
+  S0 waits until its register has not been busy for three clock periods.
+- **Vector instructions.** After one has issued, its operand registers are
+  free in (VL) + 3 clock periods, its unit in (VL) + 4 and its result
+  register in (VL) + 5 + the unit time. The mask of a 175 is ready in
+  (VL) + 4, for 073 a clock period later, and the Vi of a compress index in
+  (VL) + 10. 076 has its element in Si in 4, and the element of a 077 is in
+  its register in 1.
+- **Chaining** (page 4-12). A register that is reserved as a result and not
+  as an operand does not hold the issue of an instruction that reads it, a
+  vector store included. The operation runs as the data becomes available,
+  element by element, also behind a vector load, whose pauses then show in
+  every operation of the chain. An instruction that issues before or at the
+  time element 0 arrives at the register loses nothing, which is the one
+  rule the manual gives.
 
 ## Compared with Cray-on-FPGA
 
@@ -292,9 +263,7 @@ What they are made of (`rtl/ios/`):
   register instructions, seven to thirteen with an operand in Local Memory,
   five for a branch inside the instruction stack and nine for one that
   leaves it. The reference model counts the same, and the processor is
-  checked against it clock period for clock period. What is not the real
-  processor's: it can issue an instruction while those before it are still
-  under way, and its Local Memory can make a reference wait.
+  checked against it clock period for clock period.
 - On every processor: a real-time clock that asks for an interrupt every
   millisecond, a channel to Buffer Memory, and a channel pair to each other
   processor, over which one can master clear and dead start another.
@@ -305,33 +274,19 @@ What they are made of (`rtl/ios/`):
   11, with the lines that master clear the CPU; four consoles, of which the
   operator's and the station are shown.
 - On the BIOP: nine DD-29 disk drives and the channel pair into central
-  memory.
+  memory. With the menu's "Disk drives: As a DD-29" a drive takes its own
+  times (HR-0077): a seek 15 ms and up to 80 ms across all cylinders, a
+  revolution 16.6 ms, and a sector is done when it has next passed under the
+  heads. With "Fast" a drive answers as fast as the SD card does.
 
-The consoles are Ampex Dialogue 80 terminals as far as the software uses
-them (`rtl/terminal/term_ampex.v`).
+The consoles are Ampex Dialogue 80 terminals (`rtl/terminal/term_ampex.v`).
 
-Not there, because the software runs without them: the concentrator for a
-front-end computer (the kernel says so once, some seconds after COS has been
-started: `Concentrator ordinal 3  VAX interface select error. Command
-aborted.`), the error log channel, the block multiplexer channels, the clock
-on the expander (the operator types date and time), and writing to tape.
-
-The kernel takes a date only with a year from 80 to 99 and asks again
-otherwise (tried on the system model: 79, 00 and 26 are refused, 80 and 99
-taken). That is one reason the MiSTer's clock is not passed on to the
-machine; the other is that the kernel's driver for the expander's clock is
-switched off in this software, as it was on the machine it came from.
-
-Device times are not those of the real devices, with one exception. The
-software was found to work with all devices from instant to several times
-slower than real ones, so a device answers as fast as it can here. The
-exception is the menu's "Disk drives: As a DD-29": a seek then takes 15 ms
-and up to 80 ms across all cylinders, the disk turns once in 16.6 ms, and a
-sector is done when it has next passed under the heads, as HR-0077 has the
-drive. A sector asked for while it passes counts as caught, the manual
-having no time for the gap before its data; so the sectors of a track
-follow each other 0.92 ms apart, and one that has just passed takes a
-revolution. With "Fast" a drive answers as fast as the SD card does.
+The operator types the date and the time. The kernel takes a date only with
+a year from 80 to 99 and asks again otherwise (tried on the system model: 79,
+00 and 26 are refused, 80 and 99 taken). That is one reason the MiSTer's
+clock is not passed on to the machine; the other is that the kernel's driver
+for the expander's clock is switched off in this software, as it was on the
+machine it came from.
 
 ### The system on the card
 
@@ -391,6 +346,99 @@ The printer is a plotter as well: in its graphics mode the parcels it is given
 are dots, 1,056 to a row. The banner page of a job has a picture drawn that
 way. Here a character stands for eight dots, `X` if any is set, so a row of
 dots is as wide as a line of text and the file stays text.
+
+## Differences from a real X-MP
+
+What is known to differ, for the whole machine: mostly when things happen,
+and what is not there.
+
+### The CPU
+
+- **The clock period** is 9.52 ns, not 9.5: 105 MHz.
+- **Central memory is slower and not steady.** It is in the MiSTer's DDR3.
+  The X-MP has a word in its A or S register 17 clock periods after a load
+  issues, moves a word a clock period in a vector transfer, and takes 19
+  clock periods for a branch to an address that is in no instruction buffer
+  (CSM-0111000 section 5). Here all of these take longer, and how long
+  varies.
+- **Memory instructions hold the instructions behind them.** A scalar
+  reference (10h to 13h) and a block transfer (034 to 037) stay the current
+  instruction until their last word is done. On the X-MP they issue in 2 and
+  in 1 clock periods and the instructions behind them go on (pages 2-6, 5-40
+  and 5-64). A vector load or store issues three clock periods after it
+  starts, not one. One whose first or last address is outside the field, and
+  every gather and scatter, stays to its end, so that the range error
+  interrupts right behind it.
+- **One result a clock period** goes into the A registers and one into the S
+  registers: an instruction whose result would arrive together with that of
+  an earlier one waits a clock period. That is the CRAY-1's "register access
+  conflict"; the X-MP's manual has no such hold among its conditions.
+- **Interrupts are precise.** The exchange happens right after the instruction
+  that raised the flag. The X-MP lets the instructions in NIP and CIP issue
+  first (page 2-12).
+- **No memory errors.** The memory error flag never sets and the error fields
+  of the exchange package are zero. The two memory error modes and the
+  bidirectional memory mode are carried and change nothing.
+- **Not there:** the 100 Mbyte channels of the CPU, and channel parity (the
+  error flag of a channel is always zero).
+- **Which blocks the four instruction buffers hold** at a given moment
+  follows this core's fetch sequence, not the real machine's. It shows in
+  times, and in a program that stores into code it is about to run.
+
+### The I/O Subsystem
+
+- **An I/O Processor does one instruction after the other.** Each takes the
+  clock periods in which the manual has its result delivered; the real
+  processor can issue an instruction while those before it are still under
+  way. There is no instruction stack: a relative branch of up to 11 octal
+  parcels forward or 13 back counts as inside it, any other branch as
+  leaving it. Local Memory never makes a reference wait.
+- **Devices answer as fast as they can.** The software works with devices
+  from instant to several times slower than real ones. The one exception is
+  the disk drives with the menu's "Disk drives: As a DD-29".
+- **Nothing fails.** The Local Memory error flag never sets and the disk
+  drives report no faults.
+- **The consoles** are Ampex Dialogue 80 terminals as far as the software
+  uses them.
+- **Not there**, because the software runs without them: the concentrator for
+  a front-end computer (the kernel says so once, some seconds after COS has
+  been started: `Concentrator ordinal 3  VAX interface select error. Command
+  aborted.`), the error log channel, the block multiplexer channels and with
+  them the tape units of the XIOP, the clock on the expander, and writing to
+  tape.
+
+### Where the manuals give no answer
+
+Here the core had to choose, and the real machine may do otherwise:
+
+- **The time of a chained element.** The manual has the rule that nothing is
+  lost if an instruction issues by the time element 0 arrives, and no clock
+  periods. Here an element is at the unit that takes it 4 clock periods after
+  it arrived at its register, as it is 4 clock periods after issue: the time
+  that makes the rule exact. The manual's divide of two 64-element vectors
+  then takes 3 * 64 + 39 clock periods, where the manual says 38; that number
+  is in the CRAY-1 S manual too, and is what the CRAY-1's chaining gives.
+- **Encodings the manuals leave undefined.** 0014jk with k = 1 or 2 is a
+  pass. 023ijk other than 023i01 is `Ai Sj`. 026ijk with k = 2 to 6 is the
+  population count. 174ijk with k = 3 to 7 is the reciprocal. 176 with a j
+  other than 1 and 177 with an i other than 1 are the load and the store by
+  (Ak).
+- **Dead start** clears the programmable clock's enable and request; on the
+  real machine they are undefined then.
+- **A fetch outside the field in monitor mode** is not checked without
+  interrupt monitor mode, since the program range flag cannot set there. The
+  manual speaks of programs outside monitor mode only.
+- **Which vector logical unit** a 140 to 145 takes that had to wait for a
+  register: here the second one whenever it is enabled and free. The
+  manual's sentence on the case (page 4-18) can be read more than one way.
+- **The gap before a disk sector's data.** With the DD-29's times a sector
+  asked for while it passes counts as caught, so the sectors of a track
+  follow each other 0.92 ms apart and one that has just passed takes a
+  revolution. HR-0077 has no time for the gap.
+- **The I/O Processor's interrupt and functions.** HR-0030 gives no time for
+  the interrupt sequence; it takes the 9 clock periods of a branch that
+  leaves the instruction stack. A function that sends takes 1 clock period
+  and one that reads 5, after a training workbook (T0201D).
 
 ## Clocks
 
@@ -466,10 +514,6 @@ took the CPU from there to 105 MHz:
   result in Local Memory a clock after forming it, so that the way from
   Local Memory through its adder does not lead back into a memory.
 
-Memory is slower than the real machine's: a scalar load takes about 25 clock
-periods against 11 on a CRAY-1, and vector transfers move about one word
-every two clock periods, not one per clock period.
-
 COS keeps its own time of day by counting the CPU's clock periods as an
 X-MP's, and the station's clock is the I/O Subsystem's, in real milliseconds.
 With the CPU at 105 MHz the two agree: in runs on a DE10-Nano the times in a
@@ -525,15 +569,18 @@ The CPU:
 - An instruction-level reference model was written from the manuals, separately
   from the RTL (`tools/crates/model`). Tests compare end states.
 - The smoke and directed tests agree with the model in five run modes.
-- 12,000 random programs of up to 250 instructions agree with the model in five
-  run modes each.
+- 12,000 random programs of up to 250 instructions, and 2,000 more that are
+  mostly chained vector instructions, agree with the model in five run modes
+  each.
 - The floating-point units match the reference arithmetic on 200,000 random
   cases per operation, streamed and with gaps, and on 79 cases from cray-sim.
 - On a real MiSTer, with the CRAY-1 build this core began as, 547 programs
   were run and their memory compared with the model, with no failures.
 
 The model and the RTL share one reading of the manual for anything no test
-vector from a real machine covers.
+vector from a real machine covers. The model has no instruction buffers and
+runs a parcel that was just stored at once, so the two can differ on a
+program that modifies code it is about to run.
 
 The I/O Subsystem and the core:
 
@@ -541,8 +588,9 @@ The I/O Subsystem and the core:
   software and COS 1.17: dead start, station, start-up, a batch job whose log
   equals the one that comes with the software.
 - The I/O Processor follows the model step by step through the kernel's boot,
-  205 million steps on the three processors, and through 4,400 random
-  programs: same interrupts, same channel functions, same registers.
+  318 million steps on the three processors, and through 4,400 random
+  programs: same interrupts, same channel functions, same registers, same
+  clock periods.
 - The three processors and their devices boot the kernel in simulation, and a
   self-checking program covers what the kernel's start does not use.
 - The whole machine, and the core around it with stand-ins for the MiSTer
