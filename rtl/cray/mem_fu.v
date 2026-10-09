@@ -13,18 +13,21 @@
 //
 // A scalar reference or a block transfer stays the current instruction until
 // its last word is done, and issues in the DONE clock.  A vector transfer
-// issues three clocks after it starts and goes on in the background while
-// other instructions issue, as on the real machine (manual 4-70); the V
-// register stays reserved and other memory instructions wait.  A register
+// issues in the clock it starts and goes on in the background while other
+// instructions issue, as on the real machine (manual 4-70); the V register
+// stays reserved and other memory instructions wait.  The instructions behind
+// it wait as well until the transfer is known to stay inside the field
+// (o_v_unsure): not at all when a quick look at its first address and its
+// step says so, two clocks when the last address has to be worked out.  A register
 // being loaded can be the operand of an instruction behind the load, and a
 // store can be of a register that is still receiving its result: both take
 // the elements as they come (chaining, CSM-0111000 page 4-12).  A gather or a
 // scatter takes its addresses from a register the same way, one element
 // after the other, each as its own request to memory.  The exception
 // is a vector transfer whose first or last address is outside the field, and
-// every gather and scatter, whose addresses are not known beforehand: it
-// stays the current instruction to its end, so that the range error
-// interrupt is taken right behind it.  Nothing here assumes how long memory
+// every gather and scatter, whose addresses are not known beforehand: the
+// instructions behind it wait to its end, so that the range error interrupt
+// is taken right behind it.  Nothing here assumes how long memory
 // takes: a read word is handed to its register the clock after the
 // acknowledge, and a write word is requested only once its register has been
 // read.  A store works ahead: it reads the next word from its register while
@@ -106,6 +109,7 @@ module mem_fu (
 	o_v_num,
 	o_vk_num,
 	o_v_reads,
+	o_v_unsure,
 	o_mem_busy,
 	o_range_err
 );
@@ -175,6 +179,7 @@ module mem_fu (
 	output wire [2:0] o_v_num;  //the V register of the vector transfer under way
 	output wire [2:0] o_vk_num;  //the V register with the addresses of a gather or scatter
 	output wire [7:0] o_v_reads;  //the V registers a vector transfer reads, one bit a register
+	output reg o_v_unsure;  //a vector transfer is under way that may leave the field: what is behind it waits
 	output wire o_mem_busy;
 	output reg o_range_err;  //a reference outside the field was dropped
 
@@ -516,7 +521,6 @@ module mem_fu (
 	reg               released;  // the instruction has issued; the transfer goes on behind it
 	reg        [ 1:0] age;  // clocks since the start, up to 3
 	reg signed [31:0] span;  // from the first address to the last
-	reg               fits;  // a vector transfer with both ends in the field
 
 	// Addresses wrap at 22 bits; a transfer that would is not let go.
 	wire signed [32:0] last_rel = $signed({9'b0, address}) + $signed({span[31], span});
@@ -524,19 +528,50 @@ module mem_fu (
 	wire               wraps = (|address[23:22]) || (|last_rel[31:22]);
 	wire               last_in = !last_rel[32] && !wraps && (last_abs < {10'b0, limit});
 
+	wire fit_now = r_v && !r_gather && !r_scatter && !out_of_field && last_in;
+
 	always @(posedge clk)
 		if (rst || (state == IDLE)) begin
-			released <= 1'b0;
+			// a vector transfer's instruction issues in the clock the transfer starts
+			released <= !rst && start && i_issue;
 			age      <= 2'd0;
-			fits     <= 1'b0;
 		end else begin
 			if (age != 2'd3) age <= age + 2'd1;
 			if (age == 2'd0) span <= $signed({1'b0, remaining} - 8'sd1) * $signed(stride);
-			if (age == 2'd1) fits <= r_v && !r_gather && !r_scatter && !out_of_field && last_in;
 			if (o_mem_issue && i_issue) released <= 1'b1;
 		end
 
-	assign o_mem_issue = ((state == DONE) || fits) && !released;
+	// The quick look, in the clock a transfer starts: a step of less than 2, 16 or
+	// 1,024 words, counted up from a first address that is 64, 1,024 or 65,536
+	// words or more below the end of the field, cannot leave it in 64 elements.
+	// Whatever does not pass waits for the last address to be worked out.
+	reg [22:0] room;  // words of the field from its base on
+	reg [22:0] top1, top2, top3;  // the highest first address for each of the three
+	reg ok1, ok2, ok3;
+	always @(posedge clk) begin
+		room <= ({1'b0, base} < {2'b0, limit}) ? (limit - base[22:0]) : 23'd0;
+		ok1  <= (room >= 23'd64);
+		ok2  <= (room >= 23'd1024);
+		ok3  <= (room >= 23'd65536);
+		top1 <= room - 23'd64;
+		top2 <= room - 23'd1024;
+		top3 <= room - 23'd65536;
+	end
+	wire [22:0] first = {1'b0, start_addr[21:0]};
+	wire quick = (start_addr[23:22] == 2'd0) && !gather && !scatter && (
+		((start_stride[23:1] == 23'd0) && ok1 && (first <= top1)) ||
+		((start_stride[23:4] == 20'd0) && ok2 && (first <= top2)) ||
+		((start_stride[23:10] == 14'd0) && ok3 && (first <= top3)));
+
+	always @(posedge clk)
+		if (rst) o_v_unsure <= 1'b0;
+		else if (state == IDLE) o_v_unsure <= start && v_type && !quick;
+		else if ((state == DONE) || ((age == 2'd1) && fit_now)) o_v_unsure <= 1'b0;
+
+	// A scalar reference or a block transfer issues when it is done.  The
+	// instruction of a vector transfer issues as the transfer starts, which
+	// func_top sees to; should it not have, it may from then on.
+	assign o_mem_issue = ((state == DONE) || r_v) && (state != IDLE) && !released;
 	assign o_mem_busy  = (state != IDLE);
 	assign o_v_num     = r_vnum;
 	assign o_vk_num    = r_knum;

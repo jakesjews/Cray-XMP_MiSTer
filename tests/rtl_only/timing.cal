@@ -1,5 +1,5 @@
 * timing: clock periods of instructions against the X-MP manual.
-* Written by gen_timing.py; see there.  82 cases; a wrong one fails check 2
+* Written by gen_timing.py; see there.  86 cases; a wrong one fails check 2
 * and leaves its number in word 10400 and its clock periods in word 10401.
 * NOSTEP: issue held to one instruction at a time changes every time measured here.
          INCLUDE "rt_direct.cal"
@@ -2332,11 +2332,138 @@ L72      S7      RT
          S7      S7-S6
          10110,0 S7
          J       C73
-* 232 clock periods: a divide of 64 elements
+* 2 clock periods: 176 by 1, then a PASS
          ORG     5040
-C73      A4      D'64
+C73      A4      D'1
          VL      A4
          A4      L73
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         V7      ,A0,1
+         PASS
+L73      S7      RT
+         S7      S7-S6
+         10111,0 S7
+         J       C74
+* 3 clock periods: 022, 176 by that step, then a PASS
+         ORG     5100
+C74      A4      D'1
+         VL      A4
+         A4      L74
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A5      2
+         V7      ,A0,A5
+         PASS
+L74      S7      RT
+         S7      S7-S6
+         10112,0 S7
+         J       C75
+* 6 clock periods: 020, 176 by that step of 2000, then a PASS
+         ORG     5140
+C75      A4      D'1
+         VL      A4
+         A4      L75
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A5      2000
+         V7      ,A0,A5
+         PASS
+L75      S7      RT
+         S7      S7-S6
+         10113,0 S7
+         J       C76
+* 4 clock periods: 020 to A0, 177 by 1, then a PASS
+         ORG     5200
+C76      A4      D'1
+         VL      A4
+         A4      L76
+         B02     A4
+         A0      0
+         S0      0
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         PASS
+         S6      RT
+         A0      12000
+         ,A0,1   V7
+         PASS
+L76      S7      RT
+         S7      S7-S6
+         10114,0 S7
+         J       C77
+* 232 clock periods: a divide of 64 elements
+         ORG     5240
+C77      A4      D'64
+         VL      A4
+         A4      L77
          B02     A4
          A0      0
          S0      0
@@ -2362,12 +2489,12 @@ C73      A4      D'64
          V4      V3*IV2
          V6      V4*FV5
          S1      V6,A2
-L73      S7      RT
+L77      S7      RT
          S7      S7-S6
-         10111,0 S7
+         10115,0 S7
          J       P0
 * 6 clock periods: four one-parcel instructions, then on into another buffer
-         ORG     5200
+         ORG     5400
 P0       J       YP0
 XM0      A7      D'400
 W0       A7      A7-1
@@ -2493,14 +2620,14 @@ W0       A7      A7-1
          PASS
          PASS
          PASS
-         ORG     5240
+         ORG     5440
 Y0       S7      RT
          S7      S7-S6
-         10112,0 S7
+         10116,0 S7
          J       P1
 YP0      J       XM0
 * 4 clock periods: a two-parcel instruction across two buffers
-         ORG     5300
+         ORG     5500
 P1       J       YP1
 XM1      A7      D'400
 W1       A7      A7-1
@@ -2626,15 +2753,15 @@ W1       A7      A7-1
          PASS
          S6      RT
          VWD     D'16/O'020100
-         ORG     5340
+         ORG     5540
          VWD     D'16/O'012345
 Y1       S7      RT
          S7      S7-S6
-         10113,0 S7
+         10117,0 S7
          J       P2
 YP1      J       XM1
 * 5 clock periods: 006 to another buffer
-         ORG     5400
+         ORG     5600
 P2       J       YP2
 XM2      A7      D'400
 W2       A7      A7-1
@@ -2664,14 +2791,14 @@ W2       A7      A7-1
          PASS
          S6      RT
          J       Y2
-         ORG     5440
+         ORG     5640
 Y2       S7      RT
          S7      S7-S6
-         10114,0 S7
+         10120,0 S7
          J       P3
 YP2      J       XM2
 * 5 clock periods: 010 taken to another buffer
-         ORG     5500
+         ORG     5700
 P3       J       YP3
 XM3      A7      D'400
 W3       A7      A7-1
@@ -2701,14 +2828,14 @@ W3       A7      A7-1
          PASS
          S6      RT
          JAZ     Y3
-         ORG     5540
+         ORG     5740
 Y3       S7      RT
          S7      S7-S6
-         10115,0 S7
+         10121,0 S7
          J       P4
 YP3      J       XM3
 * 4 clock periods: 011 not taken, next instruction in another buffer
-         ORG     5600
+         ORG     6000
 P4       J       YP4
 XM4      A7      D'400
 W4       A7      A7-1
@@ -2833,14 +2960,14 @@ W4       A7      A7-1
          PASS
          S6      RT
          JAN     Y4
-         ORG     5640
+         ORG     6040
 Y4       S7      RT
          S7      S7-S6
-         10116,0 S7
+         10122,0 S7
          J       P5
 YP4      J       XM4
 * 7 clock periods: 006 across two buffers
-         ORG     5700
+         ORG     6100
 P5       J       YP5
 XM5      A7      D'400
 W5       A7      A7-1
@@ -2966,15 +3093,15 @@ W5       A7      A7-1
          PASS
          S6      RT
          VWD     D'16/O'006000
-         ORG     5740
-         VWD     D'16/O'027601
+         ORG     6140
+         VWD     D'16/O'030601
 Y5       S7      RT
          S7      S7-S6
-         10117,0 S7
+         10123,0 S7
          J       P6
 YP5      J       XM5
 * 4 clock periods: 011 across two buffers, not taken
-         ORG     6000
+         ORG     6200
 P6       J       YP6
 XM6      A7      D'400
 W6       A7      A7-1
@@ -3100,15 +3227,15 @@ W6       A7      A7-1
          PASS
          S6      RT
          VWD     D'16/O'011000
-         ORG     6040
-         VWD     D'16/O'030201
+         ORG     6240
+         VWD     D'16/O'031201
 Y6       S7      RT
          S7      S7-S6
-         10120,0 S7
+         10124,0 S7
          J       P7
 YP6      J       XM6
 * 7 clock periods: 010 across two buffers, taken
-         ORG     6100
+         ORG     6300
 P7       J       YP7
 XM7      A7      D'400
 W7       A7      A7-1
@@ -3234,16 +3361,16 @@ W7       A7      A7-1
          PASS
          S6      RT
          VWD     D'16/O'010000
-         ORG     6140
-         VWD     D'16/O'030601
+         ORG     6340
+         VWD     D'16/O'031601
 Y7       S7      RT
          S7      S7-S6
-         10121,0 S7
+         10125,0 S7
          J       FIN
 YP7      J       XM7
-         ORG     6240
+         ORG     6440
 FIN      A1      0
-         A2      D'82
+         A2      D'86
 FL       S1      10000,A1
          S2      KEXP,A1
          S0      S1\S2
@@ -3332,6 +3459,10 @@ KEXP     CON     D'1
          CON     D'38
          CON     D'33
          CON     D'24
+         CON     D'3
+         CON     D'4
+         CON     D'7
+         CON     D'5
          CON     D'233
          CON     D'7
          CON     D'5

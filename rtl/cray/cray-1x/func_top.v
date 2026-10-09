@@ -201,6 +201,7 @@ module func_top (
 	wire [63:0] data_from_mem_to_regs;
 	wire        mem_type;
 	wire        mem_issue;
+	wire        vmem_unsure;  // a vector transfer may still leave the field: what is behind it waits
 	wire        mem_ce;
 	wire        mem_burst;
 	wire        mem_seq;
@@ -413,7 +414,7 @@ module func_top (
 	end
 	wire unsettled = settle_busy || settle_issued;
 	wire mode_hold = unsettled && pd[PD_HMODE];
-	assign opnd_busy = (|(rd_a & a_wait_mask)) || (|(rd_s & s_wait_mask)) || vec_hold || mode_hold || ts_wait || (pd[PD_H074] && tw_en) || (pd[PD_H024] && bw_en);
+	assign opnd_busy = (|(rd_a & a_wait_mask)) || (|(rd_s & s_wait_mask)) || vec_hold || mode_hold || ts_wait || (pd[PD_H074] && tw_en) || (pd[PD_H024] && bw_en) || vmem_unsure;
 
 	/////////////////////////////////////
 	//    Logic Analyzer        //
@@ -434,7 +435,7 @@ module func_top (
 	// taken between instructions, and never while a memory instruction is under way.
 	// (When single stepping it waits like any other instruction, so that it issues,
 	// and sets its flag, in the clock it is taken.)
-	assign x_take_exit = x_run && exchange_type && ok_to_run;
+	assign x_take_exit = x_run && exchange_type && ok_to_run && !vmem_unsure;
 	assign x_take_int  = x_run && signal_interrupt && !exchange_type && mem_idle;
 	assign x_request   = x_take_exit || x_take_int;
 
@@ -478,7 +479,7 @@ module func_top (
 		);
 	assign p_oof       = p_outside;
 	assign nip_in_vld  = i_nip_vld || p_oof;
-	assign fetch_fault = cip_vld && x_run && (cip_fault || (two_parcel_cip && nip_fault));
+	assign fetch_fault = cip_vld && x_run && !vmem_unsure && (cip_fault || (two_parcel_cip && nip_fault));
 
 	assign o_ibuf_hold = !x_run || p_oof;
 
@@ -993,7 +994,7 @@ localparam VLOG      = 3'b000,   //vector logical
 						 (s_issue && s_type && !mem_type) ||
 						 (a_issue && a_type && mem_issue && mem_type) ||
 						 (a_issue && a_type && !mem_type) ||
-						 (v_type && mem_type && mem_issue) ||
+						 (v_type && mem_type && (v_issue || mem_issue)) ||
 						 (v_issue && v_type && !mem_type) ||
 						 (branch_issue && branch_type) ||
 						 (mem_issue && mem_type && !s_type && !a_type) ||
@@ -1729,7 +1730,8 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_issue          (cip_issue),
 		.o_v_num          (vmem_num),
 		.o_vk_num         (vmem_knum),
-		.o_v_reads        (vmem_reads)
+		.o_v_reads        (vmem_reads),
+		.o_v_unsure       (vmem_unsure)
 	);
 
 
@@ -1771,7 +1773,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		ts_set  <= clustered && (|(sem_now & sem_bit));
 	end
 	assign ts_wait    = cip_vld && is_ts && clustered && (!ts_seen || ts_set);
-	assign ts_blocked = cip_vld && is_ts && ts_seen && ts_set;
+	assign ts_blocked = cip_vld && is_ts && ts_seen && ts_set && !vmem_unsure;
 
 	always @(posedge clk) begin
 		if (cip_issue && clustered) begin

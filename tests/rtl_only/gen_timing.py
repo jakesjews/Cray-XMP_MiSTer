@@ -123,6 +123,15 @@ ONE_BUFFER = [
     (32, '155, 141 and 171 in a chain, VL 5', ['V2 V1+V3', 'V4 V2&V5', 'V6 V4+FV7', 'S1 V6,A2'], 5),
     # the unit of the second 155 is busy for (VL) + 4 CPs: it issues with the result on its way
     (23, '155, VL 5, a 155 of its result', ['V2 V1+V3', 'V4 V2+V5', 'S1 V4,A2'], 5),
+    # 176 and 177 issue in 1 CP (X 5-91), and the instruction behind them issues in the
+    # next when a look at the first address and the step shows that the transfer stays
+    # inside the field: a step of less than 2, 16 or 1,024 words from an address 64, 1,024
+    # or 65,536 words below the end.  For a longer step the last address is worked out
+    # first, which holds the instruction behind for two CPs more.
+    (2, '176 by 1, then a PASS', ['V7 ,A0,1', 'PASS']),
+    (3, '022, 176 by that step, then a PASS', ['A5 2', 'V7 ,A0,A5', 'PASS']),
+    (6, '020, 176 by that step of 2000, then a PASS', ['A5 2000', 'V7 ,A0,A5', 'PASS']),
+    (4, '020 to A0, 177 by 1, then a PASS', ['A0 12000', ',A0,1 V7', 'PASS']),
     # The divide of X 4-36: reciprocal, a product chained to it, the correction when the
     # multiply unit is free, and the product of the two.  3 * 64 CPs and 39 (the manual has
     # the 38 of the CRAY-1, whose chaining was another).

@@ -220,7 +220,8 @@ time, and a second random seed. All five must agree with the model.
   register, `channels.cal` for the 6 Mbyte channels, `vlah.cal` for the VL
   register and the 24-bit constant, `imm.cal` for interrupt monitor mode,
   `vnu.cal` for the VNU and ESVL bits of the package, `gather.cal` for the
-  gather, the scatter and the compress index.
+  gather, the scatter and the compress index; and `vfar.cal`, vector
+  transfers with long steps that leave a user's field.
 - `tests/rtl_only/` holds programs that check themselves, for what the model
   cannot predict: the real-time clock, the programmable clock and its
   interrupt, the console interrupt, and how many clock periods instructions

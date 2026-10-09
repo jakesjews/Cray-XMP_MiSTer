@@ -1,0 +1,100 @@
+* vfar: vector transfers with long steps in a user's field, and what is
+* behind them.  A 176 or 177 issues at once; the instruction behind it may
+* issue only when the transfer is known to stay inside the field.  For a
+* step of 1,000 words or more that takes working out the last address.
+*
+* The field is 400000 (octal) words.  A store by 2000 from 100000 stays
+* inside it and the instructions behind it run.  A store by 2000 from
+* 300000 has its first address far from the end and its fortieth word
+* beyond it: the words inside are stored, the operand range flag interrupts
+* right behind the instruction, and the two instructions behind it have not
+* run.  The same for a load by -2000 that runs out below the field.
+         INCLUDE "rt_direct.cal"
+UBASE    =       10000                   ; absolute word address of the field
+UPKG     =       3000                    ; the user's exchange package
+UWORDS   =       400000
+         TBEGIN
+         A1      UPKG
+         XA      A1
+         EX
+         S2      UPKG+3,0                ; XA, VL, F and A3
+         CHKS    S2,UPKG/20*T$P2_40+100*T$P2_33+40*T$P2_24,2
+         S2      UPKG,0                  ; P and A0
+         S2      S2>D'24
+         CHKS    S2,UAFT1-UBASE*4,3
+         A3      UPKG+2,0
+         CHKA    A3,5,4                  ; A2: what was behind the store inside the field ran
+         A3      UPKG+4,0
+         CHKA    A3,0,5                  ; A4: what is behind the one that leaves it did not
+         S2      UBASE+100000,0
+         CHKS    S2,D'1001,6
+         S2      UBASE+100000+2000,0
+         CHKS    S2,D'1002,7
+         S2      UBASE+300000,0          ; the first word of the store that leaves the field
+         CHKS    S2,D'1001,10
+         S2      UBASE+300000+76000,0    ; its last word inside: element 37 octal
+         CHKS    S2,D'1032,11
+         S2      UBASE+UWORDS,0          ; the word at the limit: element 40 would go there
+         CHKS    S2,D'123456,12
+* clear the flag and let it go on to the load
+         S2      UPKG+3,0
+         S3      KFLAGS,0
+         S2      S2\S3
+         UPKG+3,0 S2
+         A1      UPKG
+         XA      A1
+         EX
+         S2      UPKG,0
+         S2      S2>D'24
+         CHKS    S2,UAFT2-UBASE*4,13
+         A3      UPKG+5,0
+         CHKA    A3,0,14                 ; A5: not run either
+         S2      UPKG+3,0
+         S2      S2<D'31
+         S2      S2>D'55
+         CHKS    S2,40,15                ; the operand range flag again
+         TPASS
+         TEND    DUMPALL
+KFLAGS   CON     40*T$P2_24
+*
+         ORG     UPKG
+         CON     (UCODE-UBASE*4)*T$P2_24 ; P, relative to the base
+         CON     UBASE/40*T$P2_29        ; IBA
+         CON     (UBASE+UWORDS)/40*T$P2_29+T$IOR*T$P2_24 ; ILA; the operand range interrupt
+         CON     UPKG/20*T$P2_40         ; XA back to this package
+         CON     UBASE/40*T$P2_29        ; DBA: the same field for data
+         CON     (UBASE+UWORDS)/40*T$P2_29 ; DLA
+         BSSZ    D'10                    ; A6, A7, S0-S7
+*
+* the user program; its addresses are relative to UBASE
+         ORG     UBASE+10
+UCODE    A1      100
+         VL      A1
+         A0      40
+         V1      ,A0,1                   ; 64 words: 1001 and up
+         A1      2000
+         A0      100000
+         ,A0,A1  V1                      ; inside the field, to 100000 + 77 * 2000
+         A2      5
+         A0      300000
+         ,A0,A1  V1                      ; leaves it at the fortieth word
+UAFT1    A4      7
+         A3      6
+         A1      -2000
+         A0      3000
+         V2      ,A0,A1                  ; a load downwards that runs out below word 0
+UAFT2    A5      7
+         A3      6
+         EX
+         ORG     UBASE+40
+         VWD     D'64/D'1001,D'64/D'1002,D'64/D'1003,D'64/D'1004,D'64/D'1005,D'64/D'1006,D'64/D'1007,D'64/D'1008
+         VWD     D'64/D'1009,D'64/D'1010,D'64/D'1011,D'64/D'1012,D'64/D'1013,D'64/D'1014,D'64/D'1015,D'64/D'1016
+         VWD     D'64/D'1017,D'64/D'1018,D'64/D'1019,D'64/D'1020,D'64/D'1021,D'64/D'1022,D'64/D'1023,D'64/D'1024
+         VWD     D'64/D'1025,D'64/D'1026,D'64/D'1027,D'64/D'1028,D'64/D'1029,D'64/D'1030,D'64/D'1031,D'64/D'1032
+         VWD     D'64/D'1033,D'64/D'1034,D'64/D'1035,D'64/D'1036,D'64/D'1037,D'64/D'1038,D'64/D'1039,D'64/D'1040
+         VWD     D'64/D'1041,D'64/D'1042,D'64/D'1043,D'64/D'1044,D'64/D'1045,D'64/D'1046,D'64/D'1047,D'64/D'1048
+         VWD     D'64/D'1049,D'64/D'1050,D'64/D'1051,D'64/D'1052,D'64/D'1053,D'64/D'1054,D'64/D'1055,D'64/D'1056
+         VWD     D'64/D'1057,D'64/D'1058,D'64/D'1059,D'64/D'1060,D'64/D'1061,D'64/D'1062,D'64/D'1063,D'64/D'1064
+         ORG     UBASE+UWORDS
+         CON     D'123456                ; must survive
+         END

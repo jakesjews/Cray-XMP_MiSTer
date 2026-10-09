@@ -365,10 +365,14 @@ and what is not there.
   reference (10h to 13h) and a block transfer (034 to 037) stay the current
   instruction until their last word is done. On the X-MP they issue in 2 and
   in 1 clock periods and the instructions behind them go on (pages 2-6, 5-40
-  and 5-64). A vector load or store issues three clock periods after it
-  starts, not one. One whose first or last address is outside the field, and
-  every gather and scatter, stays to its end, so that the range error
-  interrupts right behind it.
+  and 5-64). A vector load or store issues in 1 clock period, as on the
+  X-MP, but the instruction behind it waits two clock periods more unless a
+  look at the first address and the step shows that the transfer stays
+  inside the field: a step of less than 2, 16 or 1,024 words upwards from an
+  address 64, 1,024 or 65,536 words below the field's end. Behind a transfer
+  whose first or last address is outside the field, and behind every gather
+  and scatter, it waits to the end, so that the range error interrupts right
+  behind the transfer.
 - **One result a clock period** goes into the A registers and one into the S
   registers: an instruction whose result would arrive together with that of
   an earlier one waits a clock period. That is the CRAY-1's "register access
@@ -551,12 +555,14 @@ of its elements lie in a line, and picks its elements out as they arrive. A
 block or vector store reads the next word from its register while the one
 before is on its way to memory.
 
-A vector load or store lets its instruction issue three clocks after it starts
-and goes on in the background while other instructions issue; its V register
-stays reserved and other memory instructions wait for it. A transfer whose
-first or last address is outside the field stays the current instruction
-instead, so the range error interrupt is taken right behind it. Scalar
-references and block transfers hold issue until they are done.
+A vector load or store issues in the clock it starts and goes on in the
+background while other instructions issue; its V register stays reserved and
+other memory instructions wait for it. The instructions behind it wait until
+it is known to stay inside the field: not at all when its first address and
+its step show that at a glance, two clocks when the last address has to be
+worked out, and to the end of a transfer whose first or last address is
+outside the field, so that the range error interrupt is taken right behind
+it. Scalar references and block transfers hold issue until they are done.
 
 The CPU's memory port is a request held until acknowledged, one acknowledge
 pulse per word. Nothing in the CPU depends on how long memory takes, and the
