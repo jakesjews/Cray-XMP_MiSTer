@@ -19,8 +19,6 @@ Written are
                                        the top
   OUT_DIR/games/Cray-XMP/tape.tap      a blank tape for the menu's Tape: 8 MB
                                        of bytes of all ones (tools/py/mktape.py)
-  OUT_DIR/_Computer/COS 1.17.mgl       starts the core with the first four in
-                                       place
   OUT_DIR/games/Cray-XMP/licenses/     the notices of what is in the files
 
 and with --zip all of that in one file, which is what a release carries.
@@ -75,14 +73,6 @@ PRINTER_BYTES = 8 << 20
 TAPE_BYTES = 8 << 20
 STAMP = ('01/01/89', '01:01:01')        # the date of the files that come on the disk
 
-MGL = '''<mistergamedescription>
-    <rbf>_Computer/%s</rbf>
-    <file delay="1" type="s" index="0" path="exp_disk.img"/>
-    <file delay="1" type="s" index="1" path="drives.img"/>
-    <file delay="1" type="s" index="2" path="printer.txt"/>
-    <file delay="1" type="f" index="1" path="cos117.ios"/>
-</mistergamedescription>
-''' % CORE
 
 # of software/cos-tools: programs that become commands, libraries, and the text LISP starts from
 COMMANDS = ('CAL', 'LDR', 'LIB', 'DASM', 'KFTC', 'LISPF4',
@@ -316,11 +306,10 @@ def main(argv):
     if not os.path.isfile(MODEL):
         sys.exit('mkcos: no %s; run `make tools`' % MODEL)
     games = os.path.join(out, 'games', CORE)
-    computer = os.path.join(out, '_Computer')
     licenses = os.path.join(games, 'licenses')
     work = os.path.join(out, 'work')
     shutil.rmtree(work, ignore_errors=True)
-    for directory in (games, computer, licenses, os.path.join(work, 'target', 'cos_117')):
+    for directory in (games, licenses, os.path.join(work, 'target', 'cos_117')):
         os.makedirs(directory, exist_ok=True)
 
     kernel = open(os.path.join(SYSTEM, 'iop_kern.bin'), 'rb').read()
@@ -373,8 +362,6 @@ def main(argv):
     print('printer.txt')
     open(os.path.join(games, 'tape.tap'), 'wb').write(b'\xff' * TAPE_BYTES)
     print('tape.tap')
-    open(os.path.join(computer, 'COS 1.17.mgl'), 'w').write(MGL)
-    print('COS 1.17.mgl')
     for directory in (TOOLS, SYSTEM):
         for name in sorted(os.listdir(directory)):
             if name.startswith('LICENSE'):

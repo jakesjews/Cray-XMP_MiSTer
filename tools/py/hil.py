@@ -14,7 +14,7 @@
                                    the machine first
   hil.py printed [--new]           what is in the printer's file; --new empties it first
   hil.py keys TEXT [--gap SEC]     type on a virtual keyboard: characters, \\r, \\xHH for
-                                   control keys, {f1} {f2} {f3} {f12} {enter} {esc} for others
+                                   control keys, {f1} {f2} {f3} {f12} {enter} {esc} {up} {down} {backspace} for others
   hil.py uart SEC [--break] [--send TEXT] [--until TEXT]
                                    what the serial port carries, as it is
   hil.py peek WORD [COUNT] | poke WORD HEX... | fill WORD COUNT HEX
@@ -129,7 +129,7 @@ def cmd_start(args):
     seconds = take_time(args, 60)
     push_agent()
     if '--mgl' in args:
-        # an MGL that is on the MiSTer already, as the package for the SD card brings one
+        # an MGL that is on the MiSTer already
         i = args.index('--mgl')
         path = args[i + 1]
         del args[i:i + 2]
