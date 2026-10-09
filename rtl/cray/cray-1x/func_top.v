@@ -1737,6 +1737,20 @@ localparam VLOG      = 3'b000,   //vector logical
 	//         Memory Controller Functional Unit           //
 	/////////////////////////////////////////////////////////
 
+	//How far the V registers of the transfer under way have been filled, taken a
+	//clock late: the registers are picked by the transfer's numbers, which do
+	//not change while it runs, and a register only ever gets fuller, so the
+	//transfer at worst waits a clock longer for an element.  (The first element
+	//is asked for three clocks after the start at the earliest.)
+	reg vmem_fill, vmem_kfill;
+	reg [6:0] vmem_fill_n, vmem_kfill_n;
+	always @(posedge clk) begin
+		vmem_fill    <= vreg_filling[vmem_num];
+		vmem_fill_n  <= vreg_filled[7*vmem_num+:7];
+		vmem_kfill   <= vreg_filling[vmem_knum];
+		vmem_kfill_n <= vreg_filled[7*vmem_knum+:7];
+	end
+
 	mem_fu mfu (
 		.clk              (clk),
 		.rst              (rst),
@@ -1761,8 +1775,8 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_v_last         (vmem_wr_last),
 		.o_v_wr_idx       (vmem_wr_idx),
 		.o_v_rd_idx       (vmem_rd_idx),
-		.i_v_avail        (!vreg_filling[vmem_num] || ({1'b0, vmem_rd_idx} < vreg_filled[7*vmem_num+:7])),
-		.i_vk_avail       (!vreg_filling[vmem_knum] || ({1'b0, vmem_rd_idx} < vreg_filled[7*vmem_knum+:7])),
+		.i_v_avail        (!vmem_fill || ({1'b0, vmem_rd_idx} < vmem_fill_n)),
+		.i_vk_avail       (!vmem_kfill || ({1'b0, vmem_rd_idx} < vmem_kfill_n)),
 		//interface to A rf
 		.i_a0_data        (a_a0_data),
 		.i_ai_data        (a_i_data),
