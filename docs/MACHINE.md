@@ -287,7 +287,7 @@ What they are made of (`rtl/ios/`):
 - On the BIOP: nine DD-29 disk drives and the channel pair into central
   memory.
 
-The consoles are Ampex Dialogue 80 terminals (`rtl/terminal/term_ampex.v`).
+The consoles are Ampex Dialogue 80 terminals; see [The consoles](#the-consoles).
 
 The operator types the date and the time. The kernel takes a date only with
 a year from 80 to 99 and asks again otherwise (tried on the system model: 79,
@@ -295,6 +295,61 @@ a year from 80 to 99 and asks again otherwise (tried on the system model: 79,
 clock is not passed on to the machine; the other is that the kernel's driver
 for the expander's clock is switched off in this software, as it was on the
 machine it came from.
+
+### The consoles
+
+The operator's console and the station are Ampex Dialogue 80 terminals
+(`rtl/terminal/`), which is what the I/O Subsystem's software drives them
+as. No manual of the terminal could be found, but its firmware could: the
+program ROMs and the character generator are on bitsavers. What the terminal
+does was read out of them, and the core's terminal does the same, code by
+code and oddity by oddity:
+
+- **The screen** is 24 lines of 80 characters under a status line, which
+  shows the attributes and modes that are on, a locked keyboard, the page,
+  and an error (`MODE ERR`, `CURS ERR`, `PROT ERR`) until CTRL+CLEAR takes it
+  away. There are two pages of display memory (`ESC N`, `ESC F`, the PAGE
+  key, and auto flip, `ESC v`).
+- **A character** has a protect bit, which shows as half intensity, and four
+  attributes: reverse, blank, flash and underline (`ESC j` to `ESC q`). The
+  attributes are only stored while write attribute mode is on (`ESC A`), the
+  protect bit while write protect is (`ESC )`).
+- **The functions:** cursor address and report, tab stops, erasing to the end
+  of the line or page with spaces or nulls, clearing, inserting and deleting
+  characters and lines, the eleven line drawing characters (`ESC G A` to
+  `ESC G K`), fields (`ESC f`), protect mode, in which the cursor only rests
+  on unprotected characters, block and conversation mode, sending a line or
+  the page to the computer, program mode, which puts control characters on
+  the screen as pictures instead of obeying them, and locking the keyboard.
+- **The keyboard** is a PC's. Its letters, digits and signs send what the
+  terminal's did, with CTRL for the control characters; the arrow keys and
+  Home send the terminal's codes for them (08, 0C, 0B, 0A and 1E hex). The
+  terminal's own keys, which act on the screen and are never sent, are on the
+  function keys:
+
+  | Key | Alone | With Shift | With Ctrl | With Ctrl and Shift |
+  |---|---|---|---|---|
+  | F4 | SEND LINE | the protected fields too | SEND PAGE | the protected fields too |
+  | F5 | CLEAR | with nulls | CTRL+CLEAR | |
+  | F6 | LINE INS | LINE DEL | | |
+  | F7 | CHAR INS | CHAR DEL | | |
+  | F8 | LINE ERASE | with nulls | PAGE ERASE | with nulls |
+  | F9 | TAB SET | TAB CLEAR | | all tab stops |
+  | F10 | conversation mode | block mode | | |
+  | F11 | protect mode off | on | write protect off | on |
+
+  Insert and Shift+Insert are CHAR INS and LINE INS as well, Shift+Delete
+  and Ctrl+Delete CHAR DEL and LINE DEL, Shift+Tab BACK TAB and Page Down the
+  PAGE key. F1 to F3 choose the screen and F12 is the MiSTer's menu.
+- **The bell** is a tone of 1 kHz on the audio outputs.
+
+Where the firmware can go round a loop for good (`ESC X` in protect mode
+with auto flip is one way there), the terminal takes no more characters or
+keys until the machine is reset, as the real one would until it was switched
+off.
+
+The third screen, what the printer prints, is a plain one: 24 lines that
+take characters and new lines.
 
 ### The system on the card
 
@@ -459,8 +514,21 @@ and what is not there.
   100 Mbyte channel take what DDR3 takes.
 - **Nothing fails.** The Local Memory error flag never sets and the disk
   drives report no faults.
-- **The consoles** are Ampex Dialogue 80 terminals as far as the software
-  uses them.
+- **The consoles' look is not the Dialogue 80's.** The letters are the fonts
+  of the MiSTer's VT52 core in cells of 8 by 16 (or 8 by 8) dots; the
+  terminal had 6 by 8 dots in a cell of 7 by 10, with dots shifted by half a
+  dot. The line drawing characters and the pictures of the control characters
+  are drawn after its character generator. How the terminal showed underline,
+  flash and a blanked character in reverse is in no ROM; here the underline
+  is the cell's lowest line but one, a flashing character goes out for nine
+  frames in eighteen, and a blanked one is an empty cell.
+- **Not on the consoles:** the terminal's printer port (`ESC P`, `ESC J` and
+  the PRINT key do nothing), its twenty programmable keys, half duplex and
+  the margin bell, which were switches, the third and fourth page of
+  display memory, BREAK, and the self test with its messages. A character is
+  worked off before the next is taken; the terminal took characters into a
+  queue of 256 and worked them off behind, and said `COMM ERR` when the queue
+  ran over.
 - **Not there**, because the software runs without them: the concentrator for
   a front-end computer (the kernel says so once, some seconds after COS has
   been started: `Concentrator ordinal 3  VAX interface select error. Command
@@ -691,8 +759,14 @@ The I/O Subsystem and the core:
 - The whole machine, and the core around it with stand-ins for the MiSTer
   framework, load and start COS in simulation; in the longest run COS reads
   the nine drives and asks the operator its start-up questions.
-- The terminal and the printer's file are checked against what they should
-  hold on random input.
+- The model's terminal against the firmware of a real Dialogue 80, run on a
+  model of the terminal's hardware: 4,700 random streams of 200 to 3,000
+  characters and keys, with every cell of every page, the status line, the
+  cursor, the modes and what the terminal sends compared along the way. Of
+  26 faults put into the model all were found.
+- The core's terminal against the model's on 5,600 such streams, and of 109
+  faults put into it all were found. The printer's file is checked against
+  what it should hold on random input.
 - Faults were put into the channels, the processors, the devices, the link to
   the mainframe, the terminal and the printer's file, one at a time, to see
   that the tests notice. They found what the tests missed, and the tests were

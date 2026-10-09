@@ -12,8 +12,10 @@
     coretest.py tape [SYSTEM]
 
 screens checks the core's terminal (rtl/terminal/term_ampex.v) against the
-reference model's: random character streams, CASES of them (default 400), and
-the screens they leave.
+reference model's: CASES random streams (default 400, drawn from SEED, default
+1) of a few hundred to a few thousand characters and keys, and the state the
+terminal is in behind every hundredth of them and at the end: every cell of
+its pages and of the status line, the cursor, what it sent, its bell.
 
 spool checks the printer's file (rtl/mister/print_spool.v): random printing
 into files of random lengths, part of them used before, CASES of them (default
@@ -88,12 +90,38 @@ def run(args):
 
 
 def screens(seed, cases):
-    path = os.path.join(OUT, 'screens.bin')
-    subprocess.run([RANDOM, str(seed), str(cases), path], check=True)
-    r = subprocess.run([AMPEX, path], capture_output=True, text=True)
-    print((r.stdout + r.stderr).strip())
-    print('1 runs, %d failed' % (r.returncode != 0))
-    return r.returncode == 0
+    """The cases are shared out to as many runs as there are processors, eight at most."""
+    from concurrent.futures import ThreadPoolExecutor
+    parts = max(1, min(os.cpu_count() or 1, 8, cases))
+
+    def part(i):
+        path = os.path.join(OUT, 'screens%d.bin' % i)
+        subprocess.run([RANDOM, str(seed), str(cases), path, '--part', str(i), str(parts)], check=True)
+        r = subprocess.run([AMPEX, path, '--seed', str(seed * 8 + i)], capture_output=True, text=True)
+        os.remove(path)
+        return r
+
+    with ThreadPoolExecutor(parts) as pool:
+        runs = list(pool.map(part, range(parts)))
+    done = failed = longest = 0
+    broken = False
+    for r in runs:
+        lines = (r.stdout + r.stderr).strip().splitlines()
+        # a failing case a line, then the longest wait, then `N cases, M failed`
+        counts = lines[-1].split() if lines else []
+        if len(counts) != 4 or counts[1] != 'cases,' or len(lines) < 2:
+            print('\n'.join(lines[-3:]))
+            broken = True
+            continue
+        done, failed = done + int(counts[0]), failed + int(counts[2])
+        longest = max(longest, int(lines[-2].split()[-2]))
+        for line in lines[:-2]:
+            print(line[:300])
+    print('the longest wait for the terminal was %d clocks' % longest)
+    print('%d cases, %d failed' % (done, failed))
+    ok = not broken and failed == 0 and done == cases
+    print('1 runs, %d failed' % (not ok))
+    return ok
 
 
 def spool(cases):

@@ -177,6 +177,16 @@ sim/build/core/Vemu BOOTFILE --disk 0=exp_disk.img --until 'ENTER DATE'
 - `sim/build/ampex/Vterm_ampex_tb` and `sim/build/spool/Vprint_spool` are the
   benches of the terminal and of the printer's file.
 
+The model's terminal is itself checked against the firmware of the real one.
+`tools/py/d80emu.py` runs the program ROMs of the Ampex Dialogue 80 on a
+model of the terminal's hardware, and `tools/py/d80test.py SEED CASES`
+compares it with the model on random streams of characters and keys,
+everything a host or a person at the keyboard could tell apart. The ROMs
+are not in the repository. They are on bitsavers
+(`pdf/ampex/terminal/Ampex_Dialog_80/`, parts 3505240-01 to -06); joined in
+that order they are the file the environment variable `CRAY_XMP_D80_ROM`
+names. `runtests.py full` runs the comparison when the file is there.
+
 Two of the benches take about a minute of real time for a second of the
 machine's; `--quick` runs, where COS is started 2.4 seconds after the reset,
 are the practical ones.
@@ -325,7 +335,12 @@ python3 tools/py/ioptest.py kernel         # the real kernel's boot on each of t
 `tools/py/coretest.py` runs the core-level simulation and the two benches
 beside it.
 
-- `screens`: the terminal against the model's, on random character streams.
+- `screens`: the consoles' terminal (`rtl/terminal/term_ampex.v`) against the
+  model's (`tools/crates/ios/src/screen.rs`), on random streams of characters
+  and keys that reach every function of the terminal: every cell of both
+  pages with its protect bit and attributes, the status line, the cursor, the
+  page origins, the characters the terminal sends and its bells are compared
+  along each stream and at its end.
 - `spool`: the printer's file. Random printing into files of random lengths,
   part of them used by an earlier session, and what the files hold afterwards.
 - `nofile`: the core without a boot file says so on the screen.

@@ -22,6 +22,7 @@ set_global_assignment -name VERILOG_FILE rtl/mister/print_spool.v
 set_global_assignment -name VERILOG_FILE rtl/mister/print_screen.v
 set_global_assignment -name VERILOG_FILE rtl/terminal/xmp_terminal.v
 set_global_assignment -name VERILOG_FILE rtl/terminal/term_ampex.v
+set_global_assignment -name VERILOG_FILE rtl/terminal/term_plain.v
 set_global_assignment -name VERILOG_FILE rtl/mister/con_fifo.v
 set_global_assignment -name VERILOG_FILE rtl/mister/cdc.v
 set_global_assignment -name VERILOG_FILE rtl/mister/uart.v

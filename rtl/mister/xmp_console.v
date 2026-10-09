@@ -3,10 +3,10 @@
 // There are two consoles: 0 is the operator's console of the I/O Subsystem,
 // 1 the station.  What they print goes to their screens and, both together, to
 // the HPS serial port, which sets the pace (115200 baud); there bit 7 of a
-// byte says which console it is from.  Keys typed on the keyboard go to the
-// console whose screen is shown; one that is not a character (bit 7) is
-// dropped.  A byte received on the serial port goes to the console its bit 7
-// names, so a test script can work both at once.
+// byte says which console it is from.  What a terminal sends, the keys typed
+// at it and its answers, goes to its console.  A byte received on the serial
+// port goes to the console its bit 7 names, past the terminal, so a test
+// script can work both at once.
 //
 // The core's own two messages are put on the operator's console the same way
 // the machine's characters are: `no_file` when there is no boot file to start
@@ -22,7 +22,6 @@ module xmp_console #(
 	input wire reset,
 	input wire uart_reset, // reset for the serial receiver only
 
-	input wire visible,  // the console whose screen is shown
 	input wire no_file,
 	input wire started,
 
@@ -41,10 +40,10 @@ module xmp_console #(
 	output wire [ 1:0] term_valid,
 	input  wire [ 1:0] term_ready,
 
-	// the keyboard
-	input  wire [7:0] kbd_data,
-	input  wire       kbd_valid,
-	output wire       kbd_ready,
+	// what the terminals send
+	input  wire [13:0] key_data,
+	input  wire [ 1:0] key_valid,
+	output wire [ 1:0] key_ready,
 
 	// HPS serial port
 	input  wire uart_rxd,
@@ -138,8 +137,8 @@ module xmp_console #(
 
 	wire [1:0] full;
 	wire [1:0] ser_wr = ser_valid ? (ser_data[7] ? 2'b10 : 2'b01) : 2'b00;
-	wire [1:0] kbd_wr = (kbd_valid && kbd_ready && !kbd_data[7]) ? (visible ? 2'b10 : 2'b01) : 2'b00;
-	assign kbd_ready = ~full[visible] && ~ser_wr[visible];
+	assign key_ready = ~full & ~ser_wr;
+	wire [1:0] key_wr = key_valid & key_ready;
 
 	genvar g;
 	generate
@@ -150,8 +149,8 @@ module xmp_console #(
 			) fifo (
 				.clk  (clk),
 				.reset(reset),
-				.din  (ser_wr[g] ? ser_data[6:0] : kbd_data[6:0]),
-				.wr   (ser_wr[g] || kbd_wr[g]),
+				.din  (ser_wr[g] ? ser_data[6:0] : key_data[7*g+:7]),
+				.wr   (ser_wr[g] || key_wr[g]),
 				.full (full[g]),
 				.dout (rx_data[7*g+:7]),
 				.valid(rx_valid[g]),

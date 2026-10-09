@@ -39,6 +39,7 @@ rtl/mister/print_spool.v
 rtl/mister/print_screen.v
 rtl/terminal/xmp_terminal.v
 rtl/terminal/term_ampex.v
+rtl/terminal/term_plain.v
 rtl/mister/con_fifo.v
 rtl/mister/cdc.v
 rtl/mister/uart.v

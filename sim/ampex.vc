@@ -1,8 +1,11 @@
-// Verilator arguments for the Ampex terminal bench.
+// Verilator arguments for the Ampex terminal bench.  With RW_POISON a cell
+// that is read in the clock it is written in reads as junk: the terminal must
+// not use such a read.
 --cc --exe --build -j 0
 --top-module term_ampex_tb
 -Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-DECLFILENAME
 -O3 --x-assign unique --x-initial unique
++define+RW_POISON
 -CFLAGS "-O2 -std=c++17"
 sim/tb/term_ampex_tb.v
 rtl/terminal/term_ampex.v

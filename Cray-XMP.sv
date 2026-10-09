@@ -40,9 +40,8 @@ module emu #(
 	assign HDMI_BLACKOUT  = 0;
 	assign HDMI_BOB_DEINT = 0;
 
+	// the only sound is the bell of the terminal that is shown (further down)
 	assign AUDIO_S   = 0;
-	assign AUDIO_L   = 0;
-	assign AUDIO_R   = 0;
 	assign AUDIO_MIX = 0;
 
 	assign LED_POWER = 0;
@@ -647,6 +646,9 @@ module emu #(
 
 	wire [7:0] kbd_data;
 	wire kbd_valid, kbd_ready;
+	// what the two consoles' terminals send: their keys and answers
+	wire [13:0] sent_data;
+	wire [1:0] sent_valid, sent_ready;
 
 	// the software knows capital letters only
 	term_keyboard #(
@@ -668,7 +670,6 @@ module emu #(
 		.reset     (reset),
 		.uart_reset(uart_reset),
 
-		.visible(visible == 2'd1),
 		.no_file(no_file),
 		.started(started),
 
@@ -683,9 +684,9 @@ module emu #(
 		.term_valid(term_valid),
 		.term_ready(term_ready),
 
-		.kbd_data (kbd_data),
-		.kbd_valid(kbd_valid),
-		.kbd_ready(kbd_ready),
+		.key_data (sent_data),
+		.key_valid(sent_valid),
+		.key_ready(sent_ready),
 
 		.uart_rxd  (UART_RXD),
 		.uart_txd  (UART_TXD),
@@ -706,7 +707,22 @@ module emu #(
 		ce_pix <= font_8x8 ? (div == 2'd0) : ~div[0];
 	end
 
-	wire HBlank, VBlank, HSync, VSync, video;
+	wire HBlank, VBlank, HSync, VSync, video, half, bell;
+
+	// the bell: a tone of 1 kHz while the terminal sounds it
+	localparam [14:0] BELL_HALF = 15'(CLK_HZ / 2000 - 1);
+	reg        bell_tone;
+	reg [14:0] bell_div;
+	always @(posedge clk_sys)
+		if (!bell) begin
+			bell_tone <= 1'b0;
+			bell_div  <= 15'd0;
+		end else if (bell_div == BELL_HALF) begin
+			bell_tone <= ~bell_tone;
+			bell_div  <= 15'd0;
+		end else bell_div <= bell_div + 15'd1;
+	assign AUDIO_L = {3'd0, bell_tone, 12'd0};
+	assign AUDIO_R = {3'd0, bell_tone, 12'd0};
 
 	xmp_terminal terminal (
 		.clk  (clk_sys),
@@ -720,11 +736,21 @@ module emu #(
 		.rx_valid({prt_valid, term_valid}),
 		.rx_ready({prt_ready, term_ready}),
 
+		.key_data (kbd_data),
+		.key_valid(kbd_valid),
+		.key_ready(kbd_ready),
+
+		.tx_data (sent_data),
+		.tx_valid(sent_valid),
+		.tx_ready(sent_ready),
+
 		.hsync (HSync),
 		.vsync (VSync),
 		.hblank(HBlank),
 		.vblank(VBlank),
-		.video (video)
+		.video (video),
+		.half  (half),
+		.bell  (bell)
 	);
 
 	reg [23:0] rgb;
@@ -736,6 +762,9 @@ module emu #(
 			2'd3: rgb = 24'h40FFFF;  // cyan
 		endcase
 	end
+
+	// a character at half intensity, which is how the terminal shows a protected one
+	wire [23:0] lit = !video ? 24'd0 : half ? {1'b0, rgb[23:17], 1'b0, rgb[15:9], 1'b0, rgb[7:1]} : rgb;
 
 	// The picture goes out through the framework's video_mixer, which has the
 	// scandoubler with its effects and the gamma table, and video_freak, which
@@ -787,9 +816,9 @@ module emu #(
 		.scandoubler(doubled),
 		.hq2x       (fx == 3'd1),
 		.gamma_bus  (gamma_bus),
-		.R          (video ? rgb[23:16] : 8'd0),
-		.G          (video ? rgb[15:8] : 8'd0),
-		.B          (video ? rgb[7:0] : 8'd0),
+		.R          (lit[23:16]),
+		.G          (lit[15:8]),
+		.B          (lit[7:0]),
 		.HSync      (~HSync),
 		.VSync      (~VSync),
 		.HBlank     (HBlank),

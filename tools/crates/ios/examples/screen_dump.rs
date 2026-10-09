@@ -28,7 +28,12 @@ use cray_xmp_ios::Screen;
 fn run(text: &str) -> Result<(), String> {
     let mut screen = Screen::default();
     for (number, line) in text.lines().enumerate() {
-        let words: Vec<&str> = line.split('#').next().unwrap_or("").split_whitespace().collect();
+        let words: Vec<&str> = line
+            .split('#')
+            .next()
+            .unwrap_or("")
+            .split_whitespace()
+            .collect();
         let bad = || format!("line {}: {}", number + 1, line);
         let int = |word: &str| word.parse::<usize>().map_err(|_| bad());
         let hex = |word: &str| u8::from_str_radix(word, 16).map_err(|_| bad());
@@ -71,7 +76,8 @@ fn run(text: &str) -> Result<(), String> {
                 if row > 12 || bit > 7 {
                     return Err(bad());
                 }
-                let code = Screen::key_code(row, bit, shift == "1", ctrl == "1", screen.caps_lock());
+                let code =
+                    Screen::key_code(row, bit, shift == "1", ctrl == "1", screen.caps_lock());
                 screen.key(code);
             }
             ["P", prog @ ("a" | "b"), row, bit] => {
@@ -84,10 +90,17 @@ fn run(text: &str) -> Result<(), String> {
             }
             ["d"] => println!("{}", screen.dump().join("\n")),
             ["tables"] => {
-                let tables =
-                    [("plain", false, false, false), ("ctrl", false, true, false), ("shift", true, false, false), ("caps", false, false, true)];
+                let tables = [
+                    ("plain", false, false, false),
+                    ("ctrl", false, true, false),
+                    ("shift", true, false, false),
+                    ("caps", false, false, true),
+                ];
                 for (name, shift, ctrl, caps) in tables {
-                    let codes: String = Screen::keys(shift, ctrl, caps).iter().map(|c| format!("{:02x}", c)).collect();
+                    let codes: String = Screen::keys(shift, ctrl, caps)
+                        .iter()
+                        .map(|c| format!("{:02x}", c))
+                        .collect();
                     println!("{} {}", name, codes);
                 }
             }

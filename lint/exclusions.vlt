@@ -225,3 +225,6 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/res_regfile.v" -match "*Bits of sign
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/res_regfile.v" -match "*Bits of signal are not used: 'i_now_lane'*"
 // res_lanes.v: only a lane without a delay line is told its arrivals from outside
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/res_lanes.v" -match "*i_ext_*"
+
+// The printer's screen has one page: the page bit of its addresses is not used.
+lint_off -rule UNUSEDSIGNAL -file "rtl/terminal/xmp_terminal.v" -match "*Bits of signal are not used: 'addr'[11]*"

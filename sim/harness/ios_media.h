@@ -80,43 +80,79 @@ static std::string squeeze(const std::string &raw) {
 }
 
 // The screen of an Ampex Dialogue 80, a character at a time: 24 lines of 80
-// characters (tools/crates/ios/src/screen.rs has the sequences).
+// characters.  This is the terminal as far as plain text goes, enough to
+// follow what the I/O Subsystem's software prints: the whole terminal is
+// tools/crates/ios/src/screen.rs.  The first page only, conversation mode, no
+// protected characters, no tab stops; a cursor address off the screen, which
+// the terminal answers with CURS ERR, puts the cursor at the top left here.
+// The line drawing characters are kept as their codes, 01 to 0B.
 struct AmpexScreen {
     std::vector<std::string> lines = std::vector<std::string>(24, std::string(80, ' '));
-    int line = 0, column = 0, escape = 0;   // escape: 1 after ESC, 2 the row follows, 3 the column, 4 one character to drop
+    int line = 0, column = 0;
+    int escape = 0;      // 1 after ESC, 2 the row follows, 3 the column, 4 a line drawing letter, 5 and up: characters to drop
     int row = 0;
-    void feed() { if (line < 23) line++; else { lines.erase(lines.begin()); lines.push_back(std::string(80, ' ')); } }
+    void down() { if (line < 23) line++; else { lines.erase(lines.begin()); lines.push_back(std::string(80, ' ')); } }
+    void up() { line = line > 0 ? line - 1 : 23; }
+    void right() { if (column < 79) column++; else { column = 0; down(); } }
+    void left() { if (column > 0) column--; else { column = 79; up(); } }
+    void home() { line = column = 0; }
+    void clear() { for (auto &l : lines) l.assign(80, ' '); home(); }
+    void store(char c) { lines[line][column] = c; right(); }
     void put(unsigned char c) {
         c &= 0x7F;
+        if (escape == 0 && c == 0) return;      // a null is dropped when it arrives
         switch (escape) {
         case 1:
             escape = 0;
-            if (c == '=') escape = 2;
-            else if (c == 'G') escape = 4;
-            else if (c == '*') { for (auto &l : lines) l.assign(80, ' '); line = column = 0; }
-            else if (c == 'T') { for (int k = column; k < 80; k++) lines[line][k] = ' '; }
-            else if (c == 'R') { lines.erase(lines.begin() + line); lines.push_back(std::string(80, ' ')); }
+            switch (c) {
+            case '=': escape = 2; break;
+            case 'G': escape = 4; break;
+            case 'e': escape = 6; break;        // two characters follow
+            case 'f': escape = 8; break;        // four
+            case '*': case '+': case 'Z': case ':': case ';': clear(); break;
+            case 'T': case 't': for (int k = column; k < 80; k++) lines[line][k] = ' '; break;
+            case 'Y': case 'y':
+                for (int k = column; k < 80; k++) lines[line][k] = ' ';
+                for (int l = line + 1; l < 24; l++) lines[l].assign(80, ' ');
+                break;
+            case 'R': lines.erase(lines.begin() + line); lines.push_back(std::string(80, ' ')); break;
+            case 'E': lines.pop_back(); lines.insert(lines.begin() + line, std::string(80, ' ')); break;
+            case 'Q': lines[line].insert(column, 1, ' '); lines[line].resize(80); break;
+            case 'W': lines[line].erase(column, 1); lines[line].push_back(' '); break;
+            }
             return;
         case 2: row = c; escape = 3; return;
         case 3: {
             int r = row - 0x20, k = c - 0x20;
-            line = r < 0 ? 0 : r > 23 ? 23 : r; column = k < 0 ? 0 : k > 79 ? 79 : k;
+            if (r < 0 || r > 23 || k < 0 || k > 79) home(); else { line = r; column = k; }
             escape = 0;
             return;
         }
-        case 4: escape = 0; return;
+        case 4: escape = 0; if (c >= 'A' && c <= 'K') store(c - '@'); return;
+        case 0: break;
+        default: escape = escape == 5 ? 0 : escape - 1; return;
         }
         if (c == 0x1B) escape = 1;
-        else if (c == 0x08) { if (column > 0) column--; }
-        else if (c == 0x0A) feed();
-        else if (c == 0x0C) { if (column < 79) column++; }
+        else if (c == 0x08) left();
+        else if (c == 0x0A) down();
+        else if (c == 0x0B) up();
+        else if (c == 0x0C) right();
         else if (c == 0x0D) column = 0;
-        else if (c >= 0x20 && c < 0x7F) { lines[line][column] = c; if (column < 79) column++; else { column = 0; feed(); } }
+        else if (c == 0x1A) clear();
+        else if (c == 0x1E) home();
+        else if (c == 0x1F) { column = 0; down(); }
+        else if (c >= 0x20 && c < 0x7F) store(c);
     }
+    // a line drawing character as text: a corner, tee or cross is a plus sign
+    static char shown(char c) { return c == 0x09 ? '-' : c == 0x0A ? '|' : c > 0 && c < 0x20 ? '+' : c; }
     // the lines without the blanks at their ends and without the empty ones at the bottom
     std::string text() const {
         std::string out;
-        for (auto &l : lines) { size_t end = l.find_last_not_of(' '); out += (end == std::string::npos ? "" : l.substr(0, end + 1)) + "\n"; }
+        for (auto l : lines) {
+            for (auto &c : l) c = shown(c);
+            size_t end = l.find_last_not_of(' ');
+            out += (end == std::string::npos ? "" : l.substr(0, end + 1)) + "\n";
+        }
         while (out.size() > 1 && out[out.size() - 1] == '\n' && out[out.size() - 2] == '\n') out.pop_back();
         return out;
     }

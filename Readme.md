@@ -172,6 +172,10 @@ advance, so start a `FORMAT` with `1X`. All the commands are listed in
 
 Keys go to the station (**F2**) while it is shown, and to the operator's console (**F1**) otherwise.
 
+The top line of a console is the status line of its terminal, an Ampex Dialogue 80. **F4** to
+**F11** are that terminal's own keys (clear, insert, delete, modes); COS needs none of them.
+[What each does](docs/MACHINE.md#the-consoles).
+
 ## Menu options
 
 - Load boot file, Expander disk, Disk drives and Printer file take the four files of
@@ -193,6 +197,9 @@ Keys go to the station (**F2**) while it is shown, and to the operator's console
 - `Load a boot file from the menu to start it.`: the four files of [Starting COS](#starting-cos)
   have to be chosen each time the core is started.
 - `INVALID COMMAND`: the command was typed in small letters. Press Caps Lock.
+- Typing shows on the screen but the computer does not answer, and the top line says `BLK`: the
+  terminal is in block mode. Press **F10**.
+- The top line says `PRT` or `WPT`, or new text is dim: press **F11**, then **Ctrl+F11**.
 - `ENTER DATE` comes back: the year must be 80 to 99.
 - `DISK NOT INITIALIZED` and `START ABORTED`: the Expander disk file is not chosen. Choose it,
   and the Disk drives file, and type the `START` line again.
