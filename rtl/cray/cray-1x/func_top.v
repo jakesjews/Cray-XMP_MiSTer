@@ -1301,7 +1301,7 @@ localparam VLOG      = 3'b000,   //vector logical
 	//The S registers.  Port 0 reads Sj, which is nothing for j = 0; port 1 Sk, which
 	//for k = 0 is a word with only its sign bit set; port 2 Si.
 	wire [63:0] s_j_raw, s_k_raw;
-	wire [63:0] s_r0;
+	wire s_r0_neg, s_r0_zero;
 	res_regfile #(
 		.W   (64),
 		.NL  (SL_N),
@@ -1327,15 +1327,16 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_data    ({s_i_data, s_k_raw, s_j_raw}),
 		.i_ex_addr (s_ex_addr),
 		.o_ex_data (s_ex_data),
-		.o_r0      (s_r0)
+		.o_r0_neg  (s_r0_neg),
+		.o_r0_zero (s_r0_zero)
 	);
 	assign s_j_data = s_j_raw;
 	assign s_k_data = {s_k_raw[63] | (cip_k == 3'd0), s_k_raw[62:0]};
 	//These signals are used for branching
-	assign s0_pos   = !s_r0[63];
-	assign s0_neg   = s_r0[63];
-	assign s0_zero  = (s_r0 == 64'b0);
-	assign s0_nzero = (s_r0 != 64'b0);
+	assign s0_pos   = !s_r0_neg;
+	assign s0_neg   = s_r0_neg;
+	assign s0_zero  = s_r0_zero;
+	assign s0_nzero = !s_r0_zero;
 
 
 
@@ -1372,7 +1373,7 @@ localparam VLOG      = 3'b000,   //vector logical
 	//The A registers.  Port 0 reads Aj, port 1 Ak and port 3 Ah, each nothing for
 	//register 0 (and Ak then is 1); port 2 Ai; port 4 A0.
 	wire [23:0] a_k_raw;
-	wire [23:0] a_r0;
+	wire a_r0_neg, a_r0_zero;
 	res_regfile #(
 		.W   (24),
 		.NL  (AL_N),
@@ -1398,14 +1399,15 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_data    ({a_a0_data, a_h_data, a_i_data, a_k_raw, a_j_data}),
 		.i_ex_addr (a_ex_addr),
 		.o_ex_data (a_ex_data),
-		.o_r0      (a_r0)
+		.o_r0_neg  (a_r0_neg),
+		.o_r0_zero (a_r0_zero)
 	);
 	assign a_k_data = {a_k_raw[23:1], a_k_raw[0] | (cip_k == 3'd0)};
 	//These signals are used for branching
-	assign a0_pos   = !a_r0[23];
-	assign a0_neg   = a_r0[23];
-	assign a0_zero  = (a_r0 == 24'b0);
-	assign a0_nzero = (a_r0 != 24'b0);
+	assign a0_pos   = !a_r0_neg;
+	assign a0_neg   = a_r0_neg;
+	assign a0_zero  = a_r0_zero;
+	assign a0_nzero = !a_r0_zero;
 
 
 	//025 writes (Ai) to Bjk, and a return jump writes P to B00, in the clock after the

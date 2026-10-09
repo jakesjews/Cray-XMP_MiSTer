@@ -58,13 +58,16 @@ module res_regfile #(
 
 	input  wire [  2:0] i_ex_addr,
 	output wire [W-1:0] o_ex_data,
-	output wire [W-1:0] o_r0        // register 0, for the branch tests
+	// register 0, for the branch tests: its sign, and whether it is zero, which is
+	// worked out when the register is written
+	output wire         o_r0_neg,
+	output wire         o_r0_zero
 );
 
 	reg [W-1:0] data[0:7];
 
 	assign o_ex_data = data[i_ex_addr];
-	assign o_r0      = data[0];
+	assign o_r0_neg  = data[0][W-1];
 
 	// ---- in
 	genvar r, p, b;
@@ -86,6 +89,12 @@ module res_regfile #(
 				else if (we) data[r] <= din;
 		end
 	endgenerate
+
+	reg r0_zero;
+	always @(posedge clk)
+		if (rst) r0_zero <= 1'b1;
+		else if (g_reg[0].we) r0_zero <= (g_reg[0].din == {W{1'b0}});
+	assign o_r0_zero = r0_zero;
 
 `ifdef VERILATOR
 	// two results for one register in one clock would mean the issue logic let
