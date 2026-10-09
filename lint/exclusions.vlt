@@ -219,5 +219,9 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 's_next_d'*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 's_head_hot'*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 's_next_hot'*"
+// res_regfile.v: a lane of one clock is told by the current instruction, the
+// others by what is at stage 1 of the lane
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/res_regfile.v" -match "*Bits of signal are not used: 'i_next_*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/res_regfile.v" -match "*Bits of signal are not used: 'i_now_lane'*"
 // res_lanes.v: only a lane without a delay line is told its arrivals from outside
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/res_lanes.v" -match "*i_ext_*"

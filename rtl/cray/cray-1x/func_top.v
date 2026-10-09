@@ -365,11 +365,15 @@ module func_top (
 	//while the instruction is in NIP (cray_predecode) and kept in a register that is
 	//loaded together with CIP, so that the decision to issue starts from flip-flops.
 	wire [PD_W-1:0] pd_nip, pd_none;
-	reg  [PD_W-1:0] pd;
-	wire [     7:0] rd_a = pd[PD_RD_A+:8];  // registers the current instruction reads
-	wire [     7:0] rd_s = pd[PD_RD_S+:8];
-	wire            opnd_busy;  // one of them still has a result on its way
-	wire            cip_issue;  // the current instruction issues this clock
+	reg  [   PD_W-1:0] pd;
+	//the current instruction is one, and its result takes this lane of one clock:
+	//for the read ports of the registers (res_regfile.v), kept beside pd
+	reg  [SL_LATE-1:0] s_now_lane;
+	reg  [AL_LATE-1:0] a_now_lane;
+	wire [        7:0] rd_a = pd[PD_RD_A+:8];  // registers the current instruction reads
+	wire [        7:0] rd_s = pd[PD_RD_S+:8];
+	wire               opnd_busy;  // one of them still has a result on its way
+	wire               cip_issue;  // the current instruction issues this clock
 
 	cray_predecode predecode (
 		.i_parcel(nip),
@@ -746,15 +750,17 @@ module func_top (
 	//1) accept the incoming data from the instruction buffers
 	always @(posedge clk)
 		if (rst || x_request || x_done) begin
-			nip_fault <= 1'b0;
-			cip_fault <= 1'b0;
-			nip       <= 16'b0;
-			cip       <= 16'b0;
-			lip       <= 16'b0;
-			nip_vld   <= 1'b0;
-			cip_vld   <= 1'b0;
-			lip_vld   <= 1'b0;
-			pd        <= pd_none;
+			nip_fault  <= 1'b0;
+			cip_fault  <= 1'b0;
+			nip        <= 16'b0;
+			cip        <= 16'b0;
+			lip        <= 16'b0;
+			nip_vld    <= 1'b0;
+			cip_vld    <= 1'b0;
+			lip_vld    <= 1'b0;
+			pd         <= pd_none;
+			s_now_lane <= {SL_LATE{1'b0}};
+			a_now_lane <= {AL_LATE{1'b0}};
 		end else if (nip_in_vld && issue_vld) begin
 			nip_fault <= p_oof;
 			cip_fault <= nip_fault && nip_vld && !take_branch;
@@ -766,16 +772,20 @@ module func_top (
 			lip_vld <= take_branch ? 1'b0 : two_parcel_nip; //1'b1; //nip_vld;   //Only set it if you have a two_parcel_nip, and you haven't just branched
 			nip_vld <= (two_parcel_nip || take_branch) ? 1'b0 : 1'b1;            //Set it if you didn't branch and the current cycle holds a one parcel nip
 			cip_vld <= take_branch ? 1'b0 : nip_vld;
+			s_now_lane <= {SL_LATE{nip_vld && !take_branch}} & SL_ONE & pd_nip[PD_S_LANE+:SL_LATE];
+			a_now_lane <= {AL_LATE{nip_vld && !take_branch}} & AL_ONE & pd_nip[PD_A_LANE+:AL_LATE];
 		end  //To catch the case where instruction issues during an I-cache miss.
 			 //Set cip_vld=0, preserve everything else.
 		else if (issue_vld) begin
-			nip     <= nip;
-			lip     <= lip;
-			cip     <= 16'b0;
-			pd      <= pd_none;
-			lip_vld <= 1'b0;  //lip_vld;
-			nip_vld <= take_branch ? 1'b0 : nip_vld;  //nip_vld;
-			cip_vld <= 1'b0;
+			nip        <= nip;
+			lip        <= lip;
+			cip        <= 16'b0;
+			pd         <= pd_none;
+			lip_vld    <= 1'b0;  //lip_vld;
+			nip_vld    <= take_branch ? 1'b0 : nip_vld;  //nip_vld;
+			cip_vld    <= 1'b0;
+			s_now_lane <= {SL_LATE{1'b0}};
+			a_now_lane <= {AL_LATE{1'b0}};
 		end
 
 	//Two parcel instructions
@@ -1296,6 +1306,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.W   (64),
 		.NL  (SL_N),
 		.NB  (SL_LATE),
+		.ONE (SL_ONE),
 		.NP  (3),
 		.ZERO(3'b011)
 	) s_rf (
@@ -1311,7 +1322,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_issue   (issue_vld),
 		.i_next_v  (s_next_v[SL_LATE-1:0]),
 		.i_next_d  (s_next_d[3*SL_LATE-1:0]),
-		.i_now_lane({SL_LATE{cip_vld}} & pd[PD_S_LANE+:SL_LATE]),
+		.i_now_lane(s_now_lane),
 		.i_now_d   (pd[PD_S_DNUM+:3]),
 		.o_data    ({s_i_data, s_k_raw, s_j_raw}),
 		.i_ex_addr (s_ex_addr),
@@ -1366,6 +1377,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.W   (24),
 		.NL  (AL_N),
 		.NB  (AL_LATE),
+		.ONE (AL_ONE),
 		.NP  (5),
 		.ZERO(5'b01011)
 	) A_rf (
@@ -1381,7 +1393,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_issue   (issue_vld),
 		.i_next_v  (a_next_v[AL_LATE-1:0]),
 		.i_next_d  (a_next_d[3*AL_LATE-1:0]),
-		.i_now_lane({AL_LATE{cip_vld}} & pd[PD_A_LANE+:AL_LATE]),
+		.i_now_lane(a_now_lane),
 		.i_now_d   (pd[PD_A_DNUM+:3]),
 		.o_data    ({a_a0_data, a_h_data, a_i_data, a_k_raw, a_j_data}),
 		.i_ex_addr (a_ex_addr),

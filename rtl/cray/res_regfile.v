@@ -20,9 +20,11 @@
 // from what will then be at the heads of the lanes and from the register the
 // port will then read.  That is the same register as now if the current
 // instruction does not issue, and i_addr_nxt if it does.  A lane of one clock
-// has its result at the head in the next clock only if the current instruction
-// is of that lane and issues (i_now_lane, i_now_d); the others say what is at
-// stage 1 (i_next_v, i_next_d).
+// (those in ONE) has its result at the head in the next clock only if the
+// current instruction is of that lane and issues (i_now_lane, i_now_d); the
+// others say what is at stage 1 (i_next_v, i_next_d).  Whether the instruction
+// issues is known last of all, so everything else is formed beside it and it
+// only picks.
 //
 // A port in ZERO reads register 0 as nothing: all bits zero.
 
@@ -30,6 +32,7 @@ module res_regfile #(
 	parameter          W    = 64,
 	parameter          NL   = 4,   // lanes
 	parameter          NB   = 2,   // the first NB of them are read off the lane
+	parameter [NB-1:0] ONE  = 0,   // those of them that take one clock
 	parameter          NP   = 3,   // read ports
 	parameter [NP-1:0] ZERO = 0
 ) (
@@ -49,7 +52,7 @@ module res_regfile #(
 	input  wire            i_issue,
 	input  wire [  NB-1:0] i_next_v,
 	input  wire [3*NB-1:0] i_next_d,
-	input  wire [  NB-1:0] i_now_lane,
+	input  wire [  NB-1:0] i_now_lane,  // the current instruction is one, and its result takes this lane (of ONE)
 	input  wire [     2:0] i_now_d,
 	output wire [W*NP-1:0] o_data,
 
@@ -110,24 +113,29 @@ module res_regfile #(
 		for (p = 0; p < NP; p = p + 1) begin : g_port
 			wire [   2:0] cur = i_addr[3*p+:3];
 			wire [   2:0] nxt = i_addr_nxt[3*p+:3];
+			wire          cur_reg = !(ZERO[p] && (cur == 3'd0));  // the port reads a register, not nothing
+			wire          nxt_reg = !(ZERO[p] && (nxt == 3'd0));
 			reg  [NB-1:0] hit;  // the port reads the result of this lane
 			reg           own;  // it reads the register itself
 			wire [NB-1:0] if_issue, if_held;
 			for (b = 0; b < NB; b = b + 1) begin : g_hit
-				assign if_issue[b] = !(ZERO[p] && (nxt == 3'd0)) &&
-					((i_next_v[b] && (i_next_d[3*b+:3] == nxt)) || (i_now_lane[b] && (i_now_d == nxt)));
-				assign if_held[b] = !(ZERO[p] && (cur == 3'd0)) && i_next_v[b] && (i_next_d[3*b+:3] == cur);
+				if (ONE[b]) begin : g_one
+					assign if_issue[b] = nxt_reg && i_now_lane[b] && (i_now_d == nxt);
+					assign if_held[b]  = 1'b0;
+				end else begin : g_more
+					assign if_issue[b] = nxt_reg && i_next_v[b] && (i_next_d[3*b+:3] == nxt);
+					assign if_held[b]  = cur_reg && i_next_v[b] && (i_next_d[3*b+:3] == cur);
+				end
 			end
+			wire own_issue = nxt_reg && !(|if_issue);
+			wire own_held = cur_reg && !(|if_held);
 			always @(posedge clk)
 				if (rst) begin
 					hit <= {NB{1'b0}};
 					own <= 1'b1;
-				end else if (i_issue) begin
-					hit <= if_issue;
-					own <= !(|if_issue) && !(ZERO[p] && (nxt == 3'd0));
 				end else begin
-					hit <= if_held;
-					own <= !(|if_held) && !(ZERO[p] && (cur == 3'd0));
+					hit <= i_issue ? if_issue : if_held;
+					own <= i_issue ? own_issue : own_held;
 				end
 
 			reg     [W-1:0] q;

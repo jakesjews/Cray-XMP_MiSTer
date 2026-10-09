@@ -485,7 +485,8 @@ module mem_fu (
 	reg e_store, e_s;
 	reg [2:0] e_i;
 	reg [21:0] e_ah, e_jkm;
-	reg  [63:0] e_data;
+	reg  [63:0] e_sdata;  // the registers as they come: which of them is stored is picked a clock later
+	reg  [23:0] e_adata;
 	wire [21:0] e_rel = e_ah + e_jkm;
 	wire        e_oof = ({1'b0, e_rel} >= room);
 	always @(posedge clk) begin
@@ -495,7 +496,8 @@ module mem_fu (
 		e_i     <= ins[8:6];
 		e_ah    <= i_ah_data;
 		e_jkm   <= jkm;
-		e_data  <= ins[13] ? i_si_data : {40'b0, i_ai_data};
+		e_sdata <= i_si_data;
+		e_adata <= i_ai_data;
 	end
 
 	// The queue, and the reference that is being made.  A load from outside the
@@ -530,7 +532,7 @@ module mem_fu (
 			q_ok     <= 1'b1;
 		end else begin
 			if (e_v) begin
-				q[q_wr] <= {e_oof, e_store, e_s, e_i, e_rel, e_data};
+				q[q_wr] <= {e_oof, e_store, e_s, e_i, e_rel, e_s ? e_sdata : {40'b0, e_adata}};
 				q_wr    <= q_wr + 3'd1;
 			end
 			q_n  <= q_n_nxt;

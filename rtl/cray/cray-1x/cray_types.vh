@@ -35,6 +35,7 @@ SL_VEL = 8,  //an element of a V register, 4
 SL_FMUL = 9,  //the floating point multiplier, 7
 SL_FRA = 10,  //the reciprocal, 14
 SL_N = 11, SL_LATE = 5;
+localparam [SL_LATE-1:0] SL_ONE = 5'b00011;  // the lanes of one clock among the first SL_LATE
 localparam [4*SL_N-1:0] SL_DELAY = {4'd14, 4'd7, 4'd4, 4'd3, 4'd3, 4'd2, 4'd0, 4'd6, 4'd2, 4'd1, 4'd1};
 
 // The same for the A registers
@@ -61,4 +62,5 @@ AL_MEM = 4,  //a word from memory
 AL_MUL = 5,  //the address multiplier, 4
 AL_CH = 6,  //033: a channel, 4
 AL_N = 7, AL_LATE = 5;
+localparam [AL_LATE-1:0] AL_ONE = 5'b00001;
 localparam [4*AL_N-1:0] AL_DELAY = {4'd4, 4'd4, 4'd0, 4'd4, 4'd3, 4'd2, 4'd1};
