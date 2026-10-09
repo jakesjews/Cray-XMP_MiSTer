@@ -99,8 +99,22 @@ module emu #(
 	localparam IOS_HZ = 80000000;
 
 	wire clk_sys, clk_cpu, clk_ios;
+	// The 50 MHz pin reaches three PLLs by itself, and the framework has one of
+	// them.  The CPU's clock and the I/O Subsystem's take the other two; the
+	// video clock, which has time to spare, gets its reference over a global
+	// clock line and can sit anywhere.
+	wire clk_50m_global;
+	cyclonev_clkena #(
+		.clock_type       ("Global Clock"),
+		.ena_register_mode("always enabled")
+	) ref_video (
+		.inclk (CLK_50M),
+		.ena   (1'b1),
+		.enaout(),
+		.outclk(clk_50m_global)
+	);
 	pll pll (
-		.refclk  (CLK_50M),
+		.refclk  (clk_50m_global),
 		.rst     (1'b0),
 		.outclk_0(clk_sys),
 		.locked  ()

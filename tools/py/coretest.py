@@ -58,6 +58,8 @@ import os
 import subprocess
 import sys
 
+import mktape
+
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 CORE = os.environ.get('CRAY_CORE_SIM', os.path.join(ROOT, 'sim/build/core/Vemu'))
 AMPEX = os.environ.get('CRAY_AMPEX_SIM', os.path.join(ROOT, 'sim/build/ampex/Vterm_ampex_tb'))
@@ -165,9 +167,9 @@ def tape(system):
             ['--mount', '10/05/89  01:02:03=' + blank, '--type', '+300=FDUMP STATION/JINSTALL @MT0:\\r',
              '--until', 'FDUMP COMPLETE', '--tape-out', by_core, '--ms', '4000'])
     ok = report(r, ['FDUMP COMPLETE', 'the text was shown'])
-    a = open(by_model, 'rb').read()
-    b = open(by_core, 'rb').read() if os.path.exists(by_core) else b''
-    if len(a) < 4000 or b[:len(a)] != a:
+    a = list(mktape.items(open(by_model, 'rb').read()))
+    b = list(mktape.items(open(by_core, 'rb').read())) if os.path.exists(by_core) else []
+    if len(a) < 6 or a != b:
         print('FAIL: the tape the core wrote is not the model\'s (%s, %s)' % (by_model, by_core))
         return False
     return ok

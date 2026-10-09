@@ -193,7 +193,8 @@ impl Tape {
     }
 
     /// The tape as a file: its records and file marks, and behind them
-    /// the four bytes that end it if there is room for them.
+    /// bytes of all ones, of which the first four end it: to the length of
+    /// the file it came from, or those four alone.
     pub fn to_file(&self) -> Vec<u8> {
         let mut out = Vec::new();
         for item in &self.items {
@@ -204,9 +205,8 @@ impl Tape {
                 out.extend(n.to_le_bytes());
             }
         }
-        if self.room.is_none_or(|room| out.len() + 4 <= room) {
-            out.extend([0xFF; 4]);
-        }
+        let length = self.room.unwrap_or(out.len() + 4);
+        out.resize(length.max(out.len()), 0xFF);
         out
     }
 
@@ -471,6 +471,7 @@ mod tests {
             file[16..30],
             [2, 0, 0, 0, 0xAB, 0xCD, 2, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]
         );
+        assert_eq!(file.len(), 1024);
         // 1,024 bytes are the tape: 26 are used, and a record of 990 with its lengths is the last that fits
         assert!(!tape.write(&[0; 496]));
         assert_eq!(tape.state(), TapeState::End);

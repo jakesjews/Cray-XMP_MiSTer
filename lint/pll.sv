@@ -23,3 +23,17 @@ module pll_ios (
 	output wire locked
 );
 endmodule
+
+// The clock buffer that puts the CPU PLL's reference on a global clock line.
+module cyclonev_clkena #(
+	parameter clock_type        = "Auto",
+	parameter ena_register_mode = "always enabled"
+) (
+	input  wire inclk,
+	input  wire ena,
+	output wire enaout,
+	output wire outclk
+);
+	assign outclk = inclk;
+	assign enaout = ena;
+endmodule

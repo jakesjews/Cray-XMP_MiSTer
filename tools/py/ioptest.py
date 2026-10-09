@@ -79,6 +79,8 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
+import mktape
+
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 SIM = os.environ.get('CRAY_IOP_SIM', os.path.join(ROOT, 'sim/build/iop/Viop_cpu'))
 RANDOM = os.path.join(ROOT, 'tools/target/release/examples/iop_random')
@@ -301,12 +303,12 @@ def tape(system):
                 print('\n'.join(ran.stdout.strip().splitlines()[-16:]))
                 failed = True
         if not failed:
-            a, b = open(by_model, 'rb').read(), open(by_machine, 'rb').read()
-            if len(a) < 4000 or b[:len(a)] != a:
+            a, b = (list(mktape.items(open(path, 'rb').read())) for path in (by_model, by_machine))
+            if len(a) < 6 or a != b:
                 print('FAIL: the tape the machine wrote is not the model\'s (%s, %s)' % (by_model, by_machine))
                 failed = True
             else:
-                print('the kernel dumped a file to tape and loaded it back: %d bytes of tape, the same on the model and the machine' % len(a))
+                print('the kernel dumped a file to tape and loaded it back: %d records and file marks, the same on the model and the machine' % len(a))
     print('%d runs, %d failed' % (runs, failed))
     return not failed
 

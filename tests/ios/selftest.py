@@ -11,9 +11,11 @@ not depend on:
   1. the real-time clock sets its Done flag
   2. of two channels that ask for an interrupt the lower numbered one is
      reported: the clock, then Buffer Memory, then none
-  3. the MIOP reads the tape on the Peripheral Expander: a record, a short
-     record of an odd number of bytes, a file mark, the end of the tape; it
-     rewinds, reads part of a record and finds the rest passed over
+  3. the MIOP reads the tape on the Peripheral Expander, which has no write
+     ring: a record, a short record of an odd number of bytes, a file mark,
+     the end of the tape; it rewinds, spaces over a record and reads the one
+     behind it, spaces back to the load point, is refused a write, reads
+     part of a record and finds the rest passed over
   4. it writes two sectors to the expander's disk, reads them back to another
      place under another name for the same sectors, and finds them the same;
      the drive's interrupt request obeys the mask and the interrupt mode;
@@ -40,7 +42,8 @@ not depend on:
 
 Each processor then writes its number and OK on its console (channel 47 on
 the MIOP, 43 on the others), or F and a letter: C clock, P Q R priority,
-a to m the tape, n the Done flag of the expander, W a drive did not finish,
+a to m, o, S and Y the tape, n the Done flag of the expander, W a drive did
+not finish,
 B wrong address after the read, X what was read is not what was written,
 E the printer did not finish,
 I J K M N the interrupt request of the disk, p to z the BIOP's drive and
@@ -314,7 +317,7 @@ def program(cpu):
     p.label('expander_idle')
 
     exb(5, TAPE)
-    register(1, 0x0080, 'a')             # at the load point
+    register(1, 0x0084, 'a')             # at the load point, without a write ring
     exb(0o15, 0x4000)
     exb(0o16, 0x10000 - 200)
     exb(0o14, 0)
@@ -324,7 +327,7 @@ def program(cpu):
     p.ins(0o011, 0o77)                   # the device that asks
     check(TAPE, 'b')
     exb(0o17, 2)
-    register(1, 0x0001, 'c')
+    register(1, 0x0005, 'c')
     register(2, 0x4000 + 150, 'd')
     register(3, 0x10000 - 50, 'e')
     parcel(0x4000, RECORD[0] << 8 | RECORD[1], 'f')
@@ -333,11 +336,20 @@ def program(cpu):
     register(2, 0x4103, 'g')
     parcel(0x4102, 0x0500, 'g')
     tape(0, 0x4400, 200)
-    register(1, 0x8101, 'h')             # a file mark
+    register(1, 0x8105, 'h')             # a file mark
     tape(0, 0x4400, 200)
-    register(1, 0x8201, 'i')             # the end of the tape
+    register(1, 0x8205, 'i')             # the end of the tape
     tape(1)
-    register(1, 0x0081, 'j')             # rewound
+    register(1, 0x0085, 'j')             # rewound
+    tape(3, 0, 1)                        # forward over the first record
+    register(1, 0x0005, 'S')
+    tape(0, 0x4500, 200)                 # the one behind it
+    parcel(0x4502, 0x0500, 'S')
+    tape(4, 0, 2)                        # back over both
+    register(1, 0x0085, 'Y')
+    register(3, 0, 'Y')                  # the count of records is used up
+    tape(5, 0x4000, 4)                   # no write ring: illegal
+    register(1, 0x9085, 'o')
     tape(0, 0x4200, 2)                   # two parcels of the record; the rest is passed over
     register(2, 0x4202, 'k')
     parcel(0x4202, 0, 'k')
