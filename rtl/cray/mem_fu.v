@@ -616,11 +616,11 @@ module mem_fu (
 	reg        [ 1:0] age;  // clocks since the start, up to 3
 	reg signed [31:0] span;  // from the first address to the last
 
-	// Addresses wrap at 22 bits; a transfer that would is not let go.
+	// Addresses wrap at 22 bits; a transfer that would is not let go.  The last
+	// address is inside if it is below the words the field has from its base on.
 	wire signed [32:0] last_rel = $signed({9'b0, address}) + $signed({span[31], span});
-	wire        [32:0] last_abs = $unsigned(last_rel) + {9'b0, base};
 	wire               wraps = (|address[23:22]) || (|last_rel[31:22]);
-	wire               last_in = !last_rel[32] && !wraps && (last_abs < {10'b0, limit});
+	wire               last_in = !last_rel[32] && !wraps && ({1'b0, last_rel[21:0]} < room);
 
 	wire fit_now = !r_gather && !r_scatter && !out_of_field && last_in;
 
