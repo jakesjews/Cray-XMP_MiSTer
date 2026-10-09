@@ -18,11 +18,24 @@ SBUS_MEM = 5'b10100,  //memory
 SBUS_NONE = 5'b10101, SBUS_INTERCPU = 5'b10110,  //072: the clock, or an X-MP shared register
 SBUS_HI_SR = 5'b10111;  //073i01 - some status bits to Si
 
-// The registers a result can be in when its clock comes (the S result bus)
-localparam SSLOT_BUS = 2'd0,  //the register that gathers most units
-SSLOT_LOG = 2'd1,  //the logical unit's own
-SSLOT_SHIFT = 2'd2,  //the shift unit's own, single shifts
-SSLOT_FADD = 2'd3;  //the floating point adder's own
+// The lanes of results to the S registers (res_lanes.v): one for every unit, as
+// long as the unit takes.  The first SL_LATE deliver in the clock the result is
+// due; the others have it a clock before and write it then (res_regfile.v).
+// The lane of memory, for the time being, takes the two clocks the word needs
+// from the end of its reference.
+localparam SL_LOG = 0,  //the logical unit, 1 clock
+SL_NOW = 1,  //what is there when the instruction issues: an immediate value, the vector mask, the clock, a shared, status or T register
+SL_SHIFT = 2,  //the shift unit, single shifts, 2 clocks
+SL_FADD = 3,  //the floating point adder, 6
+SL_MEM = 4,  //a word from memory
+SL_CONST = 5,  //(Ak) or a constant, 2
+SL_SH2 = 6,  //the shift unit, double shifts, 3
+SL_ADD = 7,  //the adder, 3
+SL_VEL = 8,  //an element of a V register, 4
+SL_FMUL = 9,  //the floating point multiplier, 7
+SL_FRA = 10,  //the reciprocal, 14
+SL_N = 11, SL_LATE = 5;
+localparam [4*SL_N-1:0] SL_DELAY = {4'd14, 4'd7, 4'd4, 4'd3, 4'd3, 4'd2, 4'd2, 4'd6, 4'd2, 4'd1, 4'd1};
 
 // The same for the A registers
 localparam ABUS_IMM = 4'b0000,  //immediate
@@ -38,7 +51,14 @@ ABUS_CHANNEL = 4'b1001,  //033: a 6 Mbyte channel
 ABUS_MEM = 4'b1010,  //memory
 ABUS_NONE = 4'b1011, ABUS_INTERCPU = 4'b1100;  //026ij7: an X-MP shared register
 
-localparam ASLOT_BUS = 2'd0,  //the register that gathers most units
-ASLOT_ADD = 2'd1,  //the address adder's own
-ASLOT_POP = 2'd2,  //the population count's own
-ASLOT_LZ = 2'd3;  //the leading zero count's own
+// The lanes of results to the A registers, the first AL_LATE delivering in the
+// clock the result is due
+localparam AL_NOW = 0,  //what is there when the instruction issues: an immediate value, (Sj), a B or shared register
+AL_ADD = 1,  //the address adder, 2 clocks
+AL_LZ = 2,  //the leading zero count, 3
+AL_POP = 3,  //the population count, 4
+AL_MEM = 4,  //a word from memory
+AL_MUL = 5,  //the address multiplier, 4
+AL_CH = 6,  //033: a channel, 4
+AL_N = 7, AL_LATE = 5;
+localparam [4*AL_N-1:0] AL_DELAY = {4'd4, 4'd4, 4'd2, 4'd4, 4'd3, 4'd2, 4'd1};

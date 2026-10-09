@@ -29,24 +29,22 @@ localparam PD_H073 = PD_H072 + 1;  // 1  073: a 175 whose last test is not in th
 
 // for the S scheduler
 localparam PD_S_TYPE = PD_H073 + 1;  // 1
-localparam PD_S_STAGE = PD_S_TYPE + 1;  // 14  stage of the result pipeline its result enters
-localparam PD_S_SRC = PD_S_STAGE + 14;  // 5  unit the result comes from
+localparam PD_S_LANE = PD_S_TYPE + 1;  // 11  the lane its result takes to the registers (SL_N of cray_types.vh)
+localparam PD_S_SRC = PD_S_LANE + 11;  // 5  unit the result comes from
 localparam PD_S_DEST = PD_S_SRC + 5;  // 8  register the result goes to, one bit a register
 localparam PD_S_DNUM = PD_S_DEST + 8;  // 3  the same as a number
 localparam PD_S_CMASK = PD_S_DNUM + 3;  // 8  registers that must have no result on its way
-localparam PD_S_WPC = PD_S_CMASK + 8;  // 14  stage that must be empty for its result
-localparam PD_S_077 = PD_S_WPC + 14;  // 1
+localparam PD_S_077 = PD_S_CMASK + 8;  // 1
 localparam PD_S_VW = PD_S_077 + 1;  // 8  077: the V register it writes
 
 // for the A scheduler
 localparam PD_A_TYPE = PD_S_VW + 8;  // 1
-localparam PD_A_STAGE = PD_A_TYPE + 1;  // 11
-localparam PD_A_SRC = PD_A_STAGE + 11;  // 4
+localparam PD_A_LANE = PD_A_TYPE + 1;  // 7  the lane its result takes (AL_N)
+localparam PD_A_SRC = PD_A_LANE + 7;  // 4
 localparam PD_A_DEST = PD_A_SRC + 4;  // 8
 localparam PD_A_DNUM = PD_A_DEST + 8;  // 3
 localparam PD_A_CMASK = PD_A_DNUM + 3;  // 8
-localparam PD_A_WPC = PD_A_CMASK + 8;  // 11
-localparam PD_A_025 = PD_A_WPC + 11;  // 1
+localparam PD_A_025 = PD_A_CMASK + 8;  // 1
 localparam PD_A_SCONF = PD_A_025 + 1;  // 8  023: the S register it reads
 
 // for the V scheduler

@@ -1,0 +1,87 @@
+         IDENT     TOGETHER
+* Results that are due in the same clock period: each arrives by its own way,
+* and an instruction that issues in that clock takes it as an operand.
+*
+* The floating product of 064 is due 7 clock periods after it issues, the sum
+* of 060 after 3, the shift of 054 after 2 and the logical product of 044
+* after 1.  Issued 4, 5 and 6 clock periods behind the product they are all
+* due with it, and the instructions behind them read all four.  The address
+* registers do the same with the product of 032 (4), the sum of 030 (2) and a
+* constant (1), and with the two counts of 026 and 027.  Every result is
+* stored, for the comparison with the reference model.
+*
+* Direct start: exchange package at words 0-17 (monitor mode), code at word 40.
+TEXIT    =         O'17777762           test exit register
+OUT      =         O'2000
+         ORG       0
+         CON       P.START*O'100000000                 word 0: P (bits 47:24), A0
+         CON       0                                   word 1: IBA, A1
+         CON       O'7777774100000000                  word 2: ILA max, monitor mode
+         CON       O'0000000030000000000000            word 3: XA = 1, VL = 64
+         CON       0                                   word 4: DBA, cluster 0
+         CON       O'7777774000000000                  word 5: DLA max
+         BSSZ      D'10
+         ORG       O'40
+START    S4        K2,0
+         S5        K3,0
+         S3        O'1234567
+         A3        7
+         A5        O'11
+* 064 at 1, due at 8; three PASS; 060 at 5, 054 at 6, 044 at 7: all due at 8
+         S1        S4*FS5
+         PASS
+         PASS
+         PASS
+         S2        S4+S5
+         S3        S3<10
+         S6        S4&S5
+         S7        S1!S2               two of them in the clock they arrive
+         S0        S3\S6               and the other two
+         OUT,0     S7
+         OUT+1,0   S0
+         OUT+2,0   S1
+         OUT+3,0   S2
+         OUT+4,0   S3
+         OUT+5,0   S6
+* once more over registers that hold something else, read a clock later
+         S1        S6
+         S2        S6
+         S1        S4*FS5
+         PASS
+         PASS
+         PASS
+         S2        S5-S4
+         S3        S3>3
+         S6        #S4&S5
+         PASS
+         S7        S1\S2
+         S0        S3!S6
+         OUT+6,0   S7
+         OUT+7,0   S0
+* the A registers: 032 at 1, due at 5; a PASS; 030 at 3, 022 at 4: all due at 5
+         A1        A3*A5
+         PASS
+         A2        A3+A5
+         A4        O'31
+         A7        A1+A2               the product and the sum in the clock they arrive
+         A0        A4+A1               and the constant
+         OUT+10,0  A7
+         OUT+11,0  A0
+         OUT+12,0  A1
+         OUT+13,0  A2
+         OUT+14,0  A4
+* the population count (4) and the leading zero count (3) with a sum (2)
+         S1        O'7070707
+         A1        PS1
+         A2        ZS1
+         A4        A3+A5
+         A7        A1+A2
+         A0        A4+A7
+         OUT+15,0  A7
+         OUT+16,0  A0
+         A6        0
+         TEXIT,0   A6
+HANG     J         HANG
+K2       CON       O'0400014000000000000000             2.0
+K3       CON       O'0400026000000000000000             3.0
+         END

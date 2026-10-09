@@ -5,11 +5,11 @@
 //////////////////////////////////////////////////////////////////
 //
 //This block controls instruction-issue and scheduling
-//for instructions that utilize the address "A" Register file,
-//including all pipelining features
+//for instructions that utilize the address "A" Register file.
 //
 //What it has to know about the current instruction comes decoded, from the
 //register func_top keeps beside CIP (cray_predecode, the fields PD_A_*).
+//The results on their way are kept in res_lanes.v, a lane for every unit.
 
 module a_scheduler (
 	clk,
@@ -17,26 +17,27 @@ module a_scheduler (
 	i_cip_vld,
 	i_issue_vld,
 	i_type,
-	i_stage,
-	i_src,
+	i_lane,
 	i_dest,
 	i_dnum,
 	i_cmask,
-	i_wpc,
 	i_025,
 	i_sconf,
 	i_s_wait_mask,
+	i_mem_v,
+	i_mem_d,
 	o_a_issue,
-	o_a_result_en,
-	o_a_result_dest,
-	o_a_result_slot,
-	o_a_next_en,
-	o_a_next_src,
 	o_a_type,
+	o_head_v,
+	o_head_hot,
+	o_next_v,
+	o_next_d,
+	o_next_hot,
 	o_a0_busy,
 	o_a_res_mask,
 	o_a_wait_mask
 );
+	`include "cray_types.vh"
 
 	input wire clk;
 	input wire rst;
@@ -44,155 +45,64 @@ module a_scheduler (
 	input wire i_issue_vld;
 	//the instruction in CIP
 	input wire i_type;  // an A-type instruction
-	input wire [10:0] i_stage;  // the pipeline stage its result enters when it issues
-	input wire [3:0] i_src;  // the unit the result comes from
+	input wire [AL_N-1:0] i_lane;  // the lane its result takes
 	input wire [7:0] i_dest;  // the register the result goes to, one bit a register
 	input wire [2:0] i_dnum;  // and as a number
 	input wire [7:0] i_cmask;  // registers that must have no result on its way
-	input wire [10:0] i_wpc;  // the stage that must be empty for the result to enter
-	input wire i_025;  // Bjk <= Ai
-	input wire [7:0] i_sconf;  // 023: the S register that must have no result on its way
-	input wire [7:0] i_s_wait_mask;  // S registers with a result that is not on the bus yet
-	output wire o_a_issue;
-	output wire o_a_result_en;
-	output wire [2:0] o_a_result_dest;
-	output wire [1:0] o_a_result_slot;  // which result register the head entry's value is in
-	output wire o_a_next_en;  // the entry behind the head: its result is due in the next clock
-	output wire [3:0] o_a_next_src;
-	output wire o_a_type;
-	output wire o_a0_busy;
-	output wire [7:0] o_a_res_mask;  // registers with a result on its way or on the bus
-	output wire [7:0] o_a_wait_mask;  // registers with a result that is not on the bus yet
+	input wire i_025;  // Bjk Ai
+	input wire [7:0] i_sconf;  // 023: the S register it reads
+	input wire [7:0] i_s_wait_mask;
+	//a word from memory is at the registers in the next clock, and the register it is for
+	input wire i_mem_v;
+	input wire [2:0] i_mem_d;
 
-	reg [10:0] a_result_pipe_en;  //the registers to pipeline the a_result_en signal
-	reg [3:0] a_result_pipe_src[0:10];  //the unit the value comes from
-	reg [7:0] a_result_pipe_dest[0:10];  //the a-register we're targeting
-	reg [7:0] res_mask;
-	reg [7:0] wait_mask;  // the same without the head of the pipeline
+	output wire o_a_issue;
+	output wire o_a_type;
+	//the lanes, for the A registers (res_regfile.v)
+	output wire [AL_N-1:0] o_head_v;
+	output wire [8*AL_N-1:0] o_head_hot;
+	output wire [AL_N-1:0] o_next_v;
+	output wire [3*AL_N-1:0] o_next_d;
+	output wire [8*AL_N-1:0] o_next_hot;
+	output wire o_a0_busy;
+	output wire [7:0] o_a_res_mask;  // registers with a result on its way or at the head of a lane
+	output wire [7:0] o_a_wait_mask;  // registers with a result that is not at the head yet
+
 	wire a_to_b_vld;  //for executing 7'o025
 	wire s_conflict;
-	wire write_path_conflict;
 
 	//Let's figure out if it's okay to issue the special case of the 7'o025 instruction (Bjk <= Ai)
-	assign a_to_b_vld = i_025 && !(|(i_dest & wait_mask));
-
-	assign o_a_result_en = a_result_pipe_en[0];
+	assign a_to_b_vld = i_025 && !(|(i_dest & o_a_wait_mask));
 
 	//o_a_type get asserted for 7'b0_01?_??? and 7'b1_000_??? instructions, except for 7'b0_011_1??
 	// which translates to: 020-037, 100-107, except for 034-037; and not for 027??7
 	assign o_a_type = i_cip_vld && i_type;
 
-	//the stage the result of the current instruction enters, and whether it does now
-	wire [10:0] enters = {11{i_cip_vld}} & i_stage;
-	wire [10:0] load = {11{i_issue_vld}} & enters;
+	res_lanes #(
+		.NL   (AL_N),
+		.DELAY(AL_DELAY)
+	) lanes (
+		.clk        (clk),
+		.rst        (rst),
+		.i_issue    (i_issue_vld),
+		.i_lane     ({AL_N{i_cip_vld}} & i_lane),
+		.i_dest     (i_dest),
+		.i_dnum     (i_dnum),
+		.i_ext_v    ({{(AL_N - AL_MEM - 1) {1'b0}}, i_mem_v, {AL_MEM{1'b0}}}),
+		.i_ext_d    ({{(3 * (AL_N - AL_MEM - 1)) {1'b0}}, i_mem_d, {(3 * AL_MEM) {1'b0}}}),
+		.o_head_v   (o_head_v),
+		.o_head_hot (o_head_hot),
+		.o_next_v   (o_next_v),
+		.o_next_d   (o_next_d),
+		.o_next_hot (o_next_hot),
+		.o_res_mask (o_a_res_mask),
+		.o_wait_mask(o_a_wait_mask)
+	);
 
-	//Let's pipeline the A result_bus enable signals, the associated
-	//'source' signals, and the destination signals.
-	//We always want to advance the pipeline forward, even if there is a stall in cip_vld,
-	//which happens every time there is a 2-parcel instruction. i_issue_vld is gated by a_type,
-	//which looks at cip_vld, so it should be fine.
-	genvar g;
-	generate
-		for (g = 0; g < 11; g = g + 1) begin : g_stage
-			if (g == 10) begin : g_last
-				always @(posedge clk)
-					if (rst) begin
-						a_result_pipe_en[g]   <= 1'b0;
-						a_result_pipe_src[g]  <= 4'b0;
-						a_result_pipe_dest[g] <= 8'b0;
-					end else begin
-						a_result_pipe_en[g]   <= load[g];
-						a_result_pipe_src[g]  <= load[g] ? i_src : 4'b0;
-						a_result_pipe_dest[g] <= load[g] ? i_dest : 8'b0;
-					end
-			end else begin : g_shift
-				always @(posedge clk)
-					if (rst) begin
-						a_result_pipe_en[g]   <= 1'b0;
-						a_result_pipe_src[g]  <= 4'b0;
-						a_result_pipe_dest[g] <= 8'b0;
-					end else begin
-						a_result_pipe_en[g]   <= load[g] || a_result_pipe_en[g+1];
-						a_result_pipe_src[g]  <= load[g] ? i_src : a_result_pipe_src[g+1];
-						a_result_pipe_dest[g] <= load[g] ? i_dest : a_result_pipe_dest[g+1];
-					end
-			end
-		end
-	endgenerate
-
-	//The destination at the head of the pipeline as a number, in a register of
-	//its own beside the one-hot form, as in the S scheduler.
-	function [2:0] number_of;
-		input [7:0] one_hot;
-		begin
-			number_of = one_hot[0] ? 3'b000 :
-					one_hot[1] ? 3'b001 :
-					one_hot[2] ? 3'b010 :
-					one_hot[3] ? 3'b011 :
-					one_hot[4] ? 3'b100 :
-					one_hot[5] ? 3'b101 :
-					one_hot[6] ? 3'b110 :
-					one_hot[7] ? 3'b111 : 3'b000;
-		end
-	endfunction
-
-	reg [2:0] head_dest;
-	always @(posedge clk)
-		if (rst) head_dest <= 3'b000;
-		else head_dest <= load[0] ? i_dnum : number_of(a_result_pipe_dest[1]);
-
-	assign o_a_result_dest = head_dest;
-
-	//Which result register holds the value of the head entry, and the entry behind the
-	//head, for the A result bus in func_top
-	`include "cray_types.vh"
-
-	function [1:0] slot_of;
-		input [3:0] src;
-		begin
-			slot_of = (src == ABUS_A_ADD) ? ASLOT_ADD : (src == ABUS_S_POP) ? ASLOT_POP : (src == ABUS_S_LZ) ? ASLOT_LZ : ASLOT_BUS;
-		end
-	endfunction
-
-	reg [1:0] head_slot;
-	always @(posedge clk) head_slot <= load[0] ? slot_of(i_src) : slot_of(a_result_pipe_src[1]);
-
-	assign o_a_result_slot = head_slot;
-	assign o_a_next_en     = a_result_pipe_en[1];
-	assign o_a_next_src    = a_result_pipe_src[1];
-
-	//All the registers that results are on their way to, in a register of its own,
-	//loaded with what the pipeline holds after this clock, as in the S scheduler.
-	reg     [7:0] mask_held;
-	integer       m;
-	always @* begin
-		mask_held = 8'b0;
-		for (m = 1; m < 11; m = m + 1) mask_held = mask_held | a_result_pipe_dest[m];
-	end
-	always @(posedge clk)
-		if (rst) res_mask <= 8'b0;
-		else res_mask <= mask_held | ({8{|load}} & i_dest);
-
-	assign o_a_res_mask = res_mask;  //the memory unit needs to know if there is a conflict
-
-	//The same without the head of the pipeline, as in the S scheduler
-	reg [7:0] wait_held;
-	always @* begin
-		wait_held = 8'b0;
-		for (m = 2; m < 11; m = m + 1) wait_held = wait_held | a_result_pipe_dest[m];
-	end
-	always @(posedge clk)
-		if (rst) wait_mask <= 8'b0;
-		else wait_mask <= wait_held | ({8{|load[10:1]}} & i_dest);
-
-	assign o_a_wait_mask = wait_mask;
-	assign o_a0_busy     = res_mask[0];
+	assign o_a0_busy = o_a_res_mask[0];
 
 	//check if it's free to issue
-	assign write_path_conflict = |(i_wpc & a_result_pipe_en);
-
 	assign s_conflict = |(i_sconf & i_s_wait_mask);
-
-	assign o_a_issue = !write_path_conflict && o_a_type && !s_conflict && (~(|(i_cmask & wait_mask)) || a_to_b_vld);
+	assign o_a_issue  = o_a_type && !s_conflict && (~(|(i_cmask & o_a_wait_mask)) || a_to_b_vld);
 
 endmodule

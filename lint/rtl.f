@@ -47,6 +47,8 @@ rtl/terminal/term_video.v
 rtl/cray/cray_cpu.v
 rtl/cray/cray_mem_mux.v
 rtl/cray/mem_fu.v
+rtl/cray/res_lanes.v
+rtl/cray/res_regfile.v
 rtl/cray/vector_add.v
 rtl/cray/vector_logical.v
 rtl/cray/vector_pop.v
@@ -60,7 +62,6 @@ rtl/cray/fp_recip.v
 rtl/cray/v_optrack.v
 rtl/cray/v_regfile.v
 rtl/cray/xmp_channels.v
-rtl/cray/cray-1x/a_regfile.v
 rtl/cray/cray-1x/a_res_lut.v
 rtl/cray/cray-1x/a_scheduler.v
 rtl/cray/cray-1x/addr_add.v
@@ -72,7 +73,6 @@ rtl/cray/cray-1x/i_buf.v
 rtl/cray/cray-1x/imm_gen.v
 rtl/cray/cray-1x/lz_sub.v
 rtl/cray/cray-1x/s_const_gen.v
-rtl/cray/cray-1x/s_regfile.v
 rtl/cray/cray-1x/s_res_lut.v
 rtl/cray/cray-1x/s_scheduler.v
 rtl/cray/cray-1x/scalar_add.v

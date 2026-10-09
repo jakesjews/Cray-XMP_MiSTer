@@ -16,6 +16,7 @@ module cray_predecode (
 	o_pd
 );
 	`include "cray_pd.vh"
+	`include "cray_types.vh"
 
 	input wire [15:0] i_parcel;
 	output wire [PD_W-1:0] o_pd;
@@ -95,12 +96,10 @@ module cray_predecode (
 	//------------------------------------------------------------------
 	// S scheduler
 	//------------------------------------------------------------------
-	wire [3:0] s_delay;
 	wire [4:0] s_src;
 	wire       s_en;
 	s_res_lut sbus_res_lut (
 		.i_cip      (dec),
-		.o_delay    (s_delay),
 		.o_src      (s_src),
 		.o_s_dest_en(s_en)
 	);
@@ -111,15 +110,26 @@ module cray_predecode (
 	wire s_to_s0 = (d_op == 7'o052) || (d_op == 7'o053);
 	wire [7:0] s_dest = s_to_s0 ? 8'b00000001 : di;
 
-	//A result due in d clocks enters stage d - 1 of the pipeline.  The pipeline takes
-	//results due in 1 to 7, 11 and 14 clocks, and the stage it enters must
-	//be about to become empty: that is stage d now.
-	localparam [13:0] S_TAKES = 14'b10010001111111;
+	//The lane the result takes to the registers follows from the unit it comes from
+	reg [3:0] s_lane;
+	always @*
+		case (s_src)
+			SBUS_S_LOG:     s_lane = SL_LOG;
+			SBUS_S_SHIFT:   s_lane = SL_SHIFT;
+			SBUS_FP_ADD:    s_lane = SL_FADD;
+			SBUS_MEM:       s_lane = SL_MEM;
+			SBUS_CONST_GEN: s_lane = SL_CONST;
+			SBUS_S_SHIFT2:  s_lane = SL_SH2;
+			SBUS_S_ADD:     s_lane = SL_ADD;
+			SBUS_V:         s_lane = SL_VEL;
+			SBUS_FP_MULT:   s_lane = SL_FMUL;
+			SBUS_FP_RA:     s_lane = SL_FRA;
+			default:        s_lane = SL_NOW;
+		endcase
 	genvar g;
 	generate
-		for (g = 0; g < 14; g = g + 1) begin : g_s
-			assign o_pd[PD_S_STAGE+g] = s_type && s_en && S_TAKES[g] && (s_delay == g + 1);
-			assign o_pd[PD_S_WPC+g]   = s_en && (s_delay == g);
+		for (g = 0; g < SL_N; g = g + 1) begin : g_s
+			assign o_pd[PD_S_LANE+g] = s_type && s_en && (s_lane == g);
 		end
 	endgenerate
 
@@ -139,12 +149,10 @@ module cray_predecode (
 	//------------------------------------------------------------------
 	// A scheduler
 	//------------------------------------------------------------------
-	wire [3:0] a_delay;
 	wire [3:0] a_src;
 	wire       a_en;
 	a_res_lut abus_res_lut (
 		.i_cip      (dec),
-		.o_delay    (a_delay),
 		.o_src      (a_src),
 		.o_a_dest_en(a_en)
 	);
@@ -153,12 +161,20 @@ module cray_predecode (
 	wire a_type = (((d_op[6:4] == 3'b001) && (d_op[6:2] != 5'b00111)) || (d_op[6:3] == 4'b1000)) &&
 		!((d_op == 7'b0010111) && (dec[2:0] == 3'b111));
 
-	//results due in 1, 2, 3, 4, 6 and 11 clocks
-	localparam [10:0] A_TAKES = 11'b10000101111;
+	reg [2:0] a_lane;
+	always @*
+		case (a_src)
+			ABUS_A_ADD:   a_lane = AL_ADD;
+			ABUS_S_LZ:    a_lane = AL_LZ;
+			ABUS_S_POP:   a_lane = AL_POP;
+			ABUS_MEM:     a_lane = AL_MEM;
+			ABUS_A_MULT:  a_lane = AL_MUL;
+			ABUS_CHANNEL: a_lane = AL_CH;
+			default:      a_lane = AL_NOW;
+		endcase
 	generate
-		for (g = 0; g < 11; g = g + 1) begin : g_a
-			assign o_pd[PD_A_STAGE+g] = a_type && a_en && A_TAKES[g] && (a_delay == g + 1);
-			assign o_pd[PD_A_WPC+g]   = a_en && (a_delay == g);
+		for (g = 0; g < AL_N; g = g + 1) begin : g_a
+			assign o_pd[PD_A_LANE+g] = a_type && a_en && (a_lane == g);
 		end
 	endgenerate
 

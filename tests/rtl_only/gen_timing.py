@@ -99,6 +99,16 @@ ONE_BUFFER = [
     # result of the second reading out of the clock period of the shift's.)
     (3, '064 to S1, then 054 with a count of 10, then a PASS', ['S1 S4*FS5', 'S3 S3<10', 'PASS']),
     (2, '032 to A1, then 022 with the constant 10', ['A1 A3*A3', 'A4 10']),
+    # Results of different units that are due in the same clock period do not wait for
+    # each other: the manual has no such hold among its conditions.  A sum of 3 CPs and a
+    # shift of 2 behind it; a product of 7 CPs with a sum, a shift and a logical product
+    # that all arrive with it; an address product of 4 CPs with a sum and a constant.
+    (3, '060, then 054 due with it, then a PASS', ['S1 S4+S5', 'S3 S3<10', 'PASS']),
+    (6, '064, 3 CPs, then 060 due with it, then a PASS', ['S1 S4*FS5'] + PASS * 3 + ['S2 S4+S5', 'PASS']),
+    (8, '064, 3 CPs, then 060, 054 and 044 all due with it', ['S1 S4*FS5'] + PASS * 3 + ['S2 S4+S5', 'S3 S3<10', 'S0 S4&S5', 'PASS']),
+    (9, '064, 060, 054 and 044 due together, then all four used', ['S1 S4*FS5'] + PASS * 3 + ['S2 S4+S5', 'S3 S3<10', 'S0 S4&S5', 'S4 S1&S2', 'S5 S3&S0']),
+    (4, '032, 1 CP, then 030 due with it, then a PASS', ['A1 A3*A3', 'PASS', 'A2 A3+A3', 'PASS']),
+    (5, '032, 1 CP, then 030 and 022 due with it', ['A1 A3*A3', 'PASS', 'A2 A3+A3', 'A4 10', 'PASS']),
     # Chaining, X 4-12.  A register that is still to receive the result of an earlier
     # instruction does not hold issue as an operand: the operation takes each element when
     # it is there, and has it at its unit 4 CPs after it arrived at the register, as it has

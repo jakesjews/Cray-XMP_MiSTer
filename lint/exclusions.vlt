@@ -205,3 +205,17 @@ lint_off -rule UNUSEDSIGNAL -file "Cray-XMP.sv" -match "*Bits of signal are not 
 // blocks of 512 bytes.
 lint_off -rule UNUSEDSIGNAL -file "Cray-XMP.sv" -match "*Bits of signal are not used: 'img_mounted'[1:0]*"
 lint_off -rule UNUSEDSIGNAL -file "Cray-XMP.sv" -match "*Bits of signal are not used: 'img_size'[8:0]*"
+
+// func_top.v: of the lanes of results only some are read off the lane (the first
+// SL_LATE and AL_LATE), and only those need their stage 1 as numbers; the others
+// write from stage 1 and not from the head.
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'a_next_v'*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'a_next_d'*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'a_head_hot'*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'a_next_hot'*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 's_next_v'*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 's_next_d'*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 's_head_hot'*"
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 's_next_hot'*"
+// res_lanes.v: only a lane without a delay line is told its arrivals from outside
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/res_lanes.v" -match "*i_ext_*"

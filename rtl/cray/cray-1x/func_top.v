@@ -144,7 +144,6 @@ module func_top (
 	wire [63:0] s_j_data;  //scalar read data
 	wire [63:0] s_k_data;
 	wire [63:0] s_i_data;
-	wire [63:0] s_wr_data;  //64-bit data input to scalar register file
 	wire        s0_pos;
 	wire        s0_neg;
 	wire        s0_zero;
@@ -170,7 +169,6 @@ module func_top (
 	wire [23:0] a_i_data;
 	wire [23:0] a_h_data;
 	wire [23:0] a_a0_data;
-	wire [23:0] a_wr_data;  //24-bit data input to address register file
 	wire        a0_pos;
 	wire        a0_neg;
 	wire        a0_zero;
@@ -314,27 +312,18 @@ module func_top (
 	assign cip_k     = cip[2:0];
 	assign cip_h     = cip[11:9];
 
-	//A-type scheduler signals
-	wire       a_result_en;
-	wire       a_wr_en;
-	wire [2:0] a_result_dest;  //the a-register we're targeting
-	wire [1:0] a_result_slot;  //which result register its value is in
-	wire       a_next_en;  //a result is due in the next clock
-	wire [3:0] a_next_src;  //and where it comes from
-	wire [2:0] a_wr_addr;
-	wire       a_issue;
-	wire       a_type;
-	wire       a0_busy;
+	//A-type scheduler signals: the lanes of results to the A registers
+	wire [  AL_N-1:0] a_next_v;
+	wire [3*AL_N-1:0] a_next_d;
+	wire [8*AL_N-1:0] a_head_hot, a_next_hot;
+	wire a_issue;
+	wire a_type;
+	wire a0_busy;
 
-	//S-type scheduler signals
-	wire [4:0] s_result_src;
-	wire       s_result_en;
-	wire       s_wr_en;
-	wire [2:0] s_result_dest;  //the s-register we're targeting
-	wire [1:0] s_result_slot;  //which result register its value is in
-	wire       s_next_en;  //a result is due in the next clock
-	wire [4:0] s_next_src;  //and where it comes from
-	wire [2:0] s_wr_addr;
+	//S-type scheduler signals: the lanes of results to the S registers
+	wire [SL_N-1:0] s_head_v, s_next_v;
+	wire [3*SL_N-1:0] s_next_d;
+	wire [8*SL_N-1:0] s_head_hot, s_next_hot;
 	wire       s_issue;
 	wire       s_type;
 	wire [7:0] vreg_swrite;
@@ -787,70 +776,51 @@ module func_top (
 
 	//Track S-type related reservations, destination data and if we can issue or not
 	s_scheduler ssched (
-		.clk            (clk),
-		.rst            (rst),
-		.i_cip_vld      (cip_vld),
-		.i_issue_vld    (issue_vld),
-		.i_type         (pd[PD_S_TYPE]),
-		.i_stage        (pd[PD_S_STAGE+:14]),
-		.i_src          (pd[PD_S_SRC+:5]),
-		.i_dest         (pd[PD_S_DEST+:8]),
-		.i_dnum         (pd[PD_S_DNUM+:3]),
-		.i_cmask        (pd[PD_S_CMASK+:8]),
-		.i_wpc          (pd[PD_S_WPC+:14]),
-		.i_077          (pd[PD_S_077]),
-		.i_vw           (pd[PD_S_VW+:8]),
-		.o_s_issue      (s_issue),
-		.o_s_result_en  (s_result_en),
-		.o_s_result_src (s_result_src),
-		.o_s_result_dest(s_result_dest),
-		.o_s_result_slot(s_result_slot),
-		.o_s_next_en    (s_next_en),
-		.o_s_next_src   (s_next_src),
-		.o_s_type       (s_type),
-		.i_vreg_busy    (vreg_busy),
-		.o_vreg_write   (vreg_swrite_raw),
-		.o_s0_busy      (s0_busy),
-		.o_s_res_mask   (s_res_mask),
-		.o_s_wait_mask  (s_wait_mask)
+		.clk          (clk),
+		.rst          (rst),
+		.i_cip_vld    (cip_vld),
+		.i_issue_vld  (issue_vld),
+		.i_type       (pd[PD_S_TYPE]),
+		.i_lane       (pd[PD_S_LANE+:SL_N]),
+		.i_dest       (pd[PD_S_DEST+:8]),
+		.i_dnum       (pd[PD_S_DNUM+:3]),
+		.i_cmask      (pd[PD_S_CMASK+:8]),
+		.i_077        (pd[PD_S_077]),
+		.i_vw         (pd[PD_S_VW+:8]),
+		.i_mem_v      (1'b0),
+		.i_mem_d      (3'd0),
+		.o_s_issue    (s_issue),
+		.o_s_type     (s_type),
+		.i_vreg_busy  (vreg_busy),
+		.o_vreg_write (vreg_swrite_raw),
+		.o_head_v     (s_head_v),
+		.o_head_hot   (s_head_hot),
+		.o_next_v     (s_next_v),
+		.o_next_d     (s_next_d),
+		.o_next_hot   (s_next_hot),
+		.o_s0_busy    (s0_busy),
+		.o_s_res_mask (s_res_mask),
+		.o_s_wait_mask(s_wait_mask)
 	);
 
 	//////////////////////////////////////////////////
-	//           The S result bus                   //
+	//           Results to the S registers         //
 	//////////////////////////////////////////////////
-	//The result of an instruction that issued d clocks ago is on s_bus, on its way into
-	//its register and to whoever reads that register in this same clock.  It comes
-	//straight out of a flip-flop: either the result register of a unit that has one to
-	//itself (the logical unit, the single shifts, the floating point adder), or s_bus_q,
-	//which gathered it in the clock before.  That keeps the way from a result into the
-	//next unit short, which the logical unit needs most: its result is due in the
-	//clock after its instruction issues, and can be an operand there.
+	//Every unit that delivers to the S registers has a way of its own into them (a
+	//lane, res_lanes.v), so results of different units that are due in the same
+	//clock all arrive in it.  What each lane delivers, and when its value is there:
 	//
-	//What s_bus_q gathers, and in which clock after the issue of the instruction:
-	//  the clock of issue   040, 041 immediate; 072 clock or shared register; 073 vector
-	//                       mask and status register; 074 T register
-	//  1 clock after        071 constant; 12h word from memory
-	//  2 clocks after       056, 057 double shift; 060, 061 sum
-	//  3 clocks after       076 element of a V register
-	//  6 clocks after       064 to 067 floating product
-	//  13 clocks after      070 reciprocal
-	//Each is taken when its entry of the scheduler's pipeline is next to the head.  The
-	//ones of the clock of issue have no entry yet: they are taken from the instruction
-	//in CIP when no entry is next to the head, and are of no use if it does not issue.
+	//  in the clock the result is due, where an instruction that issues in that
+	//  clock takes it off the lane:
+	//    the logical unit's result register; the single shifts'; the floating
+	//    point adder's; s_now_q, which took what was there when the instruction
+	//    issued (040, 041 immediate; 072 clock or shared register; 073 vector mask
+	//    and status register; 074 T register); s_mem_q, a word from memory
+	//  a clock before it is due, when it is written to its register, which nobody
+	//  reads before the result is due:
+	//    071 constant; 056, 057 double shift; 060, 061 sum; 076 element of a V
+	//    register; 064 to 067 floating product; 070 reciprocal
 	wire [4:0] cip_src = pd[PD_S_SRC+:5];
-	wire       s_now = !s_next_en;
-	wire       due_imm = s_now && ((cip_src == SBUS_IMM) || (cip_src == SBUS_COMP_IMM));
-	wire       due_vm = s_now && (cip_src == SBUS_V_MASK);
-	wire       due_sr = s_now && (cip_src == SBUS_HI_SR);
-	wire       due_t = s_now && (cip_src == SBUS_T_BUS);
-	wire       due_const = s_next_en && (s_next_src == SBUS_CONST_GEN);
-	wire       due_shr = s_now && (cip_src == SBUS_INTERCPU);
-	wire       due_mem = s_next_en && (s_next_src == SBUS_MEM);
-	wire       due_shift2 = s_next_en && (s_next_src == SBUS_S_SHIFT2);
-	wire       due_add = s_next_en && (s_next_src == SBUS_S_ADD);
-	wire       due_v = s_next_en && (s_next_src == SBUS_V);
-	wire       due_fmul = s_next_en && (s_next_src == SBUS_FP_MULT);
-	wire       due_fra = s_next_en && (s_next_src == SBUS_FP_RA);
 
 	//076: the element is out of its V register two clocks after the instruction issues
 	reg [2:0] v_elem_j1, v_elem_j2;
@@ -861,80 +831,84 @@ module func_top (
 		v_elem_q  <= vreg_sel(v_rd_data, v_elem_j2);
 	end
 
-	reg [63:0] s_bus_q;
-	always @(posedge clk)
-		s_bus_q <= ({64{due_imm}} & s_imm_out) | ({64{due_vm}} & vector_mask) | ({64{due_sr}} & status_reg) | ({64{due_t}} & t_jk_data) |
-			({64{due_const}} & s_const_out) | ({64{due_shr}} & shr_s) | ({64{due_mem}} & data_from_mem_to_regs) |
-			({64{due_shift2}} & s_shft_out) | ({64{due_add}} & s_add_out) | ({64{due_v}} & v_elem_q) |
-			({64{due_fmul}} & f_mul_early) | ({64{due_fra}} & f_ra_early);
+	reg [63:0] s_now_q, s_mem_q;
+	always @(posedge clk) begin
+		s_now_q <= ({64{(cip_src == SBUS_IMM) || (cip_src == SBUS_COMP_IMM)}} & s_imm_out) | ({64{cip_src == SBUS_V_MASK}} & vector_mask) |
+			({64{cip_src == SBUS_HI_SR}} & status_reg) | ({64{cip_src == SBUS_T_BUS}} & t_jk_data) | ({64{cip_src == SBUS_INTERCPU}} & shr_s);
+		s_mem_q <= data_from_mem_to_regs;
+	end
 
-	wire [63:0] s_bus = (s_result_slot == SSLOT_LOG) ? s_log_out :
-		(s_result_slot == SSLOT_SHIFT) ? s_shft_out : (s_result_slot == SSLOT_FADD) ? f_add_out : s_bus_q;
-
-	assign s_wr_data = !x_swap ? s_bus : x_data;
-	assign s_wr_en   = !x_swap ? s_result_en : (x_load && x_cnt[3]);
-	assign s_wr_addr = !x_swap ? s_result_dest : s_ex_addr;
+	wire [64*SL_N-1:0] s_lane_data;
+	assign s_lane_data[64*SL_LOG+:64]   = s_log_out;
+	assign s_lane_data[64*SL_NOW+:64]   = s_now_q;
+	assign s_lane_data[64*SL_SHIFT+:64] = s_shft_out;
+	assign s_lane_data[64*SL_FADD+:64]  = f_add_out;
+	assign s_lane_data[64*SL_MEM+:64]   = s_mem_q;
+	assign s_lane_data[64*SL_CONST+:64] = s_const_out;
+	assign s_lane_data[64*SL_SH2+:64]   = s_shft_out;
+	assign s_lane_data[64*SL_ADD+:64]   = s_add_out;
+	assign s_lane_data[64*SL_VEL+:64]   = v_elem_q;
+	assign s_lane_data[64*SL_FMUL+:64]  = f_mul_early;
+	assign s_lane_data[64*SL_FRA+:64]   = f_ra_early;
+	//a lane writes at the head, or from stage 1 if it has its value a clock early
+	wire [8*SL_N-1:0] s_lane_wr = {s_next_hot[8*SL_N-1:8*SL_LATE], s_head_hot[8*SL_LATE-1:0]};
 
 
 	//Track A-type related reservations, destination data and if we can issue or not
 	a_scheduler asched (
-		.clk            (clk),
-		.rst            (rst),
-		.i_cip_vld      (cip_vld),
-		.i_issue_vld    (issue_vld),
-		.i_type         (pd[PD_A_TYPE]),
-		.i_stage        (pd[PD_A_STAGE+:11]),
-		.i_src          (pd[PD_A_SRC+:4]),
-		.i_dest         (pd[PD_A_DEST+:8]),
-		.i_dnum         (pd[PD_A_DNUM+:3]),
-		.i_cmask        (pd[PD_A_CMASK+:8]),
-		.i_wpc          (pd[PD_A_WPC+:11]),
-		.i_025          (pd[PD_A_025]),
-		.i_sconf        (pd[PD_A_SCONF+:8]),
-		.i_s_wait_mask  (s_wait_mask),
-		.o_a_issue      (a_issue),
-		.o_a_result_en  (a_result_en),
-		.o_a_result_dest(a_result_dest),
-		.o_a_result_slot(a_result_slot),
-		.o_a_next_en    (a_next_en),
-		.o_a_next_src   (a_next_src),
-		.o_a_type       (a_type),
-		.o_a0_busy      (a0_busy),
-		.o_a_res_mask   (a_res_mask),
-		.o_a_wait_mask  (a_wait_mask)
+		.clk          (clk),
+		.rst          (rst),
+		.i_cip_vld    (cip_vld),
+		.i_issue_vld  (issue_vld),
+		.i_type       (pd[PD_A_TYPE]),
+		.i_lane       (pd[PD_A_LANE+:AL_N]),
+		.i_dest       (pd[PD_A_DEST+:8]),
+		.i_dnum       (pd[PD_A_DNUM+:3]),
+		.i_cmask      (pd[PD_A_CMASK+:8]),
+		.i_025        (pd[PD_A_025]),
+		.i_sconf      (pd[PD_A_SCONF+:8]),
+		.i_s_wait_mask(s_wait_mask),
+		.i_mem_v      (1'b0),
+		.i_mem_d      (3'd0),
+		.o_a_issue    (a_issue),
+		.o_a_type     (a_type),
+		.o_head_v     (),
+		.o_head_hot   (a_head_hot),
+		.o_next_v     (a_next_v),
+		.o_next_d     (a_next_d),
+		.o_next_hot   (a_next_hot),
+		.o_a0_busy    (a0_busy),
+		.o_a_res_mask (a_res_mask),
+		.o_a_wait_mask(a_wait_mask)
 	);
 
 
 	//////////////////////////////////////////////////
-	//           The A result bus                   //
+	//           Results to the A registers         //
 	//////////////////////////////////////////////////
-	//As for the S registers.  The address adder, the population count and the leading
-	//zero count have result registers to themselves; a_bus_q gathers the rest:
-	//  the clock of issue   020 to 022 immediate; 023 (Sj); 024 B register;
-	//                       026ij7 shared register
-	//  1 clock after        10h word from memory
-	//  3 clocks after       033 channel; 032 product
+	//As for the S registers.  In the clock the result is due: the address adder's
+	//result register, the leading zero count's and the population count's; a_now_q,
+	//which took what was there when the instruction issued (020 to 022 immediate;
+	//023 (Sj); 024 B register; 026ij7 shared register); a_mem_q, a word from memory.
+	//A clock before: 032 product; 033 channel.
 	wire [3:0] cip_asrc = pd[PD_A_SRC+:4];
-	wire a_now = !a_next_en;
-	wire        adue_imm = a_now && ((cip_asrc == ABUS_IMM) || (cip_asrc == ABUS_COMP_IMM) || (cip_asrc == ABUS_SIMM) || (cip_asrc == ABUS_S_BUS));
-	wire adue_b = a_now && (cip_asrc == ABUS_B_BUS);
-	wire adue_shr = a_now && (cip_asrc == ABUS_INTERCPU);
-	wire adue_mem = a_next_en && (a_next_src == ABUS_MEM);
-	wire adue_ch = a_next_en && (a_next_src == ABUS_CHANNEL);
-	wire adue_mul = a_next_en && (a_next_src == ABUS_A_MULT);
+	wire a_now_imm = (cip_asrc == ABUS_IMM) || (cip_asrc == ABUS_COMP_IMM) || (cip_asrc == ABUS_SIMM) || (cip_asrc == ABUS_S_BUS);
 
-	reg [23:0] a_bus_q;
-	always @(posedge clk)
-		a_bus_q <= ({24{adue_imm}} & a_imm_out) | ({24{adue_b}} & b_jk_data) | ({24{adue_shr}} & shr_a) |
-			({24{adue_mem}} & data_from_mem_to_regs[23:0]) | ({24{adue_ch}} & ch_a) | ({24{adue_mul}} & a_mul_out);
+	reg [23:0] a_now_q, a_mem_q;
+	always @(posedge clk) begin
+		a_now_q <= ({24{a_now_imm}} & a_imm_out) | ({24{cip_asrc == ABUS_B_BUS}} & b_jk_data) | ({24{cip_asrc == ABUS_INTERCPU}} & shr_a);
+		a_mem_q <= data_from_mem_to_regs[23:0];
+	end
 
-	wire [23:0] a_bus = (a_result_slot == ASLOT_ADD) ? a_add_out :
-		(a_result_slot == ASLOT_POP) ? a_pop_out : (a_result_slot == ASLOT_LZ) ? a_lz_out : a_bus_q;
-
-	assign a_wr_data = !x_swap ? a_bus : x_data[23:0];
-
-	assign a_wr_en   = !x_swap ? a_result_en : (x_load && !x_cnt[3]);
-	assign a_wr_addr = !x_swap ? a_result_dest : a_ex_addr;
+	wire [24*AL_N-1:0] a_lane_data;
+	assign a_lane_data[24*AL_NOW+:24] = a_now_q;
+	assign a_lane_data[24*AL_ADD+:24] = a_add_out;
+	assign a_lane_data[24*AL_LZ+:24]  = a_lz_out;
+	assign a_lane_data[24*AL_POP+:24] = a_pop_out;
+	assign a_lane_data[24*AL_MEM+:24] = a_mem_q;
+	assign a_lane_data[24*AL_MUL+:24] = a_mul_out;
+	assign a_lane_data[24*AL_CH+:24]  = ch_a;
+	wire [8*AL_N-1:0] a_lane_wr = {a_next_hot[8*AL_N-1:8*AL_LATE], a_head_hot[8*AL_LATE-1:0]};
 
 	//Track V-type instructions
 	v_scheduler vsched (
@@ -1294,32 +1268,43 @@ localparam VLOG      = 3'b000,   //vector logical
 		end
 	endfunction
 
-	s_regfile #(
-		.WIDTH   (64),
-		.DEPTH   (8),
-		.LOGDEPTH(3)
+	//The S registers.  Port 0 reads Sj, which is nothing for j = 0; port 1 Sk, which
+	//for k = 0 is a word with only its sign bit set; port 2 Si.
+	wire [63:0] s_j_raw, s_k_raw;
+	wire [63:0] s_r0;
+	res_regfile #(
+		.W   (64),
+		.NL  (SL_N),
+		.NB  (SL_LATE),
+		.NP  (3),
+		.ZERO(3'b011)
 	) s_rf (
 		.clk       (clk),
 		.rst       (rst),
-		.i_j_addr  (cip_j),
-		.i_k_addr  (cip_k),
-		.i_i_addr  (cip_i),
+		.i_data    (s_lane_data),
+		.i_wr      (s_lane_wr),
+		.i_x_en    (x_load && x_cnt[3]),
+		.i_x_addr  (s_ex_addr),
+		.i_x_data  (x_data),
+		.i_addr    ({cip_i, cip_k, cip_j}),
+		.i_addr_nxt({nip[8:6], nip[2:0], nip[5:3]}),
+		.i_issue   (issue_vld),
+		.i_next_v  (s_next_v[SL_LATE-1:0]),
+		.i_next_d  (s_next_d[3*SL_LATE-1:0]),
+		.i_now_lane({SL_LATE{cip_vld}} & pd[PD_S_LANE+:SL_LATE]),
+		.i_now_d   (pd[PD_S_DNUM+:3]),
+		.o_data    ({s_i_data, s_k_raw, s_j_raw}),
 		.i_ex_addr (s_ex_addr),
 		.o_ex_data (s_ex_data),
-		.o_j_data  (s_j_data),
-		.o_k_data  (s_k_data),
-		.o_i_data  (s_i_data),
-		.i_wr_addr (s_wr_addr),
-		.i_wr_data (s_wr_data),
-		.i_wr_en   (s_wr_en),
-		.i_bus     (s_bus),
-		.i_byp_addr(s_result_dest),
-		.i_byp_en  (s_result_en),
-		.o_s0_pos  (s0_pos),
-		.o_s0_neg  (s0_neg),
-		.o_s0_zero (s0_zero),
-		.o_s0_nzero(s0_nzero)
+		.o_r0      (s_r0)
 	);
+	assign s_j_data = s_j_raw;
+	assign s_k_data = {s_k_raw[63] | (cip_k == 3'd0), s_k_raw[62:0]};
+	//These signals are used for branching
+	assign s0_pos   = !s_r0[63];
+	assign s0_neg   = s_r0[63];
+	assign s0_zero  = (s_r0 == 64'b0);
+	assign s0_nzero = (s_r0 != 64'b0);
 
 
 
@@ -1353,35 +1338,42 @@ localparam VLOG      = 3'b000,   //vector logical
 	assign t_wr_data   = tw_en ? tw_data : data_from_mem_to_regs;
 	assign t_result_en = mem_t_wr_en || tw_en;
 
-	a_regfile #(
-		.WIDTH   (24),
-		.DEPTH   (8),
-		.LOGDEPTH(3)
+	//The A registers.  Port 0 reads Aj, port 1 Ak and port 3 Ah, each nothing for
+	//register 0 (and Ak then is 1); port 2 Ai; port 4 A0.
+	wire [23:0] a_k_raw;
+	wire [23:0] a_r0;
+	res_regfile #(
+		.W   (24),
+		.NL  (AL_N),
+		.NB  (AL_LATE),
+		.NP  (5),
+		.ZERO(5'b01011)
 	) A_rf (
 		.clk       (clk),
 		.rst       (rst),
-		.i_j_addr  (cip_j),
-		.i_k_addr  (cip_k),
-		.i_i_addr  (cip_i),
-		.i_h_addr  (cip_h),
+		.i_data    (a_lane_data),
+		.i_wr      (a_lane_wr),
+		.i_x_en    (x_load && !x_cnt[3]),
+		.i_x_addr  (a_ex_addr),
+		.i_x_data  (x_data[23:0]),
+		.i_addr    ({3'd0, cip_h, cip_i, cip_k, cip_j}),
+		.i_addr_nxt({3'd0, nip[11:9], nip[8:6], nip[2:0], nip[5:3]}),
+		.i_issue   (issue_vld),
+		.i_next_v  (a_next_v[AL_LATE-1:0]),
+		.i_next_d  (a_next_d[3*AL_LATE-1:0]),
+		.i_now_lane({AL_LATE{cip_vld}} & pd[PD_A_LANE+:AL_LATE]),
+		.i_now_d   (pd[PD_A_DNUM+:3]),
+		.o_data    ({a_a0_data, a_h_data, a_i_data, a_k_raw, a_j_data}),
 		.i_ex_addr (a_ex_addr),
 		.o_ex_data (a_ex_data),
-		.o_j_data  (a_j_data),
-		.o_k_data  (a_k_data),
-		.o_i_data  (a_i_data),
-		.o_h_data  (a_h_data),
-		.o_a0_data (a_a0_data),
-		.i_wr_addr (a_wr_addr),
-		.i_wr_data (a_wr_data),
-		.i_wr_en   (a_wr_en),
-		.i_bus     (a_bus),
-		.i_byp_addr(a_result_dest),
-		.i_byp_en  (a_result_en),
-		.o_a0_pos  (a0_pos),
-		.o_a0_neg  (a0_neg),
-		.o_a0_zero (a0_zero),
-		.o_a0_nzero(a0_nzero)
+		.o_r0      (a_r0)
 	);
+	assign a_k_data = {a_k_raw[23:1], a_k_raw[0] | (cip_k == 3'd0)};
+	//These signals are used for branching
+	assign a0_pos   = !a_r0[23];
+	assign a0_neg   = a_r0[23];
+	assign a0_zero  = (a_r0 == 24'b0);
+	assign a0_nzero = (a_r0 != 24'b0);
 
 
 	//025 writes (Ai) to Bjk, and a return jump writes P to B00, in the clock after the
@@ -1566,9 +1558,7 @@ localparam VLOG      = 3'b000,   //vector logical
 	assign fp_ra_busy  = tk_busy[5];
 
 	//A floating point range error is reported when the result is delivered
-	wire fp_range_err = (s_result_en && (((s_result_src==SBUS_FP_ADD)  && fp_add_err) ||
-									 ((s_result_src==SBUS_FP_MULT) && fp_mul_err) ||
-									 ((s_result_src==SBUS_FP_RA)   && fp_ra_err))) ||
+	wire fp_range_err = (s_head_v[SL_FADD] && fp_add_err) || (s_head_v[SL_FMUL] && fp_mul_err) || (s_head_v[SL_FRA] && fp_ra_err) ||
 					(tk_out_valid[4] && fp_add_err) ||
 					(tk_out_valid[3] && fp_mul_err) ||
 					(tk_out_valid[5] && fp_ra_err);

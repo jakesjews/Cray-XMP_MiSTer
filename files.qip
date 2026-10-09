@@ -30,6 +30,8 @@ set_global_assignment -name VERILOG_FILE rtl/terminal/term_video.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray_cpu.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray_mem_mux.v
 set_global_assignment -name VERILOG_FILE rtl/cray/mem_fu.v
+set_global_assignment -name VERILOG_FILE rtl/cray/res_lanes.v
+set_global_assignment -name VERILOG_FILE rtl/cray/res_regfile.v
 set_global_assignment -name VERILOG_FILE rtl/cray/vector_add.v
 set_global_assignment -name VERILOG_FILE rtl/cray/vector_logical.v
 set_global_assignment -name VERILOG_FILE rtl/cray/vector_pop.v
@@ -43,7 +45,6 @@ set_global_assignment -name VERILOG_FILE rtl/cray/fp_recip.v
 set_global_assignment -name VERILOG_FILE rtl/cray/v_optrack.v
 set_global_assignment -name VERILOG_FILE rtl/cray/v_regfile.v
 set_global_assignment -name VERILOG_FILE rtl/cray/xmp_channels.v
-set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/a_regfile.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/a_res_lut.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/a_scheduler.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/addr_add.v
@@ -55,7 +56,6 @@ set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/i_buf.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/imm_gen.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/lz_sub.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/s_const_gen.v
-set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/s_regfile.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/s_res_lut.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/s_scheduler.v
 set_global_assignment -name VERILOG_FILE rtl/cray/cray-1x/scalar_add.v

@@ -4,18 +4,16 @@
 //        Date:  1/20/14                                       //
 ////////////////////////////////////////////////////////////////////////
 //
-//This block contains the look-up tables used to figure out how
-//many cycles until the result will be available, and which
-//functional unit the result is available from.
+//This block contains the look-up table used to figure out which
+//functional unit the result is available from.  How many clocks
+//the unit takes is the length of its lane (cray_types.vh).
 
 module s_res_lut (
 	i_cip,
-	o_delay,
 	o_src,
 	o_s_dest_en
 );
 	input wire [15:0] i_cip;
-	output reg [3:0] o_delay;
 	output reg [4:0] o_src;
 	output wire o_s_dest_en;
 
@@ -27,52 +25,6 @@ module s_res_lut (
 						  !(i_cip[15:9]==7'o077) && 
 						  !((i_cip[15:9]==7'o073) && ((i_cip[5:0]==6'o02) || (i_cip[2:0]==3'o3))) ||
 						   (i_cip[15:12]==4'b1010);
-
-	always @* begin
-		case (i_cip[15:9])
-			7'o040:  o_delay = 4'd1;
-			7'o041:  o_delay = 4'd1;
-			7'o042:  o_delay = 4'd1;
-			7'o043:  o_delay = 4'd1;
-			7'o044:  o_delay = 4'd1;
-			7'o045:  o_delay = 4'd1;
-			7'o046:  o_delay = 4'd1;
-			7'o047:  o_delay = 4'd1;
-			7'o050:  o_delay = 4'd1;
-			7'o051:  o_delay = 4'd1;
-			7'o052:  o_delay = 4'd2;
-			7'o053:  o_delay = 4'd2;
-			7'o054:  o_delay = 4'd2;
-			7'o055:  o_delay = 4'd2;
-			7'o056:  o_delay = 4'd3;
-			7'o057:  o_delay = 4'd3;
-			7'o060:  o_delay = 4'd3;
-			7'o061:  o_delay = 4'd3;
-			7'o062:  o_delay = 4'd6;
-			7'o063:  o_delay = 4'd6;
-			7'o064:  o_delay = 4'd7;
-			7'o065:  o_delay = 4'd7;
-			7'o066:  o_delay = 4'd7;
-			7'o067:  o_delay = 4'd7;
-			7'o070:  o_delay = 4'd14;
-			7'o071:  o_delay = 4'd2;
-			7'o072:  o_delay = 4'd1;  //the clock or a shared register: 1 CP (HR-0032, instructions 072 - 075)
-			7'o073:  o_delay = 4'd1;
-			7'o074:  o_delay = 4'd1;
-			7'o076:  o_delay = 4'd4;
-			7'o120:  o_delay = 4'd2;
-			7'o121:  o_delay = 4'd2;
-			7'o122:  o_delay = 4'd2;
-			7'o123:  o_delay = 4'd2;
-			7'o124:  o_delay = 4'd2;
-			7'o125:  o_delay = 4'd2;
-			7'o126:  o_delay = 4'd2;
-			7'o127:  o_delay = 4'd2;
-			default: o_delay = 4'b0;
-		endcase
-	end
-
-
 
 	always @* begin
 		case (i_cip[15:9])
