@@ -576,7 +576,8 @@ module mem_fu (
 	//-----------------------------------------------------------------
 	// The field: absolute address = address + base, valid below the limit and below
 	// the top of memory, four million words.  The low 22 bits of the address count;
-	// the base has 24.
+	// the base has 24.  Whether an address is inside is told without the sum: it is
+	// if it is below the words the field has from its base on (room, further down).
 	reg [23:0] base;
 	reg [22:0] limit;
 	always @(posedge clk) begin
@@ -584,8 +585,8 @@ module mem_fu (
 		limit <= (|i_data_limit_addr[23:22]) ? 23'h400000 : {1'b0, i_data_limit_addr[21:0]};
 	end
 
-	wire [24:0] absolute = {3'b0, address[21:0]} + {1'b0, base};
-	wire        out_of_field = (absolute >= {2'b0, limit});
+	wire [21:0] absolute = address[21:0] + base[21:0];
+	wire        out_of_field = ({1'b0, address[21:0]} >= room);
 
 	// A burst pays off with three elements in the line: the element in hand and
 	// two more, the second of them still short of the end of the line.

@@ -16,17 +16,21 @@
 // Out.  A read port gives the register i_addr names, or the result of a lane
 // that is on its way into that register in this clock.  Which of them it is
 // is not found out on the way of the data, which is the longest way in the
-// machine: it is kept in a register for every port, formed in the clock before
-// from what will then be at the heads of the lanes and from the register the
-// port will then read.  That is the same register as now if the current
-// instruction does not issue, and i_addr_nxt if it does.  A lane of one clock
-// (those in ONE) has its result at the head in the next clock only if the
-// current instruction is of that lane and issues (i_now_lane, i_now_d); the
-// others say what is at stage 1 (i_next_v, i_next_d).  Whether the instruction
-// issues is known last of all, so everything else is formed beside it and it
-// only picks.
+// machine: it is kept in registers for every port, one bit a register (sel)
+// and one a lane (hit), formed in the clock before from what will then be at
+// the heads of the lanes and from the register the port will then read.  That
+// is the same register as now if the current instruction does not issue, and
+// i_addr_nxt if it does.  A lane of one clock (those in ONE) has its result at
+// the head in the next clock only if the current instruction is of that lane
+// and issues (i_now_lane, i_now_d); the others say what is at stage 1
+// (i_next_v, i_next_d).  Whether the instruction issues is known last of all,
+// so everything else is formed beside it and it only picks.  The data then
+// goes through one level of AND and OR.
 //
-// A port in ZERO reads register 0 as nothing: all bits zero.
+// A port in ZERO reads register 0 as nothing: all bits zero.  A port in LATE is
+// one whose instruction waits a clock longer for its register than the others
+// (the address of a scalar memory reference): it never reads a result off a
+// lane.
 
 module res_regfile #(
 	parameter          W    = 64,
@@ -34,7 +38,8 @@ module res_regfile #(
 	parameter          NB   = 2,   // the first NB of them are read off the lane
 	parameter [NB-1:0] ONE  = 0,   // those of them that take one clock
 	parameter          NP   = 3,   // read ports
-	parameter [NP-1:0] ZERO = 0
+	parameter [NP-1:0] ZERO = 0,
+	parameter [NP-1:0] LATE = 0
 ) (
 	input wire clk,
 	input wire rst,
@@ -122,35 +127,40 @@ module res_regfile #(
 		for (p = 0; p < NP; p = p + 1) begin : g_port
 			wire [   2:0] cur = i_addr[3*p+:3];
 			wire [   2:0] nxt = i_addr_nxt[3*p+:3];
-			wire          cur_reg = !(ZERO[p] && (cur == 3'd0));  // the port reads a register, not nothing
-			wire          nxt_reg = !(ZERO[p] && (nxt == 3'd0));
+			// the register the port reads, one bit a register; none if it reads nothing
+			wire [   7:0] cur_hot = (ZERO[p] && (cur == 3'd0)) ? 8'd0 : (8'd1 << cur);
+			wire [   7:0] nxt_hot = (ZERO[p] && (nxt == 3'd0)) ? 8'd0 : (8'd1 << nxt);
 			reg  [NB-1:0] hit;  // the port reads the result of this lane
-			reg           own;  // it reads the register itself
+			reg  [   7:0] sel;  // it reads this register
 			wire [NB-1:0] if_issue, if_held;
 			for (b = 0; b < NB; b = b + 1) begin : g_hit
-				if (ONE[b]) begin : g_one
-					assign if_issue[b] = nxt_reg && i_now_lane[b] && (i_now_d == nxt);
+				if (LATE[p]) begin : g_late
+					assign if_issue[b] = 1'b0;
+					assign if_held[b]  = 1'b0;
+				end else if (ONE[b]) begin : g_one
+					assign if_issue[b] = (|nxt_hot) && i_now_lane[b] && (i_now_d == nxt);
 					assign if_held[b]  = 1'b0;
 				end else begin : g_more
-					assign if_issue[b] = nxt_reg && i_next_v[b] && (i_next_d[3*b+:3] == nxt);
-					assign if_held[b]  = cur_reg && i_next_v[b] && (i_next_d[3*b+:3] == cur);
+					assign if_issue[b] = (|nxt_hot) && i_next_v[b] && (i_next_d[3*b+:3] == nxt);
+					assign if_held[b]  = (|cur_hot) && i_next_v[b] && (i_next_d[3*b+:3] == cur);
 				end
 			end
-			wire own_issue = nxt_reg && !(|if_issue);
-			wire own_held = cur_reg && !(|if_held);
+			wire [7:0] sel_issue = (|if_issue) ? 8'd0 : nxt_hot;
+			wire [7:0] sel_held = (|if_held) ? 8'd0 : cur_hot;
 			always @(posedge clk)
 				if (rst) begin
 					hit <= {NB{1'b0}};
-					own <= 1'b1;
+					sel <= 8'd0;
 				end else begin
 					hit <= i_issue ? if_issue : if_held;
-					own <= i_issue ? own_issue : own_held;
+					sel <= i_issue ? sel_issue : sel_held;
 				end
 
 			reg     [W-1:0] q;
 			integer         n;
 			always @* begin
-				q = data[cur] & {W{own}};
+				q = {W{1'b0}};
+				for (n = 0; n < 8; n = n + 1) q = q | (data[n] & {W{sel[n]}});
 				for (n = 0; n < NB; n = n + 1) q = q | (i_data[W*n+:W] & {W{hit[n]}});
 			end
 			assign o_data[W*p+:W] = q;

@@ -1380,7 +1380,8 @@ localparam VLOG      = 3'b000,   //vector logical
 		.NB  (AL_LATE),
 		.ONE (AL_ONE),
 		.NP  (5),
-		.ZERO(5'b01011)
+		.ZERO(5'b01011),
+		.LATE(5'b01000)
 	) A_rf (
 		.clk       (clk),
 		.rst       (rst),
