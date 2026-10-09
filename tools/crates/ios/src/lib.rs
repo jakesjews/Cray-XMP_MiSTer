@@ -109,7 +109,7 @@ pub use iop::{
     channel, Channels, Counters, Iop, NoChannels, CHANNELS, EXIT_STACK, MEMORY_PARCELS,
     OPERAND_REGISTERS, RTC_PERIOD,
 };
-pub use screen::Screen;
+pub use screen::{Cell, Screen, Switches};
 pub use system::{Config, Flags, System, Timing};
 
 #[cfg(test)]
