@@ -540,6 +540,12 @@ which takes a PLL with a fractional multiplier. The I/O Subsystem's is set in
 Processors' clocks count their milliseconds. The video clock is the
 framework's usual `rtl/pll.v`.
 
+The board's 50 MHz pin reaches three of the chip's six PLLs by itself, and
+the framework's PLL for HDMI is in one of them. The CPU's and the I/O
+Subsystem's take the other two. The video PLL, whose clock has time to
+spare, gets its reference over a global clock line (`cyclonev_clkena` in
+`Cray-XMP.sv`) and sits in the other half of the chip.
+
 The first build with the I/O Subsystem missed 81.67 MHz by 0.99 ns. What
 took the CPU from there to the X-MP's clock:
 
@@ -714,11 +720,48 @@ The I/O Subsystem and the core:
   printer; after a reset and a second start a new session gets the saved
   texts back. The same session runs on the system model, where the package
   is made.
+- The times of the real devices have a bench: the clocks from a function to
+  its Done flag for a character to a console, for reads, writes, spacing,
+  file marks and a rewind of the tape and for the printer's lines, and the
+  clocks from one parcel of the channel pair to the next. With those times
+  the machine boots its kernel from the tape and loads and starts COS in
+  simulation: `START COMPLETE` comes after 16.6 seconds of machine time.
+- The tape drive with its reel runs random commands on 300 tapes, tape files
+  with and without a write ring and boot tapes, against a tape kept in the
+  bench: the status, the address and the count after each command, what a
+  read stored, and the file at the end. Faults put into the drive and the
+  reel are found, but for one in a path nothing reaches (a block that was
+  written to and is still at hand when a read wants another: every write ends
+  by putting its block back).
+- With the COS 1.17 software the kernel dumps a file of its disk to a blank
+  tape with `FDUMP`, deletes the file and loads it back with `FLOAD`, on the
+  system model and on the machine in simulation, and the tapes are the same;
+  the core as a whole, with a tape chosen in the menu, writes that tape too.
+  On the system model the station then submits the job in the tape's second
+  file with `SUBMIT,@MT0:1`, and COS runs it.
+- The build with the 9.5 ns clock, the device times and the tape was run on a
+  DE10-Nano from the package as it comes out of its zip file, started by
+  hand as a user starts it: the core from the Computer menu, the three
+  images and the boot file chosen in the menu. COS starts and the three
+  example jobs print what they should. With a tape file chosen in the menu
+  the kernel dumps a file to it, deletes the file and loads it back, and the
+  tape file on the card holds the records and file marks of the dump; after
+  a reset the kernel boots from the boot tape again. With "Device times:
+  Real" the kernel's boot takes 26.8 seconds where it takes 13.1, COS starts
+  and the FORTRAN job runs and prints. A session at the station with the
+  text editor works from the keyboard, Backspace included.
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: 30,522 ALMs (73%), 530 of 553 memory blocks,
-38 DSP blocks, 4 of 6 PLLs. The Local Memories of the three I/O Processors
+Quartus 17.0 for the DE10-Nano: 31,492 ALMs (75%), 531 of 553 memory blocks,
+38 DSP blocks, 5 of 6 PLLs. The Local Memories of the three I/O Processors
 take 384 of the memory blocks, the line buffers of the framework's
-scandoubler 26. Timing is met with the CPU at 105 MHz, with 0.04 ns to spare,
-the I/O Subsystem at 80 MHz with 0.9 ns and the video side at 58.8 MHz.
+scandoubler 26.
+
+Timing is met with the CPU at its 9.5 ns, with 0.32 ns to spare, the I/O
+Subsystem at 80 MHz with 1.3 ns and the video side at 58.8 MHz. The CPU's
+margin hangs on where the fitter starts (`SEED` in `Cray-XMP.qsf`): the seed
+before this one missed by 0.22 ns, on the way from the decoded instruction to
+the decision whether it issues. Against 105 MHz the exact period costs
+0.03 ns, and the timing analysis allows a clock from a PLL with a fractional
+multiplier 0.09 ns more uncertainty.
