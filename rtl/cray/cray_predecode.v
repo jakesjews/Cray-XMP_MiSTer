@@ -64,6 +64,15 @@ module cray_predecode (
 	assign o_pd[PD_H072]    = (op == 7'o072);
 	assign o_pd[PD_H073]    = (op == 7'o073);
 
+	//A scalar reference holds issue on "Ah reserved or busy previous CP"; the B or
+	//the T registers are reserved as a whole while a block transfer moves them
+	wire scref = (i_parcel[15:14] == 2'b10);
+	assign o_pd[PD_SCREF] = scref;
+	assign o_pd[PD_BLOCK] = (i_parcel[15:11] == 5'b00111);
+	assign o_pd[PD_AH+:8] = (scref && (i_parcel[11:9] != 3'd0)) ? (8'd1 << i_parcel[11:9]) : 8'd0;
+	assign o_pd[PD_USE_B] = (op == 7'o005) || (op == 7'o007) || (op == 7'o024) || (op == 7'o025);
+	assign o_pd[PD_USE_T] = (op == 7'o074) || (op == 7'o075);
+
 	//------------------------------------------------------------------
 	// The instruction as the A and S schedulers see it
 	//------------------------------------------------------------------

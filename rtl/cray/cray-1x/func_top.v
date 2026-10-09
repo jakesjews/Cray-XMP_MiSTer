@@ -198,8 +198,14 @@ module func_top (
 	wire [ 5:0] mem_t_wr_addr;
 	wire [63:0] data_from_mem_to_regs;
 	wire        mem_type;
-	wire        mem_issue;
-	wire        vmem_unsure;  // a vector transfer may still leave the field: what is behind it waits
+	wire        mem_issue;  // the memory unit lets the current instruction issue
+	wire        vmem_issue;
+	wire sc_ready, blk_ready;
+	wire sc_pending;  // a scalar reference has issued and is not done
+	wire sc_a_v, sc_s_v;  // the word of a scalar load is at the registers in the next clock
+	wire [2:0] sc_num;
+	wire blk_b, blk_t;  // a block transfer has the B or the T registers
+	wire        vmem_unsure;  // a block or vector transfer may still leave the field: what is behind it waits
 	wire        mem_ce;
 	wire        mem_burst;
 	wire        mem_seq;
@@ -378,8 +384,7 @@ module func_top (
 	always @(posedge clk) single_step <= i_single_step;
 
 	assign instructions_in_flight = (|a_res_mask) || (|s_res_mask) || (|vreg_busy) || (|vfu_busy) || vm_pending;
-	//single stepping: an instruction starts only when nothing is in flight.  A memory
-	//instruction that was started that way still has to be allowed to finish.
+	//single stepping: an instruction starts only when nothing is in flight
 	assign ok_to_run              = !single_step || !instructions_in_flight;
 	assign cip_go                 = cip_vld && !x_take_int && ok_to_run && !opnd_busy && !fetch_fault;
 	assign cip_issue              = cip_vld && issue_vld;
@@ -403,7 +408,12 @@ module func_top (
 	end
 	wire unsettled = settle_busy || settle_issued;
 	wire mode_hold = unsettled && pd[PD_HMODE];
-	assign opnd_busy = (|(rd_a & a_wait_mask)) || (|(rd_s & s_wait_mask)) || vec_hold || mode_hold || ts_wait || (pd[PD_H074] && tw_en) || (pd[PD_H024] && bw_en) || vmem_unsure;
+	//A scalar reference waits a clock longer for the register with its address, "Ah
+	//reserved or busy previous CP"; what uses the B or the T registers waits for a
+	//block transfer of them, "instruction 034 or 035 in process" (CSM-0111000 pages
+	//5-20, 5-31, 5-60, 5-64)
+	wire mem_hold = (|(pd[PD_AH+:8] & a_res_mask)) || (pd[PD_USE_B] && blk_b) || (pd[PD_USE_T] && blk_t);
+	assign opnd_busy = (|(rd_a & a_wait_mask)) || (|(rd_s & s_wait_mask)) || vec_hold || mode_hold || ts_wait || (pd[PD_H074] && tw_en) || (pd[PD_H024] && bw_en) || vmem_unsure || mem_hold;
 
 	/////////////////////////////////////
 	//    Logic Analyzer        //
@@ -420,12 +430,14 @@ module func_top (
 
 	assign exchange_type = pd[PD_EXCH] && cip_vld && !cip_fault;
 
-	// An exit is taken as soon as it is the current instruction.  An interrupt is
-	// taken between instructions, and never while a memory instruction is under way.
-	// (When single stepping it waits like any other instruction, so that it issues,
-	// and sets its flag, in the clock it is taken.)
-	assign x_take_exit = x_run && exchange_type && ok_to_run && !vmem_unsure;
-	assign x_take_int  = x_run && signal_interrupt && !exchange_type && mem_idle;
+	// An interrupt is taken between instructions, as soon as its flag is set: what
+	// is the current instruction then does not issue and does nothing, not an exit
+	// either.  A memory reference that has issued goes on; the exchange waits for
+	// it.  An exit is taken as soon as it is the current instruction.  (When single
+	// stepping it waits like any other instruction, so that it issues, and sets its
+	// flag, in the clock it is taken.)
+	assign x_take_int  = x_run && signal_interrupt;
+	assign x_take_exit = x_run && exchange_type && ok_to_run && !vmem_unsure && !x_take_int;
 	assign x_request   = x_take_exit || x_take_int;
 
 	assign x_idle = !(|a_res_mask) && !(|s_res_mask) && !(|vreg_busy) && !(|vfu_busy) && !vm_pending && mem_idle && !i_ibuf_busy;
@@ -466,11 +478,13 @@ module func_top (
 		)) : outside(
 			p_addr[23:2]
 		);
-	assign p_oof       = p_outside;
-	assign nip_in_vld  = i_nip_vld || p_oof;
-	assign fetch_fault = cip_vld && x_run && !vmem_unsure && (cip_fault || (two_parcel_cip && nip_fault));
+	assign p_oof = p_outside;
+	assign nip_in_vld = i_nip_vld || p_oof;
+	assign fetch_fault = cip_vld && x_run && !vmem_unsure && !x_take_int && (cip_fault || (two_parcel_cip && nip_fault));
 
-	assign o_ibuf_hold = !x_run || p_oof;
+	// No buffer is filled while a scalar reference is on its way: what a program
+	// has stored is in memory before the fetch behind it (CSM-0111000 page 2-6)
+	assign o_ibuf_hold = !x_run || p_oof || sc_pending;
 
 	exchange_ctl xctl (
 		.clk        (clk),
@@ -787,8 +801,8 @@ module func_top (
 		.i_cmask      (pd[PD_S_CMASK+:8]),
 		.i_077        (pd[PD_S_077]),
 		.i_vw         (pd[PD_S_VW+:8]),
-		.i_mem_v      (1'b0),
-		.i_mem_d      (3'd0),
+		.i_mem_v      (sc_s_v),
+		.i_mem_d      (sc_num),
 		.o_s_issue    (s_issue),
 		.o_s_type     (s_type),
 		.i_vreg_busy  (vreg_busy),
@@ -868,8 +882,8 @@ module func_top (
 		.i_025        (pd[PD_A_025]),
 		.i_sconf      (pd[PD_A_SCONF+:8]),
 		.i_s_wait_mask(s_wait_mask),
-		.i_mem_v      (1'b0),
-		.i_mem_d      (3'd0),
+		.i_mem_v      (sc_a_v),
+		.i_mem_d      (sc_num),
 		.o_a_issue    (a_issue),
 		.o_a_type     (a_type),
 		.o_head_v     (),
@@ -963,6 +977,12 @@ localparam VLOG      = 3'b000,   //vector logical
 
 	//check if it's free to issue
 
+	//A memory instruction issues when the memory unit can take it: a scalar
+	//reference into its queue, a block transfer to start.  A vector transfer starts
+	//by the V scheduler's word (v_issue); mem_issue is then for an instruction whose
+	//transfer has started and that has not issued.
+	assign mem_issue = pd[PD_SCREF] ? (sc_ready && lip_vld) : pd[PD_BLOCK] ? blk_ready : vmem_issue;
+
 	assign issue_vld = (
 						 (s_issue && s_type && mem_issue && mem_type) ||
 						 (s_issue && s_type && !mem_type) ||
@@ -974,7 +994,7 @@ localparam VLOG      = 3'b000,   //vector logical
 						 (mem_issue && mem_type && !s_type && !a_type) ||
 						 exchange_type ||
 						 !(s_type || a_type || v_type || branch_type || mem_type || exchange_type) ||
-						 !cip_vld) && (ok_to_run || (mem_type && mem_issue)) && x_run && !x_take_int && !(cip_vld && opnd_busy) && !fetch_fault;
+						 !cip_vld) && (ok_to_run || (v_type && mem_type && mem_issue)) && x_run && !x_take_int && !(cip_vld && opnd_busy) && !fetch_fault;
 
 
 
@@ -1333,7 +1353,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		tw_data <= s_i_data;
 	end
 
-	assign t_rd_addr   = mem_type ? mem_t_rd_addr : {cip_j, cip_k};
+	assign t_rd_addr   = blk_t ? mem_t_rd_addr : {cip_j, cip_k};
 	assign t_wr_addr   = tw_en ? tw_addr : mem_t_wr_addr;
 	assign t_wr_data   = tw_en ? tw_data : data_from_mem_to_regs;
 	assign t_result_en = mem_t_wr_en || tw_en;
@@ -1389,7 +1409,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		bw_en   <= !rst && (cip_instr == 7'o025) && a_issue && cip_issue;
 		bw_addr <= {cip_j, cip_k};
 		bw_data <= a_i_data;
-		rj_en   <= !rst && rtn_jump;
+		rj_en   <= !rst && rtn_jump && cip_issue;
 		rj_p    <= p_addr;
 	end
 
@@ -1411,10 +1431,10 @@ localparam VLOG      = 3'b000,   //vector logical
 	//Figure out when and what we should write into the B register file
 	assign b_wr_addr  = bw_en ? bw_addr : mem_b_wr_addr;
 	assign b_wr_data  = bw_en ? bw_data : data_from_mem_to_regs[23:0];
-	assign b_write_en = bw_en || ((cip_instr == 7'o034) && mem_b_wr_en);
+	assign b_write_en = bw_en || mem_b_wr_en;
 
 	//and figure out what address to read from
-	assign b_rd_addr = (cip_instr == 7'o035) ? mem_b_rd_addr : {cip_j, cip_k};
+	assign b_rd_addr = blk_b ? mem_b_rd_addr : {cip_j, cip_k};
 
 	//////////////////////////////////////////////////
 	//           Vector Units                       //
@@ -1662,9 +1682,9 @@ localparam VLOG      = 3'b000,   //vector logical
 		.clk              (clk),
 		.rst              (rst),
 		.i_cip            (cip),
-		.i_cip_vld        (cip_go),
 		.i_lip            (lip),
-		.i_lip_vld        (lip_vld),
+		.i_scalar         (pd[PD_SCREF]),
+		.i_block          (pd[PD_BLOCK]),
 		.i_vector_length  (vector_length),
 		.i_vstart         (vfu_start[7]),
 		.i_data_base_addr (data_base_addr),
@@ -1688,11 +1708,12 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_a0_data        (a_a0_data),
 		.i_ai_data        (a_i_data),
 		.i_ak_data        (a_k_data),
-		.i_ah_data        (a_h_data),
-		.i_a_res_mask     (a_res_mask),
+		.i_ah_data        (a_h_data[21:0]),
+		.o_sc_a           (sc_a_v),
 		//interface to s rf
 		.i_si_data        (s_i_data),
-		.i_s_res_mask     (s_res_mask),
+		.o_sc_s           (sc_s_v),
+		.o_sc_num         (sc_num),
 		//interface to B rf
 		.o_b_rd_addr      (mem_b_rd_addr),
 		.i_b_rd_data      (b_jk_data),
@@ -1716,12 +1737,17 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_mem_wr_data    (data_to_mem),
 		.o_mem_wr_en      (mem_wr_en),
 		.i_mem_ack        (mem_ack),
-		.o_mem_issue      (mem_issue),
+		.o_sc_ready       (sc_ready),
+		.o_blk_ready      (blk_ready),
+		.o_mem_issue      (vmem_issue),
 		.i_issue          (cip_issue),
 		.o_v_num          (vmem_num),
 		.o_vk_num         (vmem_knum),
 		.o_v_reads        (vmem_reads),
-		.o_v_unsure       (vmem_unsure)
+		.o_blk_b          (blk_b),
+		.o_blk_t          (blk_t),
+		.o_unsure         (vmem_unsure),
+		.o_sc_pending     (sc_pending)
 	);
 
 
@@ -1939,7 +1965,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.i_s0_nzero    (s0_nzero),
 		.i_s0_busy     (s0_busy),
 		.i_bjk         (b_jk_data),
-		.i_b_written   (bw_en),
+		.i_b_written   (bw_en || blk_b),
 		.o_branch_type (branch_type),
 		.o_branch_issue(branch_issue),
 		.o_take_branch (take_branch),

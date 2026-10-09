@@ -1,0 +1,245 @@
+         IDENT     MEMQ
+* Memory references that go on while the instructions behind them issue.
+*
+* A scalar reference issues in two clock periods and is then made in its turn;
+* a block transfer issues in one and runs on.  Whatever follows must see
+* memory and the registers as if each had finished before the next began:
+* a row of stores and loads longer than the queue, a store of a result in the
+* clock it arrives, an address that has just been formed, a load used at
+* once, scalar references and block and vector transfers of the same words
+* one behind the other, and the instructions that use the B and T registers
+* behind a block transfer of them (024, 025, 074, 075, 005 and the return
+* jump, which writes B00).  Every result is stored, for the comparison with
+* the reference model.
+*
+* Direct start: exchange package at words 0-17 (monitor mode), code at word 40.
+TEXIT    =         O'17777762           test exit register
+OUT      =         O'2000
+W        =         O'3000               words the test writes
+         ORG       0
+         CON       P.START*O'100000000                 word 0: P (bits 47:24), A0
+         CON       0                                   word 1: IBA, A1
+         CON       O'7777774100000000                  word 2: ILA max, monitor mode
+         CON       O'0000000030000000000000            word 3: XA = 1, VL = 64
+         CON       0                                   word 4: DBA, cluster 0
+         CON       O'7777774000000000                  word 5: DLA max
+         BSSZ      D'10
+         ORG       O'40
+START    S1        K1,0
+         S2        K2,0
+         A1        O'1234
+         A2        O'77
+* ---- twelve stores one behind the other, then eight loads, and their words used
+         W,0       S1
+         W+1,0     S2
+         W+2,0     A1
+         W+3,0     A2
+         W+4,0     S1
+         W+5,0     S2
+         W+6,0     A1
+         W+7,0     A2
+         W+10,0    S1
+         W+11,0    S2
+         W+12,0    A1
+         W+13,0    A2
+         S3        W,0
+         S4        W+1,0
+         A3        W+2,0
+         A4        W+3,0
+         S5        W+11,0
+         S6        W+12,0
+         A5        W+13,0
+         A6        W+10,0
+         S7        S3+S4
+         A7        A3+A4
+         OUT,0     S7
+         OUT+1,0   A7
+         OUT+2,0   S5
+         OUT+3,0   S6
+         OUT+4,0   A5
+         OUT+5,0   A6
+* ---- one word stored, loaded, changed and stored again
+         W+20,0    S1
+         S3        W+20,0
+         S3        S3+S2
+         W+20,0    S3
+         S4        W+20,0
+         S4        S4+S2
+         W+20,0    S4
+         A3        W+20,0
+         W+21,0    A3
+         S5        W+21,0
+         OUT+6,0   S5
+* ---- a result stored in the clock it arrives: a sum, a floating product, an
+* address product, an address sum
+         S3        S1+S2
+         W+30,0    S3
+         S4        S1*FS2
+         W+31,0    S4
+         A3        A1*A2
+         W+32,0    A3
+         A4        A1+A2
+         W+33,0    A4
+* ---- an address that has just been formed: a constant, a sum, a product
+         A6        3
+         A7        4
+         A5        O'10
+         S5        KT,A5
+         A5        A6+A7
+         S6        KT,A5
+         W+40,A5   S1
+         A5        A6*A7
+         S7        KT,A5
+         W+40,A5   S2
+         OUT+7,0   S5
+         OUT+10,0  S6
+         OUT+11,0  S7
+* a load used at once, as an operand and as an address
+         A5        KPTR,0
+         S5        0,A5
+         S6        S5+S5
+         A5        A5+1
+         S7        0,A5
+         OUT+12,0  S6
+         OUT+13,0  S7
+* ---- two stores, then a block load of their words; 024 behind it
+         W+60,0    S1
+         W+61,0    S2
+         A0        W+60
+         A3        2
+         B05,A3    0,A0
+         A4        B05
+         A5        B06
+         OUT+14,0  A4
+         OUT+15,0  A5
+* 025 behind a block load of its register: the 025 is the later one
+         B05,A3    0,A0
+         B06       A1
+         A4        B06
+         OUT+16,0  A4
+* a block store, then 025 of a register it stores, then loads of its words
+         A0        W+70
+         0,A0      B05,A3
+         B05       A2
+         S3        W+70,0
+         S4        W+71,0
+         OUT+17,0  S3
+         OUT+20,0  S4
+         A4        B05
+         OUT+21,0  A4
+* ---- the same with the T registers: 074 and 075
+         A0        W+60
+         T05,A3    0,A0
+         S3        T05
+         S4        T06
+         OUT+22,0  S3
+         OUT+23,0  S4
+         T05,A3    0,A0
+         T06       S1
+         S3        T06
+         OUT+24,0  S3
+         A0        W+72
+         0,A0      T05,A3
+         T05       S2
+         S3        W+72,0
+         S4        W+73,0
+         OUT+25,0  S3
+         OUT+26,0  S4
+         S3        T05
+         OUT+27,0  S3
+* ---- a return jump behind a block load of B00 to B02: B00 is the return
+* address, and the other two are what was loaded
+         A0        KT
+         A3        3
+         B00,A3    0,A0
+         R         SUB
+BACK     OUT+31,0  A1
+         A4        B01
+         A5        B02
+         OUT+43,0  A4
+         OUT+44,0  A5
+* 005 behind a block load of its register
+         A3        1
+         A0        KJ
+         B02,A3    0,A0
+         J         B02
+         OUT+32,0  A1                  not run
+TGT      OUT+33,0  A2
+* ---- a block transfer of no words and one of all 64, then the registers used
+         A3        0
+         A0        KT
+         B10,A3    0,A0
+         A4        B10
+         OUT+34,0  A4
+         A3        O'100
+         A0        KT
+         B00,A3    0,A0
+         A4        B77
+         A0        W+200
+         0,A0      B00,A3
+         S3        W+277,0
+         OUT+35,0  A4
+         OUT+36,0  S3
+* ---- stores, then a vector load of their words; a vector store, then loads
+         A3        3
+         VL        A3
+         W+100,0   S1
+         W+101,0   S2
+         W+102,0   S1
+         A0        W+100
+         V1        ,A0,1
+         A0        W+110
+         ,A0,1     V1
+         S3        W+110,0
+         S4        W+111,0
+         S5        W+112,0
+         OUT+37,0  S3
+         OUT+40,0  S4
+         OUT+41,0  S5
+* a scalar store behind a vector load of the word: the load has the old one
+         A0        W+110
+         V2        ,A0,1
+         W+110,0   S2
+         A0        W+120
+         ,A0,1     V2
+* ---- loads into one register, each used before the next
+         S3        KT,0
+         S4        KT+1,0
+         S3        S3+S4
+         S4        KT+2,0
+         S3        S3+S4
+         S4        KT+3,0
+         S3        S3+S4
+         S4        KT+4,0
+         S3        S3+S4
+         S4        KT+5,0
+         S3        S3+S4
+         OUT+42,0  S3
+         A6        0
+         TEXIT,0   A6
+HANG     J         HANG
+SUB      A4        B00
+         OUT+30,0  A4
+         J         B00
+K1       CON       O'0400014000000000001111             2.0 and some low bits
+K2       CON       O'0400026000000000002222             3.0
+KPTR     CON       KT+6
+KJ       CON       P.TGT
+KT       CON       O'1000001
+         CON       O'2000002
+         CON       O'3000003
+         CON       O'4000004
+         CON       O'5000005
+         CON       O'6000006
+         CON       O'7000007
+         CON       O'10000010
+         CON       O'11000011
+         CON       O'12000012
+         CON       O'13000013
+         CON       O'14000014
+         CON       O'15000015
+         CON       O'16000016
+         CON       O'17000017
+         CON       O'20000020
+         BSSZ      D'64
+         END

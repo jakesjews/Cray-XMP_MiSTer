@@ -25,6 +25,8 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/i_buf.v" -match "*Bits of si
 // A vector length of 0 and of 100 octal both mean 64 elements, so the top bit
 // of VL does not change the count.
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/mem_fu.v" -match "*Bits of signal are not used: 'i_vector_length'[6]*"
+// only the low 22 bits of the address of a scalar reference count
+lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Bits of signal are not used: 'a_h_data'[23:22]*"
 
 // The low bit of a logical opcode picks the scalar or the vector operand,
 // which is done before the unit. The double shifts keep one half of a

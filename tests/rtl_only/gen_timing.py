@@ -141,7 +141,28 @@ ONE_BUFFER = [
     (2, '176 by 1, then a PASS', ['V7 ,A0,1', 'PASS']),
     (3, '022, 176 by that step, then a PASS', ['A5 2', 'V7 ,A0,A5', 'PASS']),
     (6, '020, 176 by that step of 2000, then a PASS', ['A5 2000', 'V7 ,A0,A5', 'PASS']),
-    (4, '020 to A0, 177 by 1, then a PASS', ['A0 12000', ',A0,1 V7', 'PASS']),
+    (4, '020 to A0, 177 by 1, then a PASS', ['A0 24000', ',A0,1 V7', 'PASS']),
+    # A scalar reference issues in 2 CPs and what is behind it goes on (X 5-64); the next
+    # one can issue behind it.  It holds for "Ah reserved or busy previous CP": a CP longer
+    # than another instruction would for the register, here A1 after a 022 of 1 CP and a
+    # 030 of 2.
+    (2, '12h, a load', ['S1 24000,0']),
+    (2, '13h, a store', ['24001,0 S1']),
+    (2, '10h, a load', ['A5 24000,0']),
+    (3, '12h, then a PASS', ['S1 24000,0', 'PASS']),
+    (4, '12h, then 10h', ['S1 24000,0', 'A5 24001,0']),
+    (6, '13h, 12h of the same word, then 11h', ['24001,0 S1', 'S2 24001,0', '24002,0 A3']),
+    (4, '022 to A1, then 12h by A1', ['A1 5', 'S1 24000,A1']),
+    (4, '022 to A1, 1 CP, then 12h by A1', ['A1 5', 'PASS', 'S1 24000,A1']),
+    (5, '030 to A1, then 12h by A1', ['A1 A3+A3', 'S1 24000,A1']),
+    (5, '030 to A1, 2 CPs, then 12h by A1', ['A1 A3+A3', 'PASS', 'PASS', 'S1 24000,A1']),
+    # A block transfer issues in 1 CP (X 5-40), and what is behind it in the next: here
+    # 3 words, and none.
+    (1, '034, 3 words', ['B10,A3 0,A0']),
+    (2, '034, 3 words, then a PASS', ['B10,A3 0,A0', 'PASS']),
+    (2, '036, no word, then a PASS', ['T10,A2 0,A0', 'PASS']),
+    (4, '020 to A0, 035 of 3 words, then a PASS', ['A0 24004', '0,A0 B10,A3', 'PASS']),
+    (4, '020 to A0, 037 of 3 words, then a PASS', ['A0 24010', '0,A0 T10,A3', 'PASS']),
     # The divide of X 4-36: reciprocal, a product chained to it, the correction when the
     # multiply unit is free, and the product of the two.  3 * 64 CPs and 39 (the manual has
     # the 38 of the CRAY-1, whose chaining was another).
@@ -185,7 +206,7 @@ ESVL = [
     (20, '141 in the second unit, VL 5, a 175 chained to it, then 073', ['V2 V1&V3', 'VM V2,Z', 'S1 VM'], 5),
 ]
 FIRST = {'A1': 0o020100, 'J': 0o006000, 'JAN': 0o011000, 'JAZ': 0o010000}   # first parcels, for 'straddle'
-BASE, OUT = 0o400, 0o10000        # the cases from BASE on, their times from OUT on
+BASE, OUT = 0o400, 0o20000        # the cases from BASE on, their times from OUT on
 BLOCK = 0o40                      # words in an instruction buffer
 
 

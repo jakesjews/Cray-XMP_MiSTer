@@ -1,0 +1,278 @@
+* memrange: the operand range error of memory references that go on behind
+* the instructions that follow them.  A scalar reference issues before its
+* address is looked at, and a block transfer before its last word is; the
+* interrupt is still taken right behind the instruction, whatever comes
+* next: another reference, a branch, an exit, a fetch outside the
+* instruction field, a test and set that cannot issue.  That instruction does
+* not run and leaves no flag.  Also: references that have issued are made
+* before the exchange, the low 22 bits of an address count, and a block
+* transfer may end at the last word of the field.
+         INCLUDE "rt_direct.cal"
+         INCLUDE "rt_user.cal"
+UPKG     =       3000
+UIBA     =       300                     ; instruction base: word 14000
+UBASE    =       14000
+UDBA     =       400                     ; data base: word 20000
+DBASE    =       20000
+*
+* P of the package the program left, in parcels of its field, to S2
+         MACRO   UP
+         S2      UPKG,0
+         S2      S2>D'24
+         ENDM
+*
+         TBEGIN
+         S1      KFI,0
+         U$W1,0  S1
+         S1      KFL,0
+         U$W2,0  S1
+         S1      KFD,0
+         U$W4,0  S1
+         S1      KFE,0
+         U$W5,0  S1
+* ---- a store outside the field, then another: only the first is looked at
+         UGO     KPA
+         UFLAG   S2
+         CHKS    S2,40,2
+         UP
+         CHKS    S2,UA2-UBASE*4,3
+* a load outside, then a jump: the jump is not taken
+         UGO     KPB
+         UFLAG   S2
+         CHKS    S2,40,4
+         UP
+         CHKS    S2,UB2-UBASE*4,5
+* a store inside, a load outside, a store inside: the last is not made
+         UGO     KPC
+         UFLAG   S2
+         CHKS    S2,40,6
+         UP
+         CHKS    S2,UC2-UBASE*4,7
+         S2      DBASE+10,0
+         CHKS    S2,1005,10
+         S2      DBASE+11,0
+         CHKS    S2,11,11
+* a store outside in the last parcels of the instruction field: the fetch
+* behind it is not looked at, and leaves no program range flag
+         UGO     KPD
+         UFLAG   S2
+         CHKS    S2,40,12
+         UP
+         CHKS    S2,4000,13
+* a load outside, then a test and set of a set semaphore: no deadlock flag
+* and no waiting bit
+         CLN     1
+         SM5     1
+         CLN     0
+         UGO     KPE
+         UFLAG   S2
+         CHKS    S2,40,14
+         S2      UPKG+3,0
+         S2      S2>D'48
+         CHKS    S2,0,15                 ; the deadlock flag, bit 15
+         S2      UPKG+1,0
+         S2      S2<D'35
+         S2      S2>D'63
+         CHKS    S2,0,16                 ; waiting for semaphore
+         UP
+         CHKS    S2,UE2-UBASE*4,17
+         CLN     1
+         SM5     0
+         CLN     0
+* a store outside, then an exit: the exit is not taken
+         UGO     KPF
+         UFLAG   S2
+         CHKS    S2,40,20
+         UP
+         CHKS    S2,UF2-UBASE*4,21
+*
+* ---- block transfers.  Eight words up to the last of the field: no error
+         UGO     KPG
+         UFLAG   S2
+         CHKS    S2,1,22
+         S2      DBASE+77,0
+         CHKS    S2,7,23
+* one word further: the words inside are stored, the flag sets, and the exit
+* behind the transfer is not taken
+         UGO     KPH
+         UFLAG   S2
+         CHKS    S2,40,24
+         UP
+         CHKS    S2,UH2-UBASE*4,25
+         S2      DBASE+77,0
+         CHKS    S2,6,26
+         S2      DBASE+100,0
+         CHKS    S2,100,27               ; beyond the limit: as it was
+* no words from an address outside: nothing
+         UGO     KPI
+         UFLAG   S2
+         CHKS    S2,1,30
+* a load of four words, two of them outside: those are zero, and the 024
+* behind the transfer does not run
+         UGO     KPJ
+         UFLAG   S2
+         CHKS    S2,40,31
+         UP
+         CHKS    S2,UJ2-UBASE*4,32
+         A2      UPKG+2,0
+         CHKA    A2,0,33
+*
+* ---- four stores and the exit right behind them: all are made
+         UGO     KPK
+         UFLAG   S2
+         CHKS    S2,1,34
+         S2      DBASE+20,0
+         CHKS    S2,1005,35
+         S2      DBASE+23,0
+         CHKS    S2,1005,36
+* ---- the low 22 bits of an address count: 1 and a displacement of all
+* ones is word 0, and so is an address register with its top bit set
+         UGO     KPL
+         UFLAG   S2
+         CHKS    S2,1,37
+         S2      UPKG+11,0               ; the program's S1
+         CHKS    S2,1000,40
+         S2      UPKG+12,0               ; its S2
+         CHKS    S2,1005,41
+* ---- a block store of the whole field and one word more: 101 words from
+* word 0.  The exit behind it is not taken.
+         UGO     KPM
+         UFLAG   S2
+         CHKS    S2,40,42
+         UP
+         CHKS    S2,UM2-UBASE*4,43
+         S2      DBASE+100,0
+         CHKS    S2,100,44
+         TPASS
+         TEND    DUMPAS
+*
+KFI      CON     UIBA*T$P2_29            ; instruction base
+KFL      CON     (UIBA+20)*T$P2_29+20*T$P2_24 ; its limit, 1000 words; operand range mode
+KFD      CON     UDBA*T$P2_29+1*T$P2_24  ; data base; cluster 1
+KFE      CON     (UDBA+2)*T$P2_29        ; data limit: 100 words
+KPA      CON     (UA-UBASE*4)*T$P2_24
+KPB      CON     (UB-UBASE*4)*T$P2_24
+KPC      CON     (UC-UBASE*4)*T$P2_24
+KPD      CON     (UD-UBASE*4)*T$P2_24
+KPE      CON     (UE-UBASE*4)*T$P2_24
+KPF      CON     (UF-UBASE*4)*T$P2_24
+KPG      CON     (UG-UBASE*4)*T$P2_24
+KPH      CON     (UH-UBASE*4)*T$P2_24
+KPI      CON     (UI-UBASE*4)*T$P2_24
+KPJ      CON     (UJ-UBASE*4)*T$P2_24
+KPK      CON     (UK-UBASE*4)*T$P2_24
+KPL      CON     (UL-UBASE*4)*T$P2_24
+KPM      CON     (UM-UBASE*4)*T$P2_24
+         UDATA
+*
+* the programs, in the instruction field
+         ORG     UBASE+100
+UA       S1      5,0
+         100,0   S1
+UA2      101,0   S1
+         EX
+         ORG     UBASE+110
+UB       S1      100,0
+UB2      J       445                     ; UB3, in parcels of the field
+         EX
+UB3      A2      6
+         EX
+         ORG     UBASE+120
+UC       S1      5,0
+         10,0    S1
+         S2      100,0
+UC2      11,0    S1
+         EX
+         ORG     UBASE+130
+UE       S1      100,0
+UE2      SM5     1,TS
+         EX
+         ORG     UBASE+140
+UF       S1      5,0
+         100,0   S1
+UF2      EX
+         ORG     UBASE+150
+UG       A0      70
+         A1      10
+         A3      0
+         B00     A3
+         A3      1
+         B01     A3
+         A3      2
+         B02     A3
+         A3      3
+         B03     A3
+         A3      4
+         B04     A3
+         A3      5
+         B05     A3
+         A3      6
+         B06     A3
+         A3      7
+         B07     A3
+         0,A0    B00,A1
+         EX
+         ORG     UBASE+170
+UH       A0      71
+         A1      10
+         0,A0    B00,A1
+UH2      EX
+         ORG     UBASE+200
+UI       A0      100
+         A1      0
+         0,A0    B00,A1
+         B00,A1  0,A0
+         A0      17777777
+         T00,A1  0,A0
+         EX
+         ORG     UBASE+210
+UJ       A0      76
+         A1      4
+         B10,A1  0,A0
+UJ2      A2      B10                     ; 5, if it ran
+         EX
+         ORG     UBASE+220
+UK       S1      5,0
+         20,0    S1
+         21,0    S1
+         22,0    S1
+         23,0    S1
+         EX
+         ORG     UBASE+230
+UL       A1      1
+         S1      17777777,A1
+         A1      40000000
+         S2      5,A1
+         EX
+         ORG     UBASE+240
+UM       A0      0
+         A1      101
+         0,A0    B00,A1
+UM2      EX
+* the last word of the instruction field: the store ends it
+         ORG     UBASE+776
+UD       S1      5,0
+         PASS
+         PASS
+         PASS
+         PASS
+         100,0   S1
+*
+* the data field, and the words behind it
+         ORG     DBASE
+         CON     1000
+         CON     1001
+         CON     1002
+         CON     1003
+         CON     1004
+         CON     1005
+         CON     1006
+         CON     1007
+         CON     10
+         CON     11
+         BSSZ    D'54
+         CON     100
+         CON     101
+         CON     102
+         CON     103
+         END

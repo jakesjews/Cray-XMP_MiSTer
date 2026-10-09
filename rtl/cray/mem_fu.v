@@ -11,20 +11,30 @@
 //             (A0) and stepping by (Ak); or, for the gather 176i1k and the
 //             scatter 1771jk, at the addresses (A0) + (Vk element)
 //
-// A scalar reference or a block transfer stays the current instruction until
-// its last word is done, and issues in the DONE clock.  A vector transfer
-// issues in the clock it starts and goes on in the background while other
-// instructions issue, as on the real machine (manual 4-70); the V register
-// stays reserved and other memory instructions wait.  The instructions behind
-// it wait as well until the transfer is known to stay inside the field
-// (o_v_unsure): not at all when a quick look at its first address and its
+// Every one of them issues without waiting for memory, and the instructions
+// behind it go on (CSM-0111000 pages 2-6, 5-40, 5-64, 5-92).
+//
+// A scalar reference issues as soon as both its parcels are there.  Its
+// address is formed and checked against the field in the clock after, and it
+// then waits in a queue: scalar references are made in the order they issued.
+// The register of a load is reserved until its word has come, which the unit
+// tells the A or the S registers a clock ahead (o_sc_a, o_sc_s).  The word of a
+// store is taken from its register when the instruction issues.  No scalar
+// reference issues while a block or vector transfer is under way ("Port A, B,
+// or C busy") or the queue is full.
+//
+// A block or vector transfer issues in the clock it starts, which is when no
+// other is under way and no scalar reference is waiting, and goes on in the
+// background.  Its B, T or V registers stay reserved.  The instructions
+// behind it wait until the transfer is known to stay inside the field
+// (o_unsure): not at all when a quick look at its first address and its
 // step says so, two clocks when the last address has to be worked out.  A register
 // being loaded can be the operand of an instruction behind the load, and a
 // store can be of a register that is still receiving its result: both take
 // the elements as they come (chaining, CSM-0111000 page 4-12).  A gather or a
 // scatter takes its addresses from a register the same way, one element
 // after the other, each as its own request to memory.  The exception
-// is a vector transfer whose first or last address is outside the field, and
+// is a transfer whose first or last address is outside the field, and
 // every gather and scatter, whose addresses are not known beforehand: the
 // instructions behind it wait to its end, so that the range error interrupt
 // is taken right behind it.  Nothing here assumes how long memory
@@ -52,9 +62,9 @@ module mem_fu (
 	clk,
 	rst,
 	i_cip,
-	i_cip_vld,
 	i_lip,
-	i_lip_vld,
+	i_scalar,
+	i_block,
 	i_vector_length,
 	i_vstart,
 	i_data_base_addr,
@@ -64,10 +74,11 @@ module mem_fu (
 	i_ai_data,
 	i_ak_data,
 	i_ah_data,
-	i_a_res_mask,
+	o_sc_a,
 	//interface to S rf
 	i_si_data,
-	i_s_res_mask,
+	o_sc_s,
+	o_sc_num,
 	//interface to V regs
 	i_v0_data,
 	i_v1_data,
@@ -104,12 +115,17 @@ module mem_fu (
 	o_mem_seq,
 	i_mem_take,
 	i_mem_ack,
+	o_sc_ready,
+	o_blk_ready,
 	o_mem_issue,
 	i_issue,
 	o_v_num,
 	o_vk_num,
 	o_v_reads,
-	o_v_unsure,
+	o_blk_b,
+	o_blk_t,
+	o_unsure,
+	o_sc_pending,
 	o_mem_busy,
 	o_range_err
 );
@@ -125,9 +141,9 @@ module mem_fu (
 	input wire clk;
 	input wire rst;
 	input wire [15:0] i_cip;  //current instruction parcel
-	input wire i_cip_vld;  //and it may start
 	input wire [15:0] i_lip;  //lower instruction parcel
-	input wire i_lip_vld;
+	input wire i_scalar;  //the current instruction is a scalar reference
+	input wire i_block;  //it is a block transfer
 	input wire [6:0] i_vector_length;
 	input wire i_vstart;  //the vector scheduler starts a 176 or 177
 	input wire [23:0] i_data_base_addr;
@@ -136,10 +152,12 @@ module mem_fu (
 	input wire [23:0] i_a0_data;
 	input wire [23:0] i_ai_data;
 	input wire [23:0] i_ak_data;
-	input wire [23:0] i_ah_data;
-	input wire [7:0] i_a_res_mask;
+	input wire [21:0] i_ah_data;
 	input wire [63:0] i_si_data;
-	input wire [7:0] i_s_res_mask;
+	//a scalar load: its word is in o_mem_data, for A or S register o_sc_num
+	output reg o_sc_a;
+	output reg o_sc_s;
+	output reg [2:0] o_sc_num;
 	input wire [63:0] i_v0_data;
 	input wire [63:0] i_v1_data;
 	input wire [63:0] i_v2_data;
@@ -174,14 +192,19 @@ module mem_fu (
 	input wire i_mem_take;  //the word presented is being taken this clock
 	input wire i_mem_ack;
 	//instruction issue
-	output wire o_mem_issue;
+	output wire o_sc_ready;  //a scalar reference may issue
+	output wire o_blk_ready;  //a block transfer may
+	output wire o_mem_issue;  //a vector transfer has started and its instruction has not issued
 	input wire i_issue;  //the current instruction issues this clock
 	output wire [2:0] o_v_num;  //the V register of the vector transfer under way
 	output wire [2:0] o_vk_num;  //the V register with the addresses of a gather or scatter
 	output wire [7:0] o_v_reads;  //the V registers a vector transfer reads, one bit a register
-	output reg o_v_unsure;  //a vector transfer is under way that may leave the field: what is behind it waits
-	output wire o_mem_busy;
-	output reg o_range_err;  //a reference outside the field was dropped
+	output wire o_blk_b;  //a block transfer of the B registers is under way
+	output wire o_blk_t;  //one of the T registers
+	output reg o_unsure;  //a transfer is under way that may leave the field: what is behind it waits
+	output wire o_sc_pending;  //a scalar reference has issued and is not done
+	output wire o_mem_busy;  //anything is under way
+	output wire o_range_err;  //a reference outside the field was dropped
 
 	localparam IDLE = 4'd0, PREP = 4'd3,  // the first address is formed
 	RD = 4'd1,  // read request outstanding
@@ -190,6 +213,11 @@ module mem_fu (
 	DONE = 4'd5, RD_SEL = 4'd6,  // a vector load chooses between one word and a line
 	RD_BURST = 4'd7,  // a line is arriving
 	RD_IDX = 4'd8;  // a gather waits for the element of Vk with its next address
+
+	// a scalar reference: none, a read or a write outstanding, zero for a load from outside the field
+	localparam S_IDLE = 2'd0, S_RD = 2'd1, S_WR = 2'd2, S_ZERO = 2'd3;
+	reg  [1:0] sc_state;
+	wire       sc_req = (sc_state == S_RD) || (sc_state == S_WR);
 
 	reg [ 3:0] state;
 	reg [23:0] address;
@@ -213,13 +241,12 @@ module mem_fu (
 	wire [15:0] ins = i_cip;
 	wire [ 6:0] op = ins[15:9];
 	wire        b_t_type = (ins[15:11] == 5'b00111);  //034-037, 1 parcel
-	wire        a_s_type = (ins[15:14] == 2'b10);  //100-137, 2 parcels
 	wire        v_type = (op == 7'o176) || (op == 7'o177);  //1 parcel
 	wire        gather = (op == 7'o176) && (ins[5:3] == 3'd1);  //176i1k
 	wire        scatter = (op == 7'o177) && (ins[8:6] == 3'd1);  //1771jk
-	wire [23:0] jkm = {{2{ins[5]}}, ins[5:0], i_lip[15:0]};  //signed displacement
+	wire [21:0] jkm = {ins[5:0], i_lip[15:0]};  //the displacement of a scalar reference
 
-	wire is_read = b_t_type ? !ins[9] : a_s_type ? !ins[12] : (op == 7'o176);
+	wire is_read = b_t_type ? !ins[9] : (op == 7'o176);
 	wire to_b = (op == 7'o034);
 	wire to_t = (op == 7'o036);
 	wire from_b = (op == 7'o035);
@@ -228,40 +255,14 @@ module mem_fu (
 	//The operation count of a vector instruction: VL of 0 means 64 (manual 4-10)
 	wire [6:0] vl_count = (i_vector_length[5:0] == 6'd0) ? 7'd64 : {1'b0, i_vector_length[5:0]};
 
-	reg [23:0] start_addr;  // the register the first address comes from ...
-	reg [23:0] start_offset;  // ... and what is added to it, in the clock after the start
-	reg [23:0] start_stride;
-	reg [ 6:0] start_count;
-	reg        reg_conflict;
+	//A transfer starts at (A0): (Ai) words one after the other, or VL words stepping
+	//by (Ak) or at (A0) + (Vk element).  The registers are read in the clock the
+	//instruction issues, when none of them has a result on its way any more.
+	wire [23:0] start_addr = i_a0_data;
+	wire [23:0] start_stride = b_t_type ? 24'd1 : i_ak_data;
+	wire [ 6:0] start_count = b_t_type ? i_ai_data[6:0] : vl_count;
 
-	always @*
-		if (b_t_type) begin  //(Ai) words from address (A0)
-			start_addr   = i_a0_data;
-			start_offset = 24'd0;
-			start_stride = 24'd1;
-			start_count  = i_ai_data[6:0];
-			reg_conflict = i_a_res_mask[0] || i_a_res_mask[ins[8:6]];
-		end else if (a_s_type) begin  //one word at (Ah) + jkm
-			start_addr = i_ah_data;
-			start_offset = jkm;
-			start_stride = 24'd0;
-			start_count = 7'd1;
-			//a load must not pass a result still on its way to the same register file
-			reg_conflict = !ins[12] ? (ins[13] ? (|{i_a_res_mask,i_s_res_mask}) : (|i_a_res_mask))
-								   : (ins[13] ? (i_a_res_mask[ins[11:9]] || i_s_res_mask[ins[8:6]])
-												: (i_a_res_mask[ins[11:9]] || i_a_res_mask[ins[8:6]]));
-		end else begin  //VL words from (A0), stepping by (Ak) or at (A0) + (Vk element)
-			start_addr   = i_a0_data;
-			start_offset = 24'd0;
-			start_stride = i_ak_data;
-			start_count  = vl_count;
-			reg_conflict = i_a_res_mask[0] || (!gather && !scatter && i_a_res_mask[ins[2:0]]);
-		end
-
-	wire start = (state==IDLE) &&
-			 ((b_t_type && i_cip_vld && !reg_conflict) ||
-			  (a_s_type && i_cip_vld && i_lip_vld && !reg_conflict) ||
-			  (v_type   && i_vstart));
+	wire start = (state == IDLE) && ((i_block && i_issue) || (v_type && i_vstart));
 
 	//-----------------------------------------------------------------
 	// Sequencer
@@ -269,11 +270,11 @@ module mem_fu (
 	wire last = (remaining == 7'd1);
 
 	always @(posedge clk) begin
-		o_b_wr_en   <= 1'b0;
-		o_t_wr_en   <= 1'b0;
-		o_v_wr      <= 1'b0;
-		o_v_last    <= 1'b0;
-		o_range_err <= 1'b0;
+		o_b_wr_en    <= 1'b0;
+		o_t_wr_en    <= 1'b0;
+		o_v_wr       <= 1'b0;
+		o_v_last     <= 1'b0;
+		tr_range_err <= 1'b0;
 
 		if (rst) begin
 			state    <= IDLE;
@@ -290,8 +291,6 @@ module mem_fu (
 					r_to_t <= to_t;
 					r_from_b <= from_b;
 					r_from_t <= from_t;
-					r_scalar <= a_s_type;
-					r_from_s <= ins[13];
 					r_vnum <= is_read ? ins[8:6] : ins[5:3];
 					r_knum <= ins[2:0];
 					r_gather <= gather;
@@ -300,7 +299,6 @@ module mem_fu (
 					gbase <= start_addr;
 					r_wait <= src_wait;
 					address <= start_addr;
-					offset <= start_offset;
 					stride <= start_stride;
 					remaining <= start_count;
 					reg_idx <= v_type ? 6'd0 : ins[5:0];
@@ -314,12 +312,8 @@ module mem_fu (
 					end
 				end
 
-				//The address register took the A register as it came; the displacement
-				//is added here, off the way from the A registers.
-				PREP: begin
-					address <= address + offset;
-					state   <= after;
-				end
+				//a clock for the registers to follow the unit
+				PREP: state <= after;
 
 				RD_SEL: begin
 					bcnt       <= 4'd0;
@@ -356,8 +350,8 @@ module mem_fu (
 
 				RD:
 				if (out_of_field) begin
-					o_range_err <= 1'b1;
-					state       <= RD_PUT;
+					tr_range_err <= 1'b1;
+					state        <= RD_PUT;
 				end else if (i_mem_ack) state <= RD_PUT;
 
 				//o_mem_data now holds the word
@@ -397,8 +391,8 @@ module mem_fu (
 						wait_cnt   <= r_wait;
 						fetch_left <= fetch_left - 7'd1;
 					end
-					o_range_err <= wr_skip;
-					remaining   <= remaining - wr_ended;
+					tr_range_err <= wr_skip;
+					remaining    <= remaining - wr_ended;
 					if ((wr_ended != 7'd0) && (remaining == wr_ended)) state <= DONE;
 				end
 
@@ -420,16 +414,16 @@ module mem_fu (
 
 	always @(posedge clk)
 		if (i_mem_ack) o_mem_data <= i_mem_rd_data;
-		else if ((state == RD) && out_of_field) o_mem_data <= 64'b0;
+		else if (((state == RD) && out_of_field) || (sc_state == S_ZERO)) o_mem_data <= 64'b0;
 
 	//What the transfer under way is, latched when it started.
-	reg r_v, r_to_b, r_to_t, r_from_b, r_from_t, r_scalar, r_from_s;
+	reg tr_range_err;
+	reg r_v, r_to_b, r_to_t, r_from_b, r_from_t;
 	reg r_gather, r_scatter;
 	reg        r_own;  // a gather into the register its addresses come from
 	reg [ 2:0] r_vnum;  // the V register of a vector transfer
 	reg [ 2:0] r_knum;  // the one with the addresses of a gather or scatter
 	reg [ 7:0] r_vreads;
-	reg [23:0] offset;
 	reg [23:0] gbase;  // (A0) of a gather or scatter
 	reg [ 3:0] after;  // the state that follows PREP
 	reg [ 3:0] r_wait;
@@ -442,7 +436,6 @@ module mem_fu (
 	always @*
 		if (r_from_b) src_word = {40'b0, i_b_rd_data};
 		else if (r_from_t) src_word = i_t_rd_data;
-		else if (r_scalar) src_word = r_from_s ? i_si_data : {40'b0, i_ai_data};
 		else
 			case (r_vnum)
 				3'd0: src_word = i_v0_data;
@@ -476,7 +469,105 @@ module mem_fu (
 	always @(posedge clk) gaddr <= gbase + idx_word;
 
 	//The word being stored is held here, so the registers can move on to the next.
-	always @* o_mem_wr_data = wr_word;
+	always @* o_mem_wr_data = sc_req ? sc_word : wr_word;
+
+	//-----------------------------------------------------------------
+	// Scalar references
+	//-----------------------------------------------------------------
+	// What the current instruction would refer to is taken in every clock, and is
+	// a reference if the instruction is one and issues.  In the clock after, the
+	// address is formed, of which the low 22 bits count, and looked at: it is
+	// inside the field if it is below the words the field has from its base on
+	// (room, further down).  So the operand range flag is set before the next
+	// instruction can issue, which is the clock after that at the earliest: a
+	// scalar reference has two parcels.  The reference then joins the queue.
+	reg e_v;
+	reg e_store, e_s;
+	reg [2:0] e_i;
+	reg [21:0] e_ah, e_jkm;
+	reg  [63:0] e_data;
+	wire [21:0] e_rel = e_ah + e_jkm;
+	wire        e_oof = ({1'b0, e_rel} >= room);
+	always @(posedge clk) begin
+		e_v     <= !rst && i_scalar && i_issue;
+		e_store <= ins[12];
+		e_s     <= ins[13];
+		e_i     <= ins[8:6];
+		e_ah    <= i_ah_data;
+		e_jkm   <= jkm;
+		e_data  <= ins[13] ? i_si_data : {40'b0, i_ai_data};
+	end
+
+	// The queue, and the reference that is being made.  A load from outside the
+	// field delivers zero and a store there is dropped, neither with a request
+	// to memory.
+	localparam QW = 6 + 22 + 64;
+	(* ramstyle = "MLAB, no_rw_check" *) reg [QW-1:0] q[0:7];
+	reg [2:0] q_wr, q_rd;
+	reg  [   3:0] q_n;
+	reg           q_ok;  // there is room for a reference that issues now
+	wire [QW-1:0] head = q[q_rd];
+	wire          h_oof = head[91];
+	wire          h_store = head[90];
+
+	reg [21:0] sc_addr;
+	reg [63:0] sc_word;
+	reg        sc_s;
+	reg [ 2:0] sc_i;
+
+	wire       sc_free = !sc_req || i_mem_ack;  // nothing is being made, or it ends in this clock
+	wire       sc_pop = sc_free && (q_n != 4'd0);
+	wire [3:0] q_n_nxt = q_n + {3'd0, e_v} - {3'd0, sc_pop};
+
+	always @(posedge clk) begin
+		o_sc_a <= 1'b0;
+		o_sc_s <= 1'b0;
+		if (rst) begin
+			sc_state <= S_IDLE;
+			q_wr     <= 3'd0;
+			q_rd     <= 3'd0;
+			q_n      <= 4'd0;
+			q_ok     <= 1'b1;
+		end else begin
+			if (e_v) begin
+				q[q_wr] <= {e_oof, e_store, e_s, e_i, e_rel, e_data};
+				q_wr    <= q_wr + 3'd1;
+			end
+			q_n  <= q_n_nxt;
+			q_ok <= (q_n_nxt < 4'd7);
+
+			//the word of a load is in o_mem_data in the next clock
+			if (((sc_state == S_RD) && i_mem_ack) || (sc_state == S_ZERO)) begin
+				o_sc_a   <= !sc_s;
+				o_sc_s   <= sc_s;
+				o_sc_num <= sc_i;
+			end
+
+			if (sc_pop) begin
+				q_rd     <= q_rd + 3'd1;
+				sc_addr  <= head[85:64] + base[21:0];
+				sc_word  <= head[63:0];
+				sc_s     <= head[89];
+				sc_i     <= head[88:86];
+				sc_state <= h_oof ? (h_store ? S_IDLE : S_ZERO) : (h_store ? S_WR : S_RD);
+			end else if (sc_free) sc_state <= S_IDLE;
+		end
+	end
+
+	assign o_sc_pending = e_v || (q_n != 4'd0) || (sc_state != S_IDLE);
+	assign o_sc_ready   = (state == IDLE) && q_ok;
+	assign o_blk_ready  = (state == IDLE) && !o_sc_pending;
+	assign o_range_err  = tr_range_err || (e_v && e_oof);
+
+`ifdef VERILATOR
+	// a transfer and a scalar reference never have the port at the same time,
+	// and the queue never runs over
+	always @(posedge clk)
+		if (!rst && (((state != IDLE) && o_sc_pending) || (e_v && q_n[3]))) begin
+			$display("mem_fu: a scalar reference beside a transfer, or the queue over its end");
+			$finish;
+		end
+`endif
 
 	//-----------------------------------------------------------------
 	// Memory port and issue
@@ -501,20 +592,20 @@ module mem_fu (
 		(remaining >= 7'd3) && third_fits && (absolute[21:4] != SINGLE_LINE);
 	wire burst_hit = (remaining != 7'd0) && (absolute[21:4] == burst_line) && (absolute[3:0] == bcnt);
 
-	assign o_mem_addr = (state == RD_BURST) ? {burst_line, 4'b0} : absolute[21:0];
+	assign o_mem_addr = sc_req ? sc_addr : (state == RD_BURST) ? {burst_line, 4'b0} : absolute[21:0];
 	// A store word outside the field is dropped without a request; one inside
 	// leaves when the multiplexer takes it.
 	wire       wr_skip = (state == WR) && wr_valid && out_of_field;
 	wire       wr_gone = (state == WR) && wr_valid && (out_of_field || i_mem_take);
 	wire [6:0] wr_ended = {6'd0, i_mem_ack} + {6'd0, wr_skip};  // words finished this clock
 
-	assign o_mem_ce    = ((state == RD) && !out_of_field) || (state == RD_BURST) || o_mem_wr_en;
+	assign o_mem_ce    = ((state == RD) && !out_of_field) || (state == RD_BURST) || o_mem_wr_en || sc_req;
 	assign o_mem_burst = (state == RD_BURST);
-	assign o_mem_wr_en = (state == WR) && wr_valid && !out_of_field;
+	assign o_mem_wr_en = ((state == WR) && wr_valid && !out_of_field) || (sc_state == S_WR);
 	assign o_mem_seq   = (state == WR);
 
 	//-----------------------------------------------------------------
-	// Letting a vector instruction issue while its transfer goes on
+	// Letting the instructions behind a transfer issue while it goes on
 	//-----------------------------------------------------------------
 	// The addresses of a transfer run evenly from the first to the last, so the
 	// whole of it is inside the field when both of those are.
@@ -528,11 +619,11 @@ module mem_fu (
 	wire               wraps = (|address[23:22]) || (|last_rel[31:22]);
 	wire               last_in = !last_rel[32] && !wraps && (last_abs < {10'b0, limit});
 
-	wire fit_now = r_v && !r_gather && !r_scatter && !out_of_field && last_in;
+	wire fit_now = !r_gather && !r_scatter && !out_of_field && last_in;
 
 	always @(posedge clk)
 		if (rst || (state == IDLE)) begin
-			// a vector transfer's instruction issues in the clock the transfer starts
+			// a transfer's instruction issues in the clock the transfer starts
 			released <= !rst && start && i_issue;
 			age      <= 2'd0;
 		end else begin
@@ -544,6 +635,7 @@ module mem_fu (
 	// The quick look, in the clock a transfer starts: a step of less than 2, 16 or
 	// 1,024 words, counted up from a first address that is 64, 1,024 or 65,536
 	// words or more below the end of the field, cannot leave it in 64 elements.
+	// (A block transfer has up to 127 words and takes the second of the three.)
 	// Whatever does not pass waits for the last address to be worked out.
 	reg [22:0] room;  // words of the field from its base on
 	reg [22:0] top1, top2, top3;  // the highest first address for each of the three
@@ -559,20 +651,21 @@ module mem_fu (
 	end
 	wire [22:0] first = {1'b0, start_addr[21:0]};
 	wire quick = (start_addr[23:22] == 2'd0) && !gather && !scatter && (
-		((start_stride[23:1] == 23'd0) && ok1 && (first <= top1)) ||
+		(!b_t_type && (start_stride[23:1] == 23'd0) && ok1 && (first <= top1)) ||
 		((start_stride[23:4] == 20'd0) && ok2 && (first <= top2)) ||
 		((start_stride[23:10] == 14'd0) && ok3 && (first <= top3)));
 
 	always @(posedge clk)
-		if (rst) o_v_unsure <= 1'b0;
-		else if (state == IDLE) o_v_unsure <= start && v_type && !quick;
-		else if ((state == DONE) || ((age == 2'd1) && fit_now)) o_v_unsure <= 1'b0;
+		if (rst) o_unsure <= 1'b0;
+		else if (state == IDLE) o_unsure <= start && !quick;
+		else if ((state == DONE) || ((age == 2'd1) && fit_now)) o_unsure <= 1'b0;
 
-	// A scalar reference or a block transfer issues when it is done.  The
-	// instruction of a vector transfer issues as the transfer starts, which
+	// The instruction of a vector transfer issues as the transfer starts, which
 	// func_top sees to; should it not have, it may from then on.
-	assign o_mem_issue = ((state == DONE) || r_v) && (state != IDLE) && !released;
-	assign o_mem_busy  = (state != IDLE);
+	assign o_mem_issue = r_v && (state != IDLE) && !released;
+	assign o_mem_busy  = (state != IDLE) || o_sc_pending;
+	assign o_blk_b     = (state != IDLE) && (r_to_b || r_from_b);
+	assign o_blk_t     = (state != IDLE) && (r_to_t || r_from_t);
 	assign o_v_num     = r_vnum;
 	assign o_vk_num    = r_knum;
 	assign o_v_reads   = r_vreads;

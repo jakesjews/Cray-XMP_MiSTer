@@ -207,7 +207,16 @@ measures cases of each kind below with the real-time clock, and
 
 - **Scalar instructions.** An instruction that needs the result of another in
   an A or S register issues in the clock period that result arrives, and the
-  functional units take the clock periods of the manual.
+  functional units take the clock periods of the manual. Results of
+  different units that are due in the same clock period all arrive in it:
+  every unit has its own way into the registers.
+- **Memory instructions.** A scalar reference (10h to 13h) issues in 2 clock
+  periods and a block transfer (034 to 037) or a vector transfer (176, 177)
+  in 1, and the instructions behind them go on while memory is at work
+  (pages 2-6, 5-40, 5-64, 5-92). A scalar reference waits a clock period
+  longer than other instructions for the register with its address ("Ah
+  reserved or busy previous CP"). The instructions that use the B or the T
+  registers wait for a block transfer of them.
 - **Branches** whose address is in an instruction buffer: 5 clock periods
   taken, 2 not taken, 7 for 005, 2 more across two buffers. A branch on A0 or
   S0 waits until its register has not been busy for three clock periods.
@@ -405,25 +414,26 @@ and what is not there.
   clock periods for a branch to an address that is in no instruction buffer
   (CSM-0111000 section 5). Here all of these take longer, and how long
   varies.
-- **Memory instructions hold the instructions behind them.** A scalar
-  reference (10h to 13h) and a block transfer (034 to 037) stay the current
-  instruction until their last word is done. On the X-MP they issue in 2 and
-  in 1 clock periods and the instructions behind them go on (pages 2-6, 5-40
-  and 5-64). A vector load or store issues in 1 clock period, as on the
-  X-MP, but the instruction behind it waits two clock periods more unless a
-  look at the first address and the step shows that the transfer stays
-  inside the field: a step of less than 2, 16 or 1,024 words upwards from an
-  address 64, 1,024 or 65,536 words below the field's end. Behind a transfer
+- **One memory port.** The X-MP has three, two for loads and one for stores,
+  so that two block or vector loads and a store can be under way together,
+  and a memory bank takes a new reference every 8 clock periods (pages 2-5,
+  2-22, 5-64). Here one block or vector transfer is under way at a time,
+  the next memory instruction of any kind holds issue until it is done, and
+  scalar references are made one after the other in the order they issued,
+  eight of them waiting at most.
+- **The instruction behind a block or vector transfer** waits two clock
+  periods more unless a look at the first address and the step shows that
+  the transfer stays inside the field: a step of less than 2, 16 or 1,024
+  words upwards from an address 64, 1,024 or 65,536 words below the field's
+  end (a block transfer takes the second of the three). Behind a transfer
   whose first or last address is outside the field, and behind every gather
   and scatter, it waits to the end, so that the range error interrupts right
   behind the transfer.
-- **One result a clock period** goes into the A registers and one into the S
-  registers: an instruction whose result would arrive together with that of
-  an earlier one waits a clock period. That is the CRAY-1's "register access
-  conflict"; the X-MP's manual has no such hold among its conditions.
 - **Interrupts are precise.** The exchange happens right after the instruction
-  that raised the flag. The X-MP lets the instructions in NIP and CIP issue
-  first (page 2-12).
+  that raised the flag, and the instruction behind it does nothing, whatever
+  it is. The X-MP lets the instructions in NIP and CIP issue first (page
+  2-12). The mode instructions 0021 to 0024 wait for every result and
+  memory reference on its way; the X-MP issues them at once (page 5-16).
 - **No memory errors.** The memory error flag never sets and the error fields
   of the exchange package are zero. The two memory error modes and the
   bidirectional memory mode are carried and change nothing.
@@ -620,14 +630,26 @@ of its elements lie in a line, and picks its elements out as they arrive. A
 block or vector store reads the next word from its register while the one
 before is on its way to memory.
 
-A vector load or store issues in the clock it starts and goes on in the
-background while other instructions issue; its V register stays reserved and
-other memory instructions wait for it. The instructions behind it wait until
-it is known to stay inside the field: not at all when its first address and
-its step show that at a glance, two clocks when the last address has to be
-worked out, and to the end of a transfer whose first or last address is
-outside the field, so that the range error interrupt is taken right behind
-it. Scalar references and block transfers hold issue until they are done.
+No memory instruction waits for memory to issue. A scalar reference issues
+as soon as both its parcels are there; its address is formed and checked
+against the field in the clock after, before the next instruction can
+issue, and it then waits its turn in a queue of eight. The register of a
+load stays reserved until the word has come; the word of a store is taken
+from its register when the instruction issues. A block or vector transfer
+issues in the clock it starts and goes on in the background; its B, T or V
+registers stay reserved, and other memory instructions wait for it. The
+instructions behind it wait until it is known to stay inside the field: not
+at all when its first address and its step show that at a glance, two clocks
+when the last address has to be worked out, and to the end of a transfer
+whose first or last address is outside the field, so that the range error
+interrupt is taken right behind it.
+
+No instruction buffer starts to fill while a scalar reference is waiting or
+under way, so a word a program has stored is in memory before a fetch
+behind the store reads it (the X-MP's manual has the same order, and the
+same exception: a fetch that began before the store issued, page 2-6). A
+fetch does not wait for a block or vector transfer; it takes its turn
+between two of the transfer's words. An exchange waits for everything.
 
 The CPU's memory port is a request held until acknowledged, one acknowledge
 pulse per word. Nothing in the CPU depends on how long memory takes, and the

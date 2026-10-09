@@ -27,8 +27,15 @@ localparam PD_H024 = PD_H074 + 1;  // 1  024: a 025 that has not written its B r
 localparam PD_H072 = PD_H024 + 1;  // 1  072: a 0014 that has not set the clock yet
 localparam PD_H073 = PD_H072 + 1;  // 1  073: a 175 whose last test is not in the mask yet
 
+// the memory instructions that are not vector instructions, and what holds for them
+localparam PD_SCREF = PD_H073 + 1;  // 1  10h to 13h, a scalar reference
+localparam PD_BLOCK = PD_SCREF + 1;  // 1  034 to 037, a block transfer
+localparam PD_AH = PD_BLOCK + 1;  // 8  10h to 13h: the A register with the address, none for h = 0
+localparam PD_USE_B = PD_AH + 8;  // 1  005, 007, 024, 025: waits for a block transfer of the B registers
+localparam PD_USE_T = PD_USE_B + 1;  // 1  074, 075: for one of the T registers
+
 // for the S scheduler
-localparam PD_S_TYPE = PD_H073 + 1;  // 1
+localparam PD_S_TYPE = PD_USE_T + 1;  // 1
 localparam PD_S_LANE = PD_S_TYPE + 1;  // 11  the lane its result takes to the registers (SL_N of cray_types.vh)
 localparam PD_S_SRC = PD_S_LANE + 11;  // 5  unit the result comes from
 localparam PD_S_DEST = PD_S_SRC + 5;  // 8  register the result goes to, one bit a register

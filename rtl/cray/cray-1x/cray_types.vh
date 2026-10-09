@@ -21,8 +21,8 @@ SBUS_HI_SR = 5'b10111;  //073i01 - some status bits to Si
 // The lanes of results to the S registers (res_lanes.v): one for every unit, as
 // long as the unit takes.  The first SL_LATE deliver in the clock the result is
 // due; the others have it a clock before and write it then (res_regfile.v).
-// The lane of memory, for the time being, takes the two clocks the word needs
-// from the end of its reference.
+// The lane of memory has no delay line (0): the memory unit says when a word
+// it has read is at the registers.
 localparam SL_LOG = 0,  //the logical unit, 1 clock
 SL_NOW = 1,  //what is there when the instruction issues: an immediate value, the vector mask, the clock, a shared, status or T register
 SL_SHIFT = 2,  //the shift unit, single shifts, 2 clocks
@@ -35,7 +35,7 @@ SL_VEL = 8,  //an element of a V register, 4
 SL_FMUL = 9,  //the floating point multiplier, 7
 SL_FRA = 10,  //the reciprocal, 14
 SL_N = 11, SL_LATE = 5;
-localparam [4*SL_N-1:0] SL_DELAY = {4'd14, 4'd7, 4'd4, 4'd3, 4'd3, 4'd2, 4'd2, 4'd6, 4'd2, 4'd1, 4'd1};
+localparam [4*SL_N-1:0] SL_DELAY = {4'd14, 4'd7, 4'd4, 4'd3, 4'd3, 4'd2, 4'd0, 4'd6, 4'd2, 4'd1, 4'd1};
 
 // The same for the A registers
 localparam ABUS_IMM = 4'b0000,  //immediate
@@ -61,4 +61,4 @@ AL_MEM = 4,  //a word from memory
 AL_MUL = 5,  //the address multiplier, 4
 AL_CH = 6,  //033: a channel, 4
 AL_N = 7, AL_LATE = 5;
-localparam [4*AL_N-1:0] AL_DELAY = {4'd4, 4'd4, 4'd2, 4'd4, 4'd3, 4'd2, 4'd1};
+localparam [4*AL_N-1:0] AL_DELAY = {4'd4, 4'd4, 4'd0, 4'd4, 4'd3, 4'd2, 4'd1};
