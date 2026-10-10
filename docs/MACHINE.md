@@ -595,7 +595,18 @@ Three clocks, and none is in step with another:
   lines) and one of the 8x8 font four (14.7 MHz, 15 kHz lines), which is
   what the MiSTer framework's scandoubler needs. The picture goes out
   through the framework's `video_mixer` (scandoubler with HQ2x, scanlines,
-  gamma) and `video_freak` (aspect ratio, integer scaling).
+  gamma) and `video_freak` (aspect ratio, integer scaling). The PLL of this
+  clock has whole-number dividers; only the CPU's has a fractional one, and
+  nothing of the picture runs on that.
+
+  The 8x8 font is the one the core starts with. Its raster is 262 lines at
+  15.71 kHz and 59.94 Hz, which a 15 kHz screen takes as it is and the
+  scandoubler doubles for others; the menu is drawn into the picture, so a
+  core that started with the other font could not be set right on a 15 kHz
+  screen. The 8x16 font's raster is 524 lines at 31.41 kHz, of which 400 are
+  shown: the line and frame rates of VGA's 640x480. The analog output
+  carries the core's own raster in both cases; `vga_scaler=1` in `MiSTer.ini`
+  puts the scaler's picture there instead.
 
 The CPU and the I/O Subsystem are two cabinets with an oscillator each on the
 real machine, and they meet here as they do there, through signals that do
@@ -807,7 +818,8 @@ The I/O Subsystem and the core:
   scanlines. With HQ2x a line comes out 1,024 pixels wide where 1,280 are
   expected, with the text whole; that has not been looked into. With direct
   video a RetroTINK 4K reports the 8x16 font's picture as 1872x524p
-  (1280x384) at 58.80 MHz, 31.41 kHz and 59.94 Hz.
+  (1280x384) at 58.80 MHz, 31.41 kHz and 59.94 Hz. The analog output has not
+  been tried on a screen.
 - The package for the SD card was run on a DE10-Nano as it comes out of its
   zip file, with the core under its present name: COS starts from the one
   drive with a single question; the three example jobs assemble, compile

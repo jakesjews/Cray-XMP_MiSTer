@@ -191,7 +191,8 @@ The top line of a console is the status line of its terminal, an Ampex Dialogue 
 - Aspect ratio (with the custom ratios of `MiSTer.ini`), Scale and Scandoubler Fx work as in
   other cores. The scandoubler is for the 8x8 font.
 - Text color: white, green, amber or cyan
-- Font: 8x16 (31 kHz) or 8x8 (15 kHz)
+- Font: 8x8 (15 kHz lines), the one the core starts with, or 8x16 (31 kHz lines), which is
+  sharper: choose it on HDMI or a VGA monitor.
 - Device times: Fast, or Real: the disk drives, the tape, the printer, the consoles and the
   channel to the CPU take as long as the real ones did
 

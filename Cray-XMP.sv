@@ -71,12 +71,12 @@ module emu #(
 		"O[6:5],Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
 		"O[9:7],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 		"O[4:3],Text color,White,Green,Amber,Cyan;",
-		"O[14],Font,8x16 (31kHz),8x8 (15kHz);",
+		"O[14],Font,8x8 (15kHz),8x16 (31kHz);",
 		"O[15],Device times,Fast,Real;",
 		"-;",
 		"T[0],Reset;",
 		"R[0],Reset and close OSD;",
-		"v,0;",  // [optional] config version 0-99.
+		"v,1;",  // [optional] config version 0-99.
 				 // If CONF_STR options are changed in incompatible way, then change version number too,
 				 // so all options will get default values on first start.
 		"V,v",
@@ -133,7 +133,6 @@ module emu #(
 
 	///////////////////////   HPS   //////////////////////////////////
 
-	wire         direct_video;
 	wire         forced_scandoubler;
 	wire [ 21:0] gamma_bus;
 	wire [  1:0] buttons;
@@ -164,7 +163,6 @@ module emu #(
 		.EXT_BUS  (),
 		.gamma_bus(gamma_bus),
 
-		.direct_video      (direct_video),
 		.forced_scandoubler(forced_scandoubler),
 
 		.buttons        (buttons),
@@ -695,7 +693,10 @@ module emu #(
 
 	///////////////////////   VIDEO   ////////////////////////////////
 
-	wire font_8x8 = status[14];
+	// The 8x8 font is the one a core starts with: its 15 kHz raster is the one
+	// every screen shows, as it is or doubled, and the menu that chooses the
+	// other font is drawn into the same picture.
+	wire font_8x8 = ~status[14];
 
 	// 29.4 MHz pixels for the 8x16 font (31 kHz lines), 14.7 MHz for the 8x8
 	// font (15 kHz lines).  The video clock is four times the slower of the
@@ -770,11 +771,11 @@ module emu #(
 	// scandoubler with its effects and the gamma table, and video_freak, which
 	// sets the aspect ratio and the integer scales.
 	//
-	// Only the 15 kHz raster of the 8x8 font can be doubled.  It is a standard
-	// one, so the analog output may carry it as it is or doubled.  The 524
-	// lines of the 8x16 font are not a standard VGA mode: there the analog
-	// output goes through the scaler, except with direct video, where HDMI has
-	// to carry the core's own timing.
+	// Only the 15 kHz raster of the 8x8 font can be doubled.  The 31 kHz raster
+	// of the 8x16 font goes out as it is: 524 lines of which 400 are shown, at
+	// the line and frame rates of VGA's 640x480.  The analog output carries the
+	// core's own raster either way; vga_scaler=1 in MiSTer.ini puts the
+	// scaler's picture there for a screen that needs it.
 	wire [2:0] fx = status[9:7];
 	wire [1:0] lines = (fx > 3'd1) ? fx[1:0] - 2'd1 : 2'd0;  // CRT 25%, 50%, 75%
 	wire [1:0] ar = status[122:121];
@@ -784,7 +785,7 @@ module emu #(
 
 	assign CLK_VIDEO  = clk_sys;
 	assign VGA_SL     = lines;
-	assign VGA_SCALER = ~direct_video & ~font_8x8;
+	assign VGA_SCALER = 0;
 
 	wire mixer_de;
 

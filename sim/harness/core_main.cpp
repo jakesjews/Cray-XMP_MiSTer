@@ -8,6 +8,7 @@
 //        [--press TEXT=KEYS]... [--until TEXT] [--ms N] [--reset-at MS] [--reset-on TEXT] [--screen C]...
 //        [--printed BLOCKS] [--printer OUT] [--until-printed TEXT] [--frame OUT.ppm] [--ddr fast|normal|slow]
 //        [--disk-wait CLOCKS] [--burst] [--seed N] [--quiet] [--mount TEXT=FILE]... [--tape-out FILE]
+//        [--real-times] [--font16]
 //
 // BOOTFILE (tools/py/mkboot.py) is put where the menu loads it; without one
 // nothing is loaded.  Memory is full of junk otherwise, as DDR3 is.  --disk
@@ -35,7 +36,8 @@
 // the menu's reset at that time, --reset-on when the operator's console has
 // shown TEXT.  --screen C prints a console's 24 lines at the end, and
 // --screen 2 the printer's screen as the core holds it; --frame writes the
-// last video frame.  --real-times chooses the menu's "Device times: Real".
+// last video frame.  --real-times chooses the menu's "Device times: Real",
+// --font16 its "Font: 8x16 (31kHz)".
 //
 // At the end the two screens in the core are compared with what the serial
 // port carried.  The CPU must not run before the operator has typed START:
@@ -141,7 +143,7 @@ int main(int argc, char **argv) {
     int printed_blocks = 0;
     std::string printer_out, until_printed;
     bool printer_screen = false;
-    bool quiet = false, burst = false, real_times = false;
+    bool quiet = false, burst = false, real_times = false, font16 = false;
     uint32_t seed = 1;
     int until_console = 0, disk_wait = 200;
     struct Typing { int console; bool pressed; std::string wait, keys; long delay; std::string mount; };
@@ -193,6 +195,7 @@ int main(int argc, char **argv) {
         else if (a == "--quiet") quiet = true;
         else if (a == "--burst") burst = true;
         else if (a == "--real-times") real_times = true;
+        else if (a == "--font16") font16 = true;
         else if (a == "--disk") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) disk_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a == "--drive") { std::string t = next(); size_t eq = t.find('='); if (eq != std::string::npos) drive_files.push_back({atoi(t.c_str()), t.substr(eq + 1)}); }
         else if (a[0] == '-') { fprintf(stderr, "unknown option %s\n", a.c_str()); return 2; }
@@ -251,7 +254,10 @@ int main(int argc, char **argv) {
     top->RESET = 1;
     top->UART_RXD = 1;
     top->DDRAM_BUSY = 0;
+    // the menu's settings, after the first evaluation, which gives the status word its initial value
+    top->eval();
     if (real_times) r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u << 15;
+    if (font16) r->emu__DOT__hps_io__DOT__sim_status[0] |= 1u << 14;
     top->DDRAM_DOUT_READY = 0;
     double cpu_acc = 0, ios_acc = 0;
     const double cpu_ratio = CPU_KHZ / 58800.0;  // CPU clock cycles per video clock cycle

@@ -168,6 +168,7 @@ lint_off -rule PINMISSING -file "Cray-XMP.sv" -match "*Instance has missing pin:
 lint_off -rule PINMISSING -file "Cray-XMP.sv" -match "*Instance has missing pin: 'ps2_mouse_data_in'"
 lint_off -rule PINMISSING -file "Cray-XMP.sv" -match "*Instance has missing pin: 'ps2_mouse'"
 lint_off -rule PINMISSING -file "Cray-XMP.sv" -match "*Instance has missing pin: 'ps2_mouse_ext'"
+lint_off -rule PINMISSING -file "Cray-XMP.sv" -match "*Instance has missing pin: 'direct_video'"
 lint_off -rule PINMISSING -file "Cray-XMP.sv" -match "*Instance has missing pin: 'video_rotated'"
 lint_off -rule PINMISSING -file "Cray-XMP.sv" -match "*Instance has missing pin: 'new_vmode'"
 lint_off -rule PINMISSING -file "Cray-XMP.sv" -match "*Instance has missing pin: 'status_in'"
