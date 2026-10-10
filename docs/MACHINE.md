@@ -851,15 +851,18 @@ The I/O Subsystem and the core:
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: 31,492 ALMs (75%), 531 of 553 memory blocks,
+Quartus 17.0 for the DE10-Nano: 35,976 ALMs (86%), 544 of 553 memory blocks,
 38 DSP blocks, 5 of 6 PLLs. The Local Memories of the three I/O Processors
 take 384 of the memory blocks, the line buffers of the framework's
 scandoubler 26.
 
-Timing is met with the CPU at its 9.5 ns, with 0.32 ns to spare, the I/O
-Subsystem at 80 MHz with 1.3 ns and the video side at 58.8 MHz. The CPU's
-margin hangs on where the fitter starts (`SEED` in `Cray-XMP.qsf`): the seed
-before this one missed by 0.22 ns, on the way from the decoded instruction to
-the decision whether it issues. Against 105 MHz the exact period costs
-0.03 ns, and the timing analysis allows a clock from a PLL with a fractional
-multiplier 0.09 ns more uncertainty.
+Timing is met with the CPU at its 9.5 ns, with 0.08 ns to spare, the I/O
+Subsystem at 80 MHz with 0.76 ns and the video side at 58.8 MHz. With the
+device this full, whether the design fits at all and whether the CPU's clock
+is met hang on where the fitter starts (`SEED` in `Cray-XMP.qsf`). Of the
+seeds 1 to 4, the first two missed the CPU's clock by 0.66 and 0.39 ns, the
+third did not fit and the fourth, the one set, met every clock. A change to
+the sources is a new draw: try other seeds before looking for a cause.
+Against 105 MHz the exact period costs 0.03 ns, and the timing analysis
+allows a clock from a PLL with a fractional multiplier 0.09 ns more
+uncertainty.

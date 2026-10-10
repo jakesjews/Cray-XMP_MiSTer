@@ -48,11 +48,21 @@ environment variables for another bottle or another place):
 ./build.sh compile    # full flow, writes output_files/Cray-XMP.rbf
 ```
 
-`compile` exits with status 2 if timing is not met.
+`compile` exits with status 2 if timing is not met, and with Quartus's own
+status if a step failed, as when the design does not fit. The device is
+nearly full, so either can come from the fitter's starting point alone:
+change `SEED` in `Cray-XMP.qsf` and build again
+([MACHINE.md](MACHINE.md#resources) has how the seeds went). Seeds are
+independent builds, so several machines can try one each. A Linux machine
+without Quartus can run it from a Docker image; the released core was built
+in `theypsilon/quartus-lite-c5:17.0.2.docker0`, where Quartus is
+`/opt/intelFPGA_lite/quartus/bin/quartus_sh`. Three at a time went well on
+a machine of 32 cores; thirteen at once were slower than that.
 
 Everything else needs a Rust toolchain (`cargo`), Verilator 5, Python 3.9 or
-later and GNU Make; nothing is fetched from outside the repository except
-Rust's own crates, of which the tools use none.
+later and GNU Make, on macOS or Linux; nothing is fetched from outside the
+repository except Rust's own crates, of which the tools use none. The
+simulations have run with Verilator 5.032 (Ubuntu's) and 5.052.
 
 **Do not edit `files.qip`, `Cray-XMP.qsf` or any RTL while a build runs.** Quartus
 stops with "Settings File changed outside of the Quartus Prime software" and
