@@ -376,11 +376,51 @@ of a dataset. Taking every dataset of the COS 1.17 disk apart and putting it
 together again gives the same bytes. The directory holds 34 files, of which
 the disk as it was recovered uses 26 and the one in the package 29.
 
-This is the way to bring in a program compiled elsewhere, with
-[the ACK for the X-MP](https://github.com/kej715/ack) for instance, or a job
-with its own deck. What a program built with that kit's runtime writes to
-`$OUT` is printed when it runs in a job; in an interactive session it does
-not reach the screen, which is why FORTRAN and LISP are run as jobs.
+This is the way to bring in a job with its own deck, or a program compiled
+elsewhere.
+
+## Programs in C
+
+The C compiler for COS is a cross-compiler:
+[the Amsterdam Compiler Kit for the X-MP](https://github.com/kej715/ack), which
+runs on another computer and calls the assembler and the loader of
+[COS-Tools](https://github.com/kej715/COS-Tools). `tools/ack/Dockerfile`
+builds both, at the commits the programs on the drive were built from:
+
+```sh
+docker build -t cray-ack tools/ack
+docker run --rm -v "$PWD":/work cray-ack ack -mcos -o hello.abs hello.c
+python3 tools/py/expdisk.py put exp_disk.img BIN/HELLO hello.abs
+python3 tools/py/expdisk.py puttext exp_disk.img STATION/JHELLO jhello.txt
+```
+
+`exp_disk.img` is the one in `games/Cray-XMP` on the SD card, and
+`jhello.txt` the job that runs the program:
+
+```
+JOB,JN=JHELLO,T=60.
+ACCOUNT,AC=CRAY,US=SYSTEM.
+FETCH,DN=HELLO,MF=AP,TEXT=BIN/HELLO.
+SAVE,DN=HELLO.
+HELLO.
+```
+
+`SUBMIT,JHELLO` at the station runs it, and the printer prints what the
+program wrote. With the `SAVE` the program stays on the drive: a later job
+gets it with `ACCESS,DN=HELLO.`, and the file can come off the expander disk
+again (`expdisk.py rm`).
+
+- **The first character of a printed line is not printed**: it tells the
+  printer how far to move the paper. Start every line with a blank.
+- What a program built with the kit's runtime writes to `$OUT` is printed
+  when it runs in a job. In an interactive session it does not reach the
+  screen, which is why FORTRAN and LISP are run as jobs too.
+- The kit also compiles Pascal and BASIC. A first program in each did not
+  link here (`Unsatisfied external reference`), and that was not followed up.
+- On Linux the assembler of COS-Tools needs the one-line change the
+  Dockerfile makes, or the kit's C library does not assemble. On macOS it
+  builds as it is; the kit itself needs what
+  [software/cos-tools](../software/cos-tools/README.md) says.
 
 ## Testing on a MiSTer
 
