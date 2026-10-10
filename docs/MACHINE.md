@@ -482,7 +482,7 @@ and what is not there.
   varies. Measured on a DE10-Nano under COS (the jobs of `tests/cos`), in
   clock periods for each element of a loop over 4,096 words: a loop with
   nothing in it but its count 13, with a scalar load 22.5, with a scalar
-  store 14; a vector load of 64 words 1.4 a word and a vector store 1.5. A
+  store 14; a vector load of 64 words 1.4 a word and a vector store 1.3. A
   vector add of registers takes 72 for its 64 elements, as the manual's
   times give.
 - **One memory port.** The X-MP has three, two for loads and one for stores,
@@ -921,17 +921,15 @@ three I/O Processors take 384, the framework's scaler, scandoubler and menu
 83, the screens with their fonts 30, the disk drives' buffers 20 and the
 CPU's vector registers 16.
 
-Timing is met for the I/O Subsystem at 80 MHz with 0.89 ns to spare and
-for the video side at 58.8 MHz with 4.0; the CPU's 9.5 ns are missed by
-0.77 ns on 44 ns of total negative slack, and the framework's HDMI clock by
-0.11 ns. The CPU's worst paths are the instruction buffers' parcel into
-CIP and the memory unit's quick look at a transfer's first address, which
-decides whether the instruction behind it waits. COS starts, the station
-logs on, and the eight memory loops and the FORTRAN job run on a DE10-Nano
-with this build. With the device this full, whether the design
-fits at all and how each clock comes out hang on where the fitter starts
-(`SEED` in `Cray-XMP.qsf`): for these sources the seeds 1, 2 and 3 missed
-the CPU's clock by 1.2 to 1.8 ns, and 6, the one set, by the 0.77 above.
-The fitter's own effort options (aggressive routability, maximum router
-timing effort, a doubled placement effort) made the misses larger, not
-smaller, and are not set.
+Timing is met for the CPU's 9.5 ns with 0.08 ns to spare, for the I/O
+Subsystem at 80 MHz with 0.76 and for the video side at 58.8 MHz with 3.9;
+the framework's HDMI clock is missed by 0.04 ns, in its scaler, which some
+builds of these sources meet and others miss by about that much. COS
+starts, the station logs on, and the eight memory loops and the FORTRAN
+job run on a DE10-Nano with this build. With the device this full, whether
+the design fits at all and how each clock comes out hang on where the
+fitter starts (`SEED` in `Cray-XMP.qsf`): for these sources seed 13, the
+one set, meets the CPU's clock, seeds 1, 2 and 3 missed it by 0.4 to 0.6
+ns, and one seed in twelve did not fit. The fitter's own effort options
+(aggressive routability, maximum router timing effort, a doubled placement
+effort) made the misses larger, not smaller, and are not set.
