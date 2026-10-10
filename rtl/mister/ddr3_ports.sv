@@ -242,8 +242,10 @@ module ddr3_ports #(
 			rf_n <= rf_n + {{$clog2(RF) {1'b0}}, h_go && !h_we} - {{$clog2(RF) {1'b0}}, rf_pop};
 
 			// a word read: to its user, unless the user has been reset since
+			// (the word itself is taken on the bridge's word alone: every user
+			// looks at it with its acknowledge)
+			if (DDRAM_DOUT_READY) rdata <= bswap(DDRAM_DOUT);
 			if (DDRAM_DOUT_READY && (rf_n != 0)) begin
-				rdata <= bswap(DDRAM_DOUT);
 				if (!rf_dead[rf_rd]) begin
 					ack[rf_owner[rf_rd]]      <= 1'b1;
 					ack_last[rf_owner[rf_rd]] <= rf_pop;

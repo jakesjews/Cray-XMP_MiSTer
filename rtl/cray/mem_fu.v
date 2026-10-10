@@ -924,10 +924,14 @@ module mem_fu (
 		top3 <= room - 23'd65536;
 	end
 	wire [22:0] first = {1'b0, start_addr[21:0]};
+	// (the step's tests go by the register straight: a block transfer's step of 1 passes them all)
+	wire step_lt2 = (i_ak_data[23:1] == 23'd0);
+	wire step_lt16 = b_t_type || (i_ak_data[23:4] == 20'd0);
+	wire step_lt1024 = b_t_type || (i_ak_data[23:10] == 14'd0);
 	wire quick = (start_addr[23:22] == 2'd0) && !gather && !scatter && (
-		(!b_t_type && (start_stride[23:1] == 23'd0) && ok1 && (first <= top1)) ||
-		((start_stride[23:4] == 20'd0) && ok2 && (first <= top2)) ||
-		((start_stride[23:10] == 14'd0) && ok3 && (first <= top3)));
+		(!b_t_type && step_lt2 && ok1 && (first <= top1)) ||
+		(step_lt16 && ok2 && (first <= top2)) ||
+		(step_lt1024 && ok3 && (first <= top3)));
 
 	always @(posedge clk)
 		if (rst) o_unsure <= 1'b0;
