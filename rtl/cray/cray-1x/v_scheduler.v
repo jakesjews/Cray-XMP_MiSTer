@@ -21,7 +21,7 @@ module v_scheduler (
 	o_vwrite_start,
 	o_vread_start,
 	o_vfu_start,
-	o_v_issue,
+	o_v_rdy,
 	i_vreg_busy,
 	i_vreg_reading,
 	i_vfu_busy
@@ -36,7 +36,7 @@ module v_scheduler (
 	output wire [7:0] o_vwrite_start;
 	output wire [7:0] o_vread_start;
 	output wire [8:0] o_vfu_start;
-	output wire o_v_issue;
+	output wire o_v_rdy;  //the registers and the unit are free for the instruction
 	input wire [7:0] i_vreg_busy;  //reserved as an operand or as a result
 	input wire [7:0] i_vreg_reading;  //reserved as an operand
 	input wire [8:0] i_vfu_busy;
@@ -54,9 +54,10 @@ module v_scheduler (
 	wire vk_rdy = !(|(i_vk & i_vreg_reading));
 	wire fu_rdy = |(~i_vfu_busy & i_fu);
 
-	assign issue_vld = i_cip_vld && i_v_type && vi_rdy && vj_rdy && vk_rdy && fu_rdy;
-
-	assign o_v_issue = issue_vld;
+	//The issue logic takes the registers' and the unit's part straight, beside
+	//what holds every instruction, which keeps that off the way through here.
+	assign o_v_rdy   = i_v_type && vi_rdy && vj_rdy && vk_rdy && fu_rdy;
+	assign issue_vld = i_cip_vld && o_v_rdy;
 
 	//Let's figure out the actual 'vwrite_start', 'vread_start' and 'vfu_start' signals
 	assign o_vwrite_start = {8{issue_vld}} & i_vi;

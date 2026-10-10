@@ -339,7 +339,7 @@ module func_top (
 	wire [       7:0] vreg_step;
 	wire [       8:0] vfu_busy;
 	wire [(64*8-1):0] v_rd_data;
-	wire              v_issue;
+	wire              v_rdy;  // the V registers and the unit of the current instruction are free for it
 	wire              v_type;
 
 	wire exchange_type;
@@ -973,7 +973,7 @@ module func_top (
 		.o_vwrite_start(vwrite_start),
 		.o_vread_start (vread_start),
 		.o_vfu_start   (vfu_start),
-		.o_v_issue     (v_issue),
+		.o_v_rdy       (v_rdy),
 		.i_vreg_busy   (vreg_busy),
 		.i_vreg_reading(vreg_reading),
 		.i_vfu_busy    (vfu_busy)
@@ -1017,8 +1017,9 @@ localparam VLOG      = 3'b000,   //vector logical
 
 	//A memory instruction issues when the memory unit can take it: a scalar
 	//reference into its queue, a block transfer to start.  A vector transfer starts
-	//by the V scheduler's word (v_issue); mem_issue is then for an instruction whose
-	//transfer has started and that has not issued.
+	//when its registers and the unit are free (v_rdy, which the V scheduler's own
+	//word has as well, with what holds every instruction); mem_issue is then for
+	//an instruction whose transfer has started and that has not issued.
 	assign mem_issue = pd[PD_SCREF] ? (sc_ready && lip_vld) : pd[PD_BLOCK] ? blk_ready : vmem_issue;
 
 	assign issue_vld = (
@@ -1026,8 +1027,8 @@ localparam VLOG      = 3'b000,   //vector logical
 						 (s_issue && s_type && !mem_type) ||
 						 (a_issue && a_type && mem_issue && mem_type) ||
 						 (a_issue && a_type && !mem_type) ||
-						 (v_type && mem_type && (v_issue || mem_issue)) ||
-						 (v_issue && v_type && !mem_type) ||
+						 (v_type && mem_type && (v_rdy || mem_issue)) ||
+						 (v_rdy && v_type && !mem_type) ||
 						 (branch_issue && branch_type) ||
 						 (mem_issue && mem_type && !s_type && !a_type) ||
 						 exchange_type ||
@@ -1042,7 +1043,7 @@ localparam VLOG      = 3'b000,   //vector logical
 
 	//The vector registers and the bookkeeping for vector operations in progress.
 	//
-	//A vector instruction issues once (v_issue).  From then on its functional unit's
+	//A vector instruction issues once.  From then on its functional unit's
 	//tracker (v_optrack) says in which clocks operands are at the unit and results
 	//come out, and each V register follows its own read or write role.
 	//
@@ -1867,19 +1868,33 @@ localparam VLOG      = 3'b000,   //vector logical
 	assign ts_wait    = cip_vld && is_ts && clustered && (!ts_seen || ts_set);
 	assign ts_blocked = cip_vld && is_ts && ts_seen && ts_set && !vmem_unsure;
 
+	//A store into an SB or ST register is written in the clock after its
+	//instruction issues, which keeps the issue logic off the memory blocks' write
+	//enables; a load right behind it takes the word on its way.
+	reg sbw_en, stw_en;
+	reg [ 4:0] shw_n;
+	reg [23:0] sbw_data;
+	reg [63:0] stw_data;
 	always @(posedge clk) begin
+		sbw_en   <= !rst && cip_issue && clustered && (cip[15:9] == 7'o027) && (cip[2:0] == 3'd7);
+		stw_en   <= !rst && cip_issue && clustered && (cip[15:9] == 7'o073) && (cip[2:0] == 3'd3);
+		shw_n    <= reg_n;
+		sbw_data <= a_i_data;
+		stw_data <= s_i_data;
+		if (sbw_en) sb[shw_n] <= sbw_data;
+		if (stw_en) st[shw_n] <= stw_data;
 		if (cip_issue && clustered) begin
-			if ((cip[15:9] == 7'o027) && (cip[2:0] == 3'd7)) sb[reg_n] <= a_i_data;
-			if ((cip[15:9] == 7'o073) && (cip[2:0] == 3'd3)) st[reg_n] <= s_i_data;
 			if ((cip[15:9] == 7'o073) && (cip[5:0] == 6'o02)) sm[cln] <= s_i_data[63:32];
 			else if (cip[15:6] == 10'o0036) sm[cln] <= sem_now & ~sem_bit;
 			else if (is_ts || (cip[15:6] == 10'o0037)) sm[cln] <= sem_now | sem_bit;
 		end
 	end
+	wire [23:0] sb_now = (sbw_en && (shw_n == reg_n)) ? sbw_data : sb[reg_n];
+	wire [63:0] st_now = (stw_en && (shw_n == reg_n)) ? stw_data : st[reg_n];
 
-	assign shr_a = clustered ? sb[reg_n] : 24'b0;
+	assign shr_a = clustered ? sb_now : 24'b0;
 	//072i00 is still the real-time clock
-	assign shr_s = (cip[5:0] == 6'o00) ? real_time_clock : !clustered ? 64'b0 : (cip[2:0] == 3'd3) ? st[reg_n] : {sem_now, 32'b0};
+	assign shr_s = (cip[5:0] == 6'o00) ? real_time_clock : !clustered ? 64'b0 : (cip[2:0] == 3'd3) ? st_now : {sem_now, 32'b0};
 	//clustered, program state, floating point error status and the three mode
 	//bits; the cluster number only in monitor mode; ones in the low half
 	assign status_reg = {
