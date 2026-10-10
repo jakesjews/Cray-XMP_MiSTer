@@ -38,7 +38,9 @@ run it. If the OS ever asks for a year make sure it is before 2000.
 9. Type `STMSG,I` to see how far start-up is, until the list ends with `STARTUP COMPLETE`.
 10. Type `CLASS,ALL,ON`, then `LIMIT,5`, so that jobs can run.
 
-Every line ends with RETURN, and Backspace takes back the last character. Commands are in
+Every line ends with RETURN, and Backspace takes back the last character. Backspace is the
+only way to correct a line: there is no history, and the arrow keys and Home do not move
+within it. Right arrow and Home spoil the line. Commands are in
 capital letters; Caps Lock is on when the core starts. Type them as they are shown: none of
 the commands above ends with a period, and where one further down does, the period is part
 of it.
@@ -109,7 +111,8 @@ assembler takes the instruction for a label. How many spaces there are does not 
 
 1. In a session type `TEDI.` and name the text `PROG`.
 2. Type `AL`, then these ten lines. `HELLO` is the label of the fourth; the others start with
-   a space.
+   a space. The `O'17` of the sixth begins with the letter O, which marks an octal number;
+   the lines with `S0` have the digit zero.
 
    ```
     IDENT HELLO
