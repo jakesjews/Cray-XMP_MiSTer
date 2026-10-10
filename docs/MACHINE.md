@@ -479,11 +479,12 @@ and what is not there.
   issues, moves a word a clock period in a vector transfer, and takes 19
   clock periods for a branch to an address that is in no instruction buffer
   (CSM-0111000 section 5). Here all of these take longer, and how long
-  varies. Measured on a DE10-Nano under COS, in clock periods for each
-  element of a loop over 4,096 words: a loop with nothing in it but its
-  count 13, with a scalar load 23.6, with a scalar store 14; a vector load
-  of 64 words 2.8 a word and a vector store 3.1. A vector add of registers
-  takes 72 for its 64 elements, as the manual's times give.
+  varies. Measured on a DE10-Nano under COS (the jobs of `tests/cos`), in
+  clock periods for each element of a loop over 4,096 words: a loop with
+  nothing in it but its count 13, with a scalar load 22.5, with a scalar
+  store 14; a vector load of 64 words 1.4 a word and a vector store 1.5. A
+  vector add of registers takes 72 for its 64 elements, as the manual's
+  times give.
 - **One memory port.** The X-MP has three, two for loads and one for stores,
   so that two block or vector loads and a store can be under way together,
   and a memory bank takes a new reference every 8 clock periods (pages 2-5,
@@ -491,9 +492,9 @@ and what is not there.
   the next memory instruction of any kind holds issue until it is done, and
   scalar references are made one after the other in the order they issued,
   eight of them waiting at most. A loop that loads two vectors, adds them
-  and stores the sum takes 8.9 clock periods an element on a DE10-Nano, the
+  and stores the sum takes 4.3 clock periods an element on a DE10-Nano, the
   three transfers one after the other; the same work with scalar
-  instructions takes 64.
+  instructions takes 49.
 - **The instruction behind a block or vector transfer** waits two clock
   periods more unless a look at the first address and the step shows that
   the transfer stays inside the field: a step of less than 2, 16 or 1,024
@@ -914,21 +915,23 @@ The I/O Subsystem and the core:
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: 36,182 ALMs (86%), 544 of 553 memory blocks,
+Quartus 17.0 for the DE10-Nano: 36,529 ALMs (87%), 547 of 553 memory blocks,
 38 DSP blocks, 5 of 6 PLLs. Of the memory blocks the Local Memories of the
 three I/O Processors take 384, the framework's scaler, scandoubler and menu
 83, the screens with their fonts 30, the disk drives' buffers 20 and the
 CPU's vector registers 16.
 
-Timing is met with the CPU at its 9.5 ns, with 0.14 ns to spare, the I/O
-Subsystem at 80 MHz with 0.37 ns, the framework's HDMI clock with 0.33 ns
-and the video side at 58.8 MHz. With the device this full, whether the
-design fits at all and whether every clock is met hang on where the fitter
-starts (`SEED` in `Cray-XMP.qsf`). For these sources the seeds 1, 2 and 4
-each missed one clock, the CPU's or the HDMI clock, by 0.06 to 0.23 ns, and
-6, the one set, met them all. For the sources before, of the seeds 1 to 4
-only the fourth met every clock and the third did not fit. A change to the
-sources is a new draw: try other seeds before looking for a cause.
-Against 105 MHz the exact period costs 0.03 ns, and the timing analysis
-allows a clock from a PLL with a fractional multiplier 0.09 ns more
-uncertainty.
+Timing is met for the I/O Subsystem at 80 MHz with 0.89 ns to spare and
+for the video side at 58.8 MHz with 4.0; the CPU's 9.5 ns are missed by
+0.77 ns on 44 ns of total negative slack, and the framework's HDMI clock by
+0.11 ns. The CPU's worst paths are the instruction buffers' parcel into
+CIP and the memory unit's quick look at a transfer's first address, which
+decides whether the instruction behind it waits. COS starts, the station
+logs on, and the eight memory loops and the FORTRAN job run on a DE10-Nano
+with this build. With the device this full, whether the design
+fits at all and how each clock comes out hang on where the fitter starts
+(`SEED` in `Cray-XMP.qsf`): for these sources the seeds 1, 2 and 3 missed
+the CPU's clock by 1.2 to 1.8 ns, and 6, the one set, by the 0.77 above.
+The fitter's own effort options (aggressive routability, maximum router
+timing effort, a doubled placement effort) made the misses larger, not
+smaller, and are not set.
