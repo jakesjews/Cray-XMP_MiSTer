@@ -34,6 +34,15 @@ FORTRAN programs need too; `COSLIB`, COS-Tools' interface to the system; and
 `BASLIB` and `PASLIB`, the kit's BASIC and Pascal libraries. The kit's
 compilers for C, BASIC and Pascal are cross-compilers and run on another
 computer; these libraries are what a program compiled there is linked with.
+[docs/DEVELOPMENT.md](../../docs/DEVELOPMENT.md#programs-in-c) has how a C
+program gets from there onto the drive.
+
+`SYSTXT` is the other half of COS-Tools' interface to the system, as text:
+the macros an assembly program calls the system with, `MESSAGE`, `OPEN`,
+`READ`, `WRITE` and `ENDP` among them. The assembler takes its files in the
+order they are named in, so the text comes first: `MEMORY,FL,USER.`, then
+`CAL,T=SYSTXT,I=source,L=0.`, and the program is linked with
+`LDR,AB,DN=$BLD,LIB=COSLIB.`
 
 `LISPSYS` is the interpreter's table of atoms and `LISPINI` its library of
 functions, both text.

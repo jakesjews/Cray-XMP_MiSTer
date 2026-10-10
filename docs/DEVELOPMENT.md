@@ -132,7 +132,8 @@ gives the model an empty drive and has COS install itself on it
 (`START COS_117 INSTALL`), starts COS again and runs one job that saves the
 programs and libraries of [software/cos-tools](../software/cos-tools/README.md)
 on the drive and enters the programs as commands, then starts COS from the
-finished files and runs the three example jobs, whose printout it checks. It
+finished files and runs the three example jobs and one that assembles with
+the macros of `SYSTXT`, whose printout it checks. It
 takes about eight minutes. The header of the script says what is changed in
 the software and why: one drive instead of nine, and which user the jobs
 run as.

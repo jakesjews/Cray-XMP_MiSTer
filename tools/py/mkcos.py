@@ -27,10 +27,11 @@ How the drive is made.  The model is given an empty drive and the expander
 disk with a list of parameters that names one drive only.  COS is started
 with INSTALL, which writes its labels and catalogs to the drive.  Then COS is
 started again as it is every day, with DEADSTART, and one job, JSETUP, fetches
-every program and library from the expander disk and saves it; the programs
-it also enters as commands.  Last, unless --no-check is given, COS is started from the finished
-files and three jobs are run that assemble, compile and interpret a small
-program each; what they print is compared.
+every program, library and text from the expander disk and saves it; the
+programs it also enters as commands.  Last, unless --no-check is given, COS is
+started from the finished files and four jobs are run: the three examples,
+which assemble, compile and interpret a small program each, and one that
+assembles a program with the macros of SYSTXT.  What they print is compared.
 
 What differs from the software as it was recovered, all of it in the two
 lists of parameters on the expander disk, INSTALL and DEADSTART:
@@ -74,10 +75,11 @@ TAPE_BYTES = 8 << 20
 STAMP = ('01/01/89', '01:01:01')        # the date of the files that come on the disk
 
 
-# of software/cos-tools: programs that become commands, libraries, and the text LISP starts from
+# of software/cos-tools: programs that become commands, libraries, and texts
 COMMANDS = ('CAL', 'LDR', 'LIB', 'DASM', 'KFTC', 'LISPF4',
             'CHARGES', 'COPYD', 'COPYF', 'COPYR', 'NOTE', 'SKIPD', 'SKIPF', 'SKIPR')
 LIBRARIES = ('IOLIB', 'INTFLIB', 'RTLIB', 'EMLIB', 'SYSLIB', 'CLIB', 'COSLIB', 'BASLIB', 'PASLIB')
+TEXTS = ('LISPSYS', 'SYSTXT')           # what LISP starts from, and the macros for calling the system
 STOCK = ('TEDI', 'AUDIT')               # programs on the expander disk as it comes
 FORTRAN = 'IOLIB:INTFLIB:RTLIB:EMLIB:SYSLIB:CLIB'   # what a FORTRAN program is linked with
 ACCOUNT = 'ACCOUNT,AC=CRAY,US=SYSTEM.'
@@ -157,8 +159,22 @@ EXAMPLES = {
     'JLISP': ['JOB,JN=JLISP,T=60.', ACCOUNT, 'ACCESS,DN=LISPSYS.', 'ACCESS,DN=LISPINI.',
               'MEMORY,FL,USER.', 'LISPF4.', '/EOF'] + LISP_EXAMPLE.splitlines(),
 }
-# what the three jobs print, each line as the printer has it
-EXPECTED = ('Hello from COS', 'PRIMES BELOW 50', '  47', '3628800')
+# A job of the check only: a program that calls the system through the macros
+# of SYSTXT.  The assembler takes its files in the order they are named in, so
+# the text comes before the source.
+MACRO_EXAMPLE = '''         IDENT     SAY
+         ENTRY     SAY
+         START     SAY
+SAY      MESSAGE   ='Macros from SYSTXT'Z,US
+         ENDP
+         END
+'''
+CHECKS = dict(EXAMPLES)
+CHECKS['JMACRO'] = ['JOB,JN=JMACRO,T=60.', ACCOUNT, 'ACCESS,DN=SYSTXT.', 'ACCESS,DN=COSLIB.',
+                    'COPYF,O=SRC.', 'REWIND,DN=SRC.', 'MEMORY,FL,USER.', 'CAL,T=SYSTXT,I=SRC,L=0.',
+                    'LDR,AB,DN=$BLD,LIB=COSLIB.', '$ABD.', '/EOF'] + MACRO_EXAMPLE.splitlines()
+# what the jobs print, each line as the printer has it
+EXPECTED = ('Hello from COS', 'PRIMES BELOW 50', '  47', '3628800', 'Macros from SYSTXT')
 
 
 def job(lines):
@@ -185,13 +201,14 @@ def setup_disk(stock):
     replace(disk, 'STATION/DEADSTART', DEADSTART)
     for name in COMMANDS + LIBRARIES:
         replace(disk, 'BIN/' + name, tool(name))
-    replace(disk, 'BIN/LISPSYS', expdisk.from_text(tool('LISPSYS')))
+    for name in TEXTS:
+        replace(disk, 'BIN/' + name, expdisk.from_text(tool(name)))
     replace(disk, 'BIN/FTN', job(FTN))
     lines = ['JOB,JN=JSETUP,T=600.', ACCOUNT]
     for name in COMMANDS + STOCK:
         lines += ['FETCH,DN=%s,MF=AP,TEXT=BIN/%s.' % (name, name), 'SAVE,DN=%s,EXO=ON.' % name,
                   'RELEASE,DN=%s.' % name, 'ACCESS,DN=%s,ENTER.' % name]
-    for name in LIBRARIES + ('LISPSYS', 'FTN'):
+    for name in LIBRARIES + TEXTS + ('FTN',):
         lines += ['FETCH,DN=%s,MF=AP,TEXT=BIN/%s.' % (name, name), 'SAVE,DN=%s.' % name,
                   'RELEASE,DN=%s.' % name]
     # the interpreter reads its library of functions from the job's own deck and
@@ -256,7 +273,7 @@ printer
 '''
 CHECK = START % ('11:00:00', 'DEADSTART') + JOBS + ''.join(
     'type station SUBMIT,%s\nwait printer JOB,JN=%s\nwait printer END OF JOB\nrun 3000\n' % (name, name)
-    for name in EXAMPLES) + 'printer\n'
+    for name in CHECKS) + 'printer\n'
 
 
 def model(work, name, disk, drive, script, save, wait):
@@ -333,8 +350,8 @@ def main(argv):
     text = model(work, 'setup', setup, os.path.join(work, 'installed', 'biop_dk20.img'), SETUP,
                  os.path.join(work, 'set'), 3600)
     saved, entered = text.count('SAVE    COMPLETE'), text.count('ACCESS  COMPLETE')
-    # besides the programs and libraries: LISPSYS, FTN and LISPINI saved, LISPSYS accessed
-    want = (len(COMMANDS + STOCK + LIBRARIES) + 3, len(COMMANDS + STOCK) + 1)
+    # besides the programs, libraries and texts: FTN and LISPINI saved, LISPSYS accessed
+    want = (len(COMMANDS + STOCK + LIBRARIES + TEXTS) + 2, len(COMMANDS + STOCK) + 1)
     if faults(text) or (saved, entered) != want:
         open(os.path.join(work, 'setup.txt'), 'w').write(text)
         sys.exit('mkcos: JSETUP saved %d datasets and accessed %d, not %d and %d; %d statements failed '
@@ -345,14 +362,16 @@ def main(argv):
 
     disk = release_disk(stock)
     if check:
-        text = model(work, 'check', disk, drive, CHECK, None, 600)
+        checked = bytearray(disk)
+        replace(checked, 'STATION/JMACRO', job(CHECKS['JMACRO']))
+        text = model(work, 'check', checked, drive, CHECK, None, 600)
         lines = [line.rstrip() for line in text.splitlines()]
         absent = [e for e in EXPECTED if not any(line == e or line.endswith('    ' + e) for line in lines)]
         if faults(text) or absent:
             open(os.path.join(work, 'check.txt'), 'w').write(text)
             sys.exit('mkcos: the example jobs did not print %s; %d statements failed (their printout is in %s)'
                      % (absent, len(faults(text)), os.path.join(work, 'check.txt')))
-        print('checked: %s run from the finished files' % ', '.join(EXAMPLES))
+        print('checked: %s run from the finished files' % ', '.join(CHECKS))
 
     open(os.path.join(games, 'exp_disk.img'), 'wb').write(disk)
     print('exp_disk.img')
