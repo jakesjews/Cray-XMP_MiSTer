@@ -73,16 +73,21 @@ module ddr3_ports #(
 	// may be served.  What depends on the requests is one bit a user, and the
 	// address and the data are gathered with those bits: nothing is indexed
 	// with a number that has to be worked out from the requests first.
+	// User 0 asks late in the clock (the CPU, whose request comes out of its
+	// own multiplexer): what the others would give is gathered without it, and
+	// user 0's own comes in by one pick at the end.  When user 0 is not first
+	// the first among the others is first of all.
 	reg  [N-1:0] mask;  // a user that holds its request until its acknowledge, and has been taken
 	reg  [W-1:0] last;  // the user served last
 	wire [N-1:0] ready = req & ~mask & ~user_rst;
 	reg  [N-1:0] first;
-	reg  [W-1:0] pick;
-	reg  [  6:0] pick_len;
-	reg  [ 24:0] pick_addr;
-	reg  [ 63:0] pick_wdata;
-	reg          sooner;
-	wire         pick_we = |(first & we);
+	reg  [N-1:0] first_o;  // first among users 1 to N-1
+	reg [W-1:0] pick, pick_o;
+	reg [6:0] pick_len, len_o;
+	reg [24:0] pick_addr, addr_o;
+	reg [63:0] pick_wdata, wdata_o;
+	reg sooner, sooner_o;
+	wire pick_we = |(first & we);
 	integer k, n;
 	// how many places after the one served last a user comes, going round
 	function automatic [W:0] place(input integer user, input [W-1:0] of);
@@ -93,19 +98,29 @@ module ddr3_ports #(
 		end
 	endfunction
 	always @(*) begin
-		pick       = last;
-		pick_len   = 7'd0;
-		pick_addr  = 25'd0;
-		pick_wdata = 64'd0;
+		pick_o  = last;
+		len_o   = 7'd0;
+		addr_o  = 25'd0;
+		wdata_o = 64'd0;
 		for (n = 0; n < N; n = n + 1) begin
-			sooner = 1'b0;
-			for (k = 0; k < N; k = k + 1) if ((k != n) && (place(k, last) < place(n, last))) sooner = sooner | ready[k];
-			first[n] = ready[n] && !sooner;
-			if (first[n]) pick = n[W-1:0];
-			pick_len   = pick_len | ({7{first[n]}} & len[7*n+:7]);
-			pick_addr  = pick_addr | ({25{first[n]}} & addr[25*n+:25]);
-			pick_wdata = pick_wdata | ({64{first[n]}} & wdata[64*n+:64]);
+			sooner   = 1'b0;
+			sooner_o = 1'b0;
+			for (k = 0; k < N; k = k + 1)
+			if ((k != n) && (place(k, last) < place(n, last))) begin
+				sooner = sooner | ready[k];
+				if (k != 0) sooner_o = sooner_o | ready[k];
+			end
+			first[n]   = ready[n] && !sooner;
+			first_o[n] = (n != 0) && ready[n] && !sooner_o;
+			if (first_o[n]) pick_o = n[W-1:0];
+			len_o   = len_o | ({7{first_o[n]}} & len[7*n+:7]);
+			addr_o  = addr_o | ({25{first_o[n]}} & addr[25*n+:25]);
+			wdata_o = wdata_o | ({64{first_o[n]}} & wdata[64*n+:64]);
 		end
+		pick       = first[0] ? {W{1'b0}} : pick_o;
+		pick_len   = first[0] ? len[6:0] : len_o;
+		pick_addr  = first[0] ? addr[24:0] : addr_o;
+		pick_wdata = first[0] ? wdata[63:0] : wdata_o;
 	end
 
 	//-----------------------------------------------------------------
@@ -199,15 +214,17 @@ module ddr3_ports #(
 			if (cf_load) cf_rd <= cf_rd + 1'd1;
 			cf_n <= cf_n + {{$clog2(CF) {1'b0}}, any_take && !by_load} - {{$clog2(CF) {1'b0}}, cf_load};
 
-			// the request presented
+			// the request presented.  With the queue empty the head takes what
+			// is picked whenever it is free, whether or not anything is taken:
+			// only h_valid waits for that word, which comes late in the clock.
 			if (cf_load) begin
 				if (cf_dead[cf_rd]) h_valid <= 1'b0;  // of a user since reset: not made
 				else begin
 					h_valid                               <= 1'b1;
 					{h_we, h_owner, h_len, h_addr, h_din} <= cf_head;
 				end
-			end else if (by_load) begin
-				h_valid <= 1'b1;
+			end else if (h_free && (cf_n == 0)) begin
+				h_valid <= by_load;
 				h_we    <= pick_we;
 				h_owner <= pick;
 				h_len   <= pick_len;

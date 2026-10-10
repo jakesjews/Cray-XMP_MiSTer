@@ -336,19 +336,26 @@ module mem_fu (
 	wire    [ 6:0] run_c = s1_near ? {1'b0, s1_nf} : 7'd64;
 	wire    [ 6:0] run_ab = (run_a < s1_left) ? run_a : s1_left;
 	wire    [ 6:0] run = (run_ab < run_c) ? run_ab : run_c;
-	// stepping by 2 to 7: the elements after the first that lie in the line
+	// stepping by 2 to 7: the elements after the first that lie in the line,
+	// and how far the last of them is from the first (below 16: the line
+	// bounds it; so no multiplier, which the fitter would take a DSP block
+	// and its input registers for)
 	reg     [ 3:0] hits;
 	reg     [ 5:0] hs;  // h steps on
+	reg     [ 3:0] last_hs;
 	integer        h;
 	always @* begin
-		hits = 4'd1;
+		hits    = 4'd1;
+		last_hs = 4'd0;
 		for (h = 1; h < 8; h = h + 1) begin
 			hs = h[2:0] * s3;
-			if ((({2'b0, o5} + {1'b0, hs}) < 7'd16) && (!s1_near || (hs < s1_nf)) && (s1_left > {4'b0, h[2:0]}))
-				hits = hits + 4'd1;
+			if ((({2'b0, o5} + {1'b0, hs}) < 7'd16) && (!s1_near || (hs < s1_nf)) && (s1_left > {4'b0, h[2:0]})) begin
+				hits    = hits + 4'd1;
+				last_hs = hs[3:0];
+			end
 		end
 	end
-	wire [ 4:0] len2 = ({1'b0, hits - 4'd1} * s3) + 5'd1;  // at most 15: the line bounds it
+	wire [ 4:0] len2 = {1'b0, last_hs} + 5'd1;  // at most 15
 	wire        use_chunk = !s1_oof && !s1_io && small_stride && (one_stride ? (run > 7'd1) : (hits > 4'd1));
 	wire [ 6:0] item_cnt = use_chunk ? (one_stride ? run : {3'b0, hits}) : 7'd1;  // elements covered
 	wire [ 4:0] item_len = use_chunk ? (one_stride ? run[4:0] : len2) : 5'd1;  // words read
@@ -404,7 +411,7 @@ module mem_fu (
 		end
 
 	wire [21:0] g_abs = g_addr + base[21:0];
-	wire        g_oof = ({1'b0, g_addr} >= room);
+	reg         g_oof;  // it is outside the field: decided with the address, off the way to the request
 
 	// The reads issued and the elements they are to deliver, in order: a word
 	// or a line part, or no read at all for an element outside the field.
@@ -596,6 +603,7 @@ module mem_fu (
 						if (wait_cnt != 4'd0) wait_cnt <= wait_cnt - 4'd1;
 						else if (r_own || i_vk_avail) begin
 							g_addr   <= gaddr;
+							g_oof    <= ({1'b0, gaddr} >= room);
 							reg_idx  <= reg_idx + 6'd1;
 							wait_cnt <= r_wait;
 							f_st     <= F_GREQ;
