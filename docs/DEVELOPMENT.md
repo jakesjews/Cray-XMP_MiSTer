@@ -452,9 +452,20 @@ python3 tools/py/hil.py start cos117.ios -t 60 \
     --type '10/05/89  01:02:03=START COS_117 DEADSTART\r' \
     --until 'START COMPLETE'
 python3 tools/py/hil.py session -t 20 --type '+500=STATION\r' --type '@0:CRAY STATION=LOGON\r' --screen 0
+python3 tools/py/hil.py session -t 60 --type '@0:+1000=STMSG\r' --type '@0:+6000=REPLY,0,GO\r' \
+    --type '@0:+30000=STMSG,I\r' --type '@0:+8000=CLASS,ALL,ON\r' --type '@0:+2000=LIMIT,5\r' --screen 0
+python3 tools/py/hil.py session -t 30 --type '@0:+1000=SUBMIT,JCAL\r'
 python3 tools/py/hil.py keys '{f2}stmsg\r'      # type on a virtual keyboard
 python3 tools/py/hil.py printed                 # what the printer's file holds
 ```
+
+No job runs before the second session's statements: COS waits for the
+reply to its configuration question, then `STMSG,I` must end with
+`STARTUP COMPLETE`, and the classes have to be on with a limit (the
+README's steps 8 to 10). A `+N` wait types after N milliseconds, which
+is what to use when the text to wait for is on the screen already; `@0:`
+puts the keys on the station. The year has two digits, so the date has to
+be 1989 or thereabouts. A job's log is on the printer within seconds.
 
 Both consoles are on the HPS serial port, `/dev/ttyS1` at 115200 baud: bit 7
 of a byte is clear for the operator's console and set for the station.
