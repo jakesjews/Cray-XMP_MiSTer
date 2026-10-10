@@ -61,8 +61,8 @@ a machine of 32 cores; thirteen at once were slower than that.
 
 Everything else needs a Rust toolchain (`cargo`), Verilator 5, Python 3.9 or
 later and GNU Make, on macOS or Linux; nothing is fetched from outside the
-repository except Rust's own crates, of which the tools use none. The
-simulations have run with Verilator 5.032 (Ubuntu's) and 5.052.
+repository except Rust's own crates, of which the tools use none. The whole
+test suite passes with Verilator 5.032 on Ubuntu and with 5.052 on macOS.
 
 **Do not edit `files.qip`, `Cray-XMP.qsf` or any RTL while a build runs.** Quartus
 stops with "Settings File changed outside of the Quartus Prime software" and
