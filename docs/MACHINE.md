@@ -479,14 +479,21 @@ and what is not there.
   issues, moves a word a clock period in a vector transfer, and takes 19
   clock periods for a branch to an address that is in no instruction buffer
   (CSM-0111000 section 5). Here all of these take longer, and how long
-  varies.
+  varies. Measured on a DE10-Nano under COS, in clock periods for each
+  element of a loop over 4,096 words: a loop with nothing in it but its
+  count 13, with a scalar load 23.6, with a scalar store 14; a vector load
+  of 64 words 2.8 a word and a vector store 3.1. A vector add of registers
+  takes 72 for its 64 elements, as the manual's times give.
 - **One memory port.** The X-MP has three, two for loads and one for stores,
   so that two block or vector loads and a store can be under way together,
   and a memory bank takes a new reference every 8 clock periods (pages 2-5,
   2-22, 5-64). Here one block or vector transfer is under way at a time,
   the next memory instruction of any kind holds issue until it is done, and
   scalar references are made one after the other in the order they issued,
-  eight of them waiting at most.
+  eight of them waiting at most. A loop that loads two vectors, adds them
+  and stores the sum takes 8.9 clock periods an element on a DE10-Nano, the
+  three transfers one after the other; the same work with scalar
+  instructions takes 64.
 - **The instruction behind a block or vector transfer** waits two clock
   periods more unless a look at the first address and the step shows that
   the transfer stays inside the field: a step of less than 2, 16 or 1,024
@@ -893,21 +900,30 @@ The I/O Subsystem and the core:
   it takes 3.1 with the fast ones.
 - The whole test suite passes on Linux as on macOS (Ubuntu with Verilator
   5.032, macOS with 5.052).
+- The build that starts with the 8x8 font was run on a DE10-Nano: its
+  picture is 640 by 200 after the core is loaded and 640 by 400 once the
+  menu's Font is set to 8x16; COS starts and the FORTRAN job prints. The
+  loops whose clock periods are under
+  [Differences](#differences-from-a-real-x-mp) were assembled, linked and
+  run there as jobs, and timed by the CPU time COS charges them.
 
 ## Resources
 
-Quartus 17.0 for the DE10-Nano: 35,976 ALMs (86%), 544 of 553 memory blocks,
-38 DSP blocks, 5 of 6 PLLs. The Local Memories of the three I/O Processors
-take 384 of the memory blocks, the line buffers of the framework's
-scandoubler 26.
+Quartus 17.0 for the DE10-Nano: 36,182 ALMs (86%), 544 of 553 memory blocks,
+38 DSP blocks, 5 of 6 PLLs. Of the memory blocks the Local Memories of the
+three I/O Processors take 384, the framework's scaler, scandoubler and menu
+83, the screens with their fonts 30, the disk drives' buffers 20 and the
+CPU's vector registers 16.
 
-Timing is met with the CPU at its 9.5 ns, with 0.08 ns to spare, the I/O
-Subsystem at 80 MHz with 0.76 ns and the video side at 58.8 MHz. With the
-device this full, whether the design fits at all and whether the CPU's clock
-is met hang on where the fitter starts (`SEED` in `Cray-XMP.qsf`). Of the
-seeds 1 to 4, the first two missed the CPU's clock by 0.66 and 0.39 ns, the
-third did not fit and the fourth, the one set, met every clock. A change to
-the sources is a new draw: try other seeds before looking for a cause.
+Timing is met with the CPU at its 9.5 ns, with 0.14 ns to spare, the I/O
+Subsystem at 80 MHz with 0.37 ns, the framework's HDMI clock with 0.33 ns
+and the video side at 58.8 MHz. With the device this full, whether the
+design fits at all and whether every clock is met hang on where the fitter
+starts (`SEED` in `Cray-XMP.qsf`). For these sources the seeds 1, 2 and 4
+each missed one clock, the CPU's or the HDMI clock, by 0.06 to 0.23 ns, and
+6, the one set, met them all. For the sources before, of the seeds 1 to 4
+only the fourth met every clock and the third did not fit. A change to the
+sources is a new draw: try other seeds before looking for a cause.
 Against 105 MHz the exact period costs 0.03 ns, and the timing analysis
 allows a clock from a PLL with a fractional multiplier 0.09 ns more
 uncertainty.
