@@ -1262,19 +1262,20 @@ localparam VLOG      = 3'b000,   //vector logical
 	//(CSM-0111000 section 5).  The population count unit, the last of the units,
 	//has that clock in itself.
 	localparam NVW = NTK - 1;
-	reg     [NVW-1:0] vw_valid;
+	//Which register the result goes to is kept one bit a register, so that the
+	//write port of a register picks its word with a flat AND-OR: at most one
+	//source writes a register in a clock, the register being reserved for it.
 	reg     [NVW-1:0] vw_last;
-	reg     [    5:0] vw_idx   [0:NVW-1];
-	reg     [    2:0] vw_dest  [0:NVW-1];
-	reg     [   63:0] vw_data  [0:NVW-1];
+	reg     [    5:0] vw_idx  [0:NVW-1];
+	reg     [    7:0] vw_hit  [0:NVW-1];
+	reg     [   63:0] vw_data [0:NVW-1];
 	integer           w;
 	always @(posedge clk)
 		for (w = 0; w < NVW; w = w + 1) begin
-			vw_valid[w] <= !rst && tk_out_valid[w] && tk_out_wr_v[w];
-			vw_last[w]  <= tk_out_last[w];
-			vw_idx[w]   <= tk_out_idx[w];
-			vw_dest[w]  <= tk_out_dest[w];
-			vw_data[w]  <= fu_out[w];
+			vw_hit[w]  <= (!rst && tk_out_valid[w] && tk_out_wr_v[w]) ? (8'd1 << tk_out_dest[w]) : 8'd0;
+			vw_last[w] <= tk_out_last[w];
+			vw_idx[w]  <= tk_out_idx[w];
+			vw_data[w] <= fu_out[w];
 		end
 	wire pop_valid = tk_out_valid[NVW] && tk_out_wr_v[NVW];
 
@@ -1282,45 +1283,33 @@ localparam VLOG      = 3'b000,   //vector logical
 	generate
 		for (gr = 0; gr < 8; gr = gr + 1) begin : g_vreg
 			//who writes this register now: a functional unit, a vector load, a compress
-			//index or a 077; and whether that is the last of a result (wr_last)
-			reg            wr_en;
-			reg            wr_last;
-			reg     [ 5:0] wr_idx;
-			reg     [63:0] wr_data;
+			//index or a 077 ((Sj) to element (Ak), issued in the clock before); and
+			//whether that is the last of a result (wr_last).  One of them at a time,
+			//gathered with one bit a source.
+			wire           vm_hit = vmem_wr && (vmem_num == gr);
+			wire           pop_hit = pop_valid && (tk_out_dest[NVW] == gr);
+			wire           ci_hit = ci_wr_valid && (ci_wr_dest == gr);
+			reg            unit_hit;
+			reg            unit_last;
+			reg     [ 5:0] unit_idx;
+			reg     [63:0] unit_data;
 			integer        u;
 			always @* begin
-				wr_en   = 1'b0;
-				wr_last = 1'b0;
-				wr_idx  = sw_idx;
-				wr_data = sw_data;
-				if (sw_en[gr])  //077: (Sj) to element (Ak), issued in the clock before
-					wr_en = 1'b1;
-				if (vmem_wr && (vmem_num == gr)) begin
-					wr_en   = 1'b1;
-					wr_last = vmem_wr_last;
-					wr_idx  = vmem_wr_idx;
-					wr_data = data_from_mem_to_regs;
-				end
-				for (u = 0; u < NVW; u = u + 1)
-				if (vw_valid[u] && (vw_dest[u] == gr)) begin
-					wr_en   = 1'b1;
-					wr_last = vw_last[u];
-					wr_idx  = vw_idx[u];
-					wr_data = vw_data[u];
-				end
-				if (pop_valid && (tk_out_dest[NVW] == gr)) begin
-					wr_en   = 1'b1;
-					wr_last = tk_out_last[NVW];
-					wr_idx  = tk_out_idx[NVW];
-					wr_data = fu_out[NVW];
-				end
-				if (ci_wr_valid && (ci_wr_dest == gr)) begin
-					wr_en   = ci_wr_en;
-					wr_last = ci_wr_last;
-					wr_idx  = ci_wr_ptr;
-					wr_data = {58'b0, ci_wr_num};
+				unit_hit  = 1'b0;
+				unit_last = 1'b0;
+				unit_idx  = 6'd0;
+				unit_data = 64'd0;
+				for (u = 0; u < NVW; u = u + 1) begin
+					unit_hit  = unit_hit | vw_hit[u][gr];
+					unit_last = unit_last | (vw_hit[u][gr] & vw_last[u]);
+					unit_idx  = unit_idx | ({6{vw_hit[u][gr]}} & vw_idx[u]);
+					unit_data = unit_data | ({64{vw_hit[u][gr]}} & vw_data[u]);
 				end
 			end
+			wire wr_en = sw_en[gr] | vm_hit | unit_hit | pop_hit | (ci_hit & ci_wr_en);
+			wire wr_last = (vm_hit & vmem_wr_last) | unit_last | (pop_hit & tk_out_last[NVW]) | (ci_hit & ci_wr_last);
+			wire [ 5:0] wr_idx = ({6{sw_en[gr]}} & sw_idx) | ({6{vm_hit}} & vmem_wr_idx) | unit_idx | ({6{pop_hit}} & tk_out_idx[NVW]) | ({6{ci_hit}} & ci_wr_ptr);
+			wire [63:0] wr_data = ({64{sw_en[gr]}} & sw_data) | ({64{vm_hit}} & data_from_mem_to_regs) | unit_data | ({64{pop_hit}} & fu_out[NVW]) | ({64{ci_hit}} & {58'b0, ci_wr_num});
 
 			v_regfile vreg (
 				.clk       (clk),
