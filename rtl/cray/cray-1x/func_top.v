@@ -1135,16 +1135,47 @@ localparam VLOG      = 3'b000,   //vector logical
 			);
 
 			//Is the element the operation asks for in its operand registers?  One that
-			//was not receiving a result when the instruction issued has it.
+			//was not receiving a result when the instruction issued has it.  How far
+			//the two registers have been filled is picked out a clock ahead, from the
+			//counts the register files give a clock early (o_coming, o_come), so that
+			//the pick is behind a register and the compare alone decides: the counts
+			//are those of this clock all the same.  The registers of the operation do
+			//not change while it runs.
 			wire [2:0] rj = tk_instr[gu][5:3];
 			wire [2:0] rk = tk_instr[gu][2:0];
-			wire       ok_j = !tk_chain_j[gu] || !vreg_filling[rj] || ({1'b0, tk_ask[gu]} < vreg_filled[7*rj+:7]);
-			wire       ok_k = !tk_chain_k[gu] || !vreg_filling[rk] || ({1'b0, tk_ask[gu]} < vreg_filled[7*rk+:7]);
+			reg fill_j, fill_k;
+			reg [6:0] fill_j_n, fill_k_n;
+			always @(posedge clk) begin
+				fill_j   <= vreg_coming[rj];
+				fill_j_n <= vreg_come[7*rj+:7];
+				fill_k   <= vreg_coming[rk];
+				fill_k_n <= vreg_come[7*rk+:7];
+			end
+			wire       ok_j = !tk_chain_j[gu] || !fill_j || ({1'b0, tk_ask[gu]} < fill_j_n);
+			wire       ok_k = !tk_chain_k[gu] || !fill_k || ({1'b0, tk_ask[gu]} < fill_k_n);
 			//The double left shift 152 joins an element with the one behind it, which
 			//it reads from the register a clock later: that one has to be in by then.
-			wire       joins = (gu == 1) && (tk_instr[gu][10:9] == 2'd2) && tk_chain_j[gu] && !tk_ask_last[gu];
+			//Whether the operation is one is settled when it starts; its register is
+			//picked out by a one-hot number kept beside the instruction.
+			reg        joins_q;
+			reg  [7:0] rj_hot;
+			always @(posedge clk) begin
+				joins_q <= (gu == 1) && (tk_instr[gu][10:9] == 2'd2) && tk_chain_j[gu];
+				rj_hot  <= 8'd1 << rj;
+			end
+			reg           coming_j;
+			reg     [6:0] come_j;
+			integer       cj;
+			always @* begin
+				coming_j = 1'b0;
+				come_j   = 7'd0;
+				for (cj = 0; cj < 8; cj = cj + 1) begin
+					coming_j = coming_j | (rj_hot[cj] & vreg_coming[cj]);
+					come_j   = come_j | ({7{rj_hot[cj]}} & vreg_come[7*cj+:7]);
+				end
+			end
 			wire [6:0] behind = {1'b0, tk_ask[gu]} + 7'd1;
-			wire       ok_behind = !joins || !vreg_coming[rj] || (behind < vreg_come[7*rj+:7]);
+			wire       ok_behind = !joins_q || tk_ask_last[gu] || !coming_j || (behind < come_j);
 			assign tk_ok[gu] = ok_j && ok_k && ok_behind;
 		end
 	endgenerate
