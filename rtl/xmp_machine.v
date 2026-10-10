@@ -32,12 +32,14 @@ module xmp_machine #(
 	input wire rst,      // of clk
 	input wire i_real,   // of clk_ios: the devices take the times of the real ones
 
-	// central memory for the CPU: a word, or a burst of 16 words read
+	// central memory for the CPU: requests in a stream, reads of up to 16
+	// words answered in order (the port of rtl/cray/cray_cpu.v)
 	output wire        o_mem_req,
 	output wire        o_mem_we,
-	output wire        o_mem_burst,
+	output wire [ 6:0] o_mem_len,
 	output wire [21:0] o_mem_addr,
 	output wire [63:0] o_mem_wdata,
+	input  wire        i_mem_take,
 	input  wire        i_mem_ack,
 	input  wire [63:0] i_mem_rdata,
 
@@ -277,9 +279,10 @@ module xmp_machine #(
 
 		.o_mem_req  (o_mem_req),
 		.o_mem_we   (o_mem_we),
-		.o_mem_burst(o_mem_burst),
+		.o_mem_len  (o_mem_len),
 		.o_mem_addr (o_mem_addr),
 		.o_mem_wdata(o_mem_wdata),
+		.i_mem_take (i_mem_take),
 		.i_mem_ack  (i_mem_ack),
 		.i_mem_rdata(i_mem_rdata),
 

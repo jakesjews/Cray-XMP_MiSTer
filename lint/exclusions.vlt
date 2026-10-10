@@ -15,8 +15,10 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/terminal/term_video.v" -match "*Bits of s
 lint_off -rule UNUSEDSIGNAL -file "rtl/terminal/term_video.v" -match "*Bits of signal are not used: 'fx'[2:0]*"
 
 // Only the memory unit works ahead of the multiplexer; the instruction buffers
-// and the channels wait for each acknowledge and have no use for take.
+// and the channels wait for each acknowledge and have no use for take.  The
+// same for the four users of the DDR3 port beside the CPU.
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray_cpu.v" -match "*Bits of signal are not used: 'mux_take'[2,0]*"
+lint_off -rule UNUSEDSIGNAL -file "Cray-XMP.sv" -match "*'other_take'*"
 
 // An instruction buffer holds a block of 128 parcels: of the address a branch
 // goes to, the buffers look at the block.

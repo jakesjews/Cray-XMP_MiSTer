@@ -10,7 +10,7 @@
 #include <vector>
 
 struct DdramProfile {
-    int  lat_min = 6, lat_max = 12;   // clocks from accepting a read to the first word
+    int  lat_min = 14, lat_max = 16;  // clocks from accepting a read to the first word (a DE10-Nano: about 15 at 105 MHz)
     int  busy_pct = 5;                // chance per clock that the port is busy
     int  gap_pct = 0;                 // chance of an idle clock between burst words
     int  stall_pct_x1000 = 0;         // chance per command of a long stall

@@ -19,8 +19,7 @@ module func_top (
 	o_jump_addr,
 	o_clear_ibufs,
 	o_mem_ce,
-	o_mem_burst,
-	o_mem_seq,
+	o_mem_len,
 	i_mem_take,
 	o_mem_addr,
 	i_data_from_mem,
@@ -66,8 +65,7 @@ module func_top (
 	output wire o_clear_ibufs;
 	//memory interface
 	output wire o_mem_ce;
-	output wire o_mem_burst;
-	output wire o_mem_seq;
+	output wire [6:0] o_mem_len;
 	input wire i_mem_take;
 	output wire [21:0] o_mem_addr;
 	input wire [63:0] i_data_from_mem;
@@ -199,8 +197,7 @@ module func_top (
 	wire blk_b, blk_t;  // a block transfer has the B or the T registers
 	wire        vmem_unsure;  // a block or vector transfer may still leave the field: what is behind it waits
 	wire        mem_ce;
-	wire        mem_burst;
-	wire        mem_seq;
+	wire [ 6:0] mem_len;
 	wire [63:0] data_to_mem;
 	wire        mem_wr_en;
 	wire [21:0] mem_addr;
@@ -492,6 +489,7 @@ module func_top (
 		.o_mem_req  (x_mem_req),
 		.o_mem_we   (x_mem_we),
 		.o_mem_addr (x_mem_addr),
+		.i_mem_take (i_mem_take && x_swap),
 		.i_mem_ack  (i_mem_ack),
 		.i_mem_rdata(i_data_from_mem)
 	);
@@ -548,8 +546,7 @@ module func_top (
 	//The data memory port belongs to the exchange sequence while it swaps
 	assign o_mem_wr_en = x_swap ? x_mem_we : mem_wr_en;
 	assign o_mem_ce    = x_swap ? x_mem_req : mem_ce;
-	assign o_mem_burst = !x_swap && mem_burst;
-	assign o_mem_seq   = !x_swap && mem_seq;
+	assign o_mem_len   = x_swap ? 7'd1 : mem_len;
 	assign o_mem_addr  = x_swap ? x_mem_addr : mem_addr;
 	assign mem_ack     = i_mem_ack && !x_swap;
 
@@ -1788,8 +1785,7 @@ localparam VLOG      = 3'b000,   //vector logical
 		.o_mem_busy       (mem_busy),
 		.o_range_err      (mem_range_err),
 		.o_mem_ce         (mem_ce),
-		.o_mem_burst      (mem_burst),
-		.o_mem_seq        (mem_seq),
+		.o_mem_len        (mem_len),
 		.i_mem_take       (i_mem_take && !x_swap),
 		.o_mem_data       (data_from_mem_to_regs),
 		.o_mem_addr       (mem_addr),

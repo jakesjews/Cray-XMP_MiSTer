@@ -205,6 +205,7 @@ int main(int argc, char **argv) {
     // central memory, Buffer Memory and the boot file: 0x3000_0000 to 0x3500_0000
     DdramModel ram(80u << 20, seed);
     if (ddr == "fast")      { ram.prof.lat_min = 1; ram.prof.lat_max = 1; ram.prof.busy_pct = 0; }
+    else if (ddr == "quick") { ram.prof.lat_min = 6; ram.prof.lat_max = 12; }
     else if (ddr == "slow") { ram.prof.lat_min = 8; ram.prof.lat_max = 40; ram.prof.busy_pct = 30; ram.prof.gap_pct = 30; ram.prof.stall_pct_x1000 = 500; }
     if (!boot.empty() && !ram.load(boot, 0x4000000)) { fprintf(stderr, "cannot read %s\n", boot.c_str()); return 2; }
 

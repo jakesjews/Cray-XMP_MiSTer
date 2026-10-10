@@ -20,7 +20,6 @@ module i_buf (
 	o_nip_nxt,
 	o_nip_vld,
 	o_mem_ce,
-	o_mem_burst,
 	o_mem_addr,
 	i_mem_data,
 	i_mem_vld,
@@ -36,8 +35,7 @@ module i_buf (
 	output reg [15:0] o_nip_nxt;
 	output wire o_nip_vld;
 	//64-bit wide memory interface
-	output wire o_mem_ce;
-	output wire o_mem_burst;  // the request is for the 16 words of half a buffer
+	output wire o_mem_ce;  // a request for the 16 words of half a buffer, held until the last word
 	output wire [21:0] o_mem_addr;
 	input wire [63:0] i_mem_data;
 	input wire i_mem_vld;
@@ -115,13 +113,12 @@ module i_buf (
 	wire same_block = (cur_buf == i_p_addr[23:7]);
 
 	//Enable memory if we're trying to fill a buffer, and provide the correct address
-	assign o_mem_ce    = (buf_state == RX);
+	assign o_mem_ce   = (buf_state == RX);
 	//A half of the block is a 16-word line and is fetched as one 16-word burst: the
 	//address stays at the start of the line and i_mem_vld pulses once per word.  The
 	//request stays up from one half to the other; the address changes behind the
 	//last word of the first.
-	assign o_mem_addr  = {tmp_addr, fill_half, 4'b0};
-	assign o_mem_burst = 1'b1;
+	assign o_mem_addr = {tmp_addr, fill_half, 4'b0};
 
 	//tell the main block if the next instruction parcel is valid or not
 	assign o_nip_vld = (buf0_match || buf1_match || buf2_match || buf3_match) && same_block && (jump_wait == 2'd0);

@@ -3,7 +3,7 @@
 //   Vcray_cpu --image FILE [--mem PROFILE] [--cycles N] [--seed N] [--step]
 //             [--log-mem] [--dump START:COUNT] [--state OUT] [--expect FILE] [--quiet]
 //             [--input TEXT] [--ctrl-c CYCLE[,CYCLE...]]
-// PROFILE: 0, fixed:N, rand:A-B, ddr3, slow.  Addresses are octal.
+// PROFILE: 0, fixed:N, rand:A-B, mister, ddr3, slow.  Addresses are octal.
 // --ctrl-c: the console asks for its interrupt in those clocks, as CTRL-C does.
 // Exit status: 0 when the program wrote TEST_EXIT with code 0, 1 otherwise.
 #include "Vcray_cpu.h"
@@ -64,6 +64,7 @@ int main(int argc, char **argv) {
     top->i_single_step = single_step;
     top->i_mcu_int = 0;
     top->i_io_clear = 0;
+    top->i_mem_take = 1;
     top->i_mem_ack = 0;
     top->i_mem_rdata = 0;
     top->i_ch_in_ready = 0;
@@ -81,10 +82,11 @@ int main(int argc, char **argv) {
         top->i_ch_in_data = top->o_ch_out_data;
         top->i_ch_in_disconnect = top->o_ch_out_disconnect;
         top->i_ch_out_resume = top->o_ch_in_resume;
-        bool req = top->o_mem_req, we = top->o_mem_we, burst = top->o_mem_burst;
+        bool req = top->o_mem_req, we = top->o_mem_we; unsigned len = top->o_mem_len;
         uint32_t addr = top->o_mem_addr; uint64_t wdata = top->o_mem_wdata;
         top->clk = 1; top->eval();
-        mem.step(req, we, burst, addr, wdata);
+        mem.step(req, we, len, addr, wdata);
+        top->i_mem_take = mem.take;
         top->i_mem_ack = mem.ack;
         top->i_mem_rdata = mem.rdata;
         top->eval();

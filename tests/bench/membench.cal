@@ -1,0 +1,166 @@
+* membench: clock periods of the memory loops, in the CPU simulation.
+* The eight loops of tests/cos (their README has them as COS jobs) over N
+* words, REP times each.  The real-time clock is read before and after each
+* loop and the difference goes to RES+k; tools/py/membench.py divides it by
+* the elements.  The order: nothing, scalar load, scalar store, vector load,
+* vector store, vector add of registers, two loads + add + store with vector
+* and with scalar instructions.
+         INCLUDE "rt_direct.cal"
+N        =       D'4096
+REP      =       D'2
+RES      =       O'20000
+A        =       O'100000
+B        =       A+N
+C        =       B+N
+         TBEGIN
+* 0: the scalar loop with nothing in it
+         S5      RT
+         A7      REP
+OUTER0   A1      0
+         A2      N
+INNER0   S1      S1
+         A1      A1+1
+         A0      A2-A1
+         JAN     INNER0
+         A7      A7-1
+         A0      A7
+         JAN     OUTER0
+         S6      RT
+         S6      S6-S5
+         RES,0   S6
+* 1: a scalar load
+         S5      RT
+         A7      REP
+OUTER1   A1      0
+         A2      N
+INNER1   S1      A,A1
+         A1      A1+1
+         A0      A2-A1
+         JAN     INNER1
+         A7      A7-1
+         A0      A7
+         JAN     OUTER1
+         S6      RT
+         S6      S6-S5
+         RES+1,0 S6
+* 2: a scalar store
+         S5      RT
+         A7      REP
+OUTER2   A1      0
+         A2      N
+INNER2   A,A1    S1
+         A1      A1+1
+         A0      A2-A1
+         JAN     INNER2
+         A7      A7-1
+         A0      A7
+         JAN     OUTER2
+         S6      RT
+         S6      S6-S5
+         RES+2,0 S6
+* 3: a vector load, 64 words at a time
+         S5      RT
+         A7      REP
+         A5      64
+         VL      A5
+         A6      1
+OUTER3   A1      A
+         A4      N/64
+INNER3   A0      A1
+         V0      ,A0,A6
+         A1      A1+A5
+         A4      A4-1
+         A0      A4
+         JAN     INNER3
+         A7      A7-1
+         A0      A7
+         JAN     OUTER3
+         S6      RT
+         S6      S6-S5
+         RES+3,0 S6
+* 4: a vector store
+         S5      RT
+         A7      REP
+         A5      64
+         VL      A5
+         A6      1
+OUTER4   A1      A
+         A4      N/64
+INNER4   A0      A1
+         ,A0,A6  V0
+         A1      A1+A5
+         A4      A4-1
+         A0      A4
+         JAN     INNER4
+         A7      A7-1
+         A0      A7
+         JAN     OUTER4
+         S6      RT
+         S6      S6-S5
+         RES+4,0 S6
+* 5: a vector add of registers
+         S5      RT
+         A7      REP
+         A5      64
+         VL      A5
+OUTER5   A4      N/64
+INNER5   V2      V0+V1
+         A4      A4-1
+         A0      A4
+         JAN     INNER5
+         A7      A7-1
+         A0      A7
+         JAN     OUTER5
+         S6      RT
+         S6      S6-S5
+         RES+5,0 S6
+* 6: two loads, an add and a store, vector
+         S5      RT
+         A7      REP
+OUTER6   A1      A
+         A2      B
+         A3      C
+         A4      N/64
+         A5      64
+         VL      A5
+         A6      1
+INNER6   A0      A1
+         V0      ,A0,A6
+         A0      A2
+         V1      ,A0,A6
+         V2      V0+V1
+         A0      A3
+         ,A0,A6  V2
+         A1      A1+A5
+         A2      A2+A5
+         A3      A3+A5
+         A4      A4-1
+         A0      A4
+         JAN     INNER6
+         A7      A7-1
+         A0      A7
+         JAN     OUTER6
+         S6      RT
+         S6      S6-S5
+         RES+6,0 S6
+* 7: the same with scalar instructions
+         S5      RT
+         A7      REP
+OUTER7   A1      0
+         A2      N
+INNER7   S1      A,A1
+         S2      B,A1
+         S3      S1+S2
+         C,A1    S3
+         A1      A1+1
+         A0      A2-A1
+         JAN     INNER7
+         A7      A7-1
+         A0      A7
+         JAN     OUTER7
+         S6      RT
+         S6      S6-S5
+         RES+7,0 S6
+         TPASS
+         TEND
+         END

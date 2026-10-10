@@ -1,8 +1,9 @@
 // Behavioural main memory for CPU-level simulation, speaking the CPU's
-// request/acknowledge port:
-//   req, we, burst, addr, wdata held until the last ack; ack is one clock per
-//   word, never in the clock req first rises; burst = 16-word read.
-// Latency is configurable so no CPU path can come to depend on it.
+// port (rtl/cray/cray_cpu.v): a request (req, we, len, addr, wdata) is taken
+// in a clock where take is high; reads of len words are answered in order,
+// one word an ack; a write is done with its take.
+// Latency and the clocks in which nothing is taken are configurable so no CPU
+// path can come to depend on them.
 //
 // The top 16 of the four million words are the test bench's I/O page:
 //   0x3FFFF0 CON_STAT  read: bit 0 input available, bit 1 output ready, bit 2
@@ -22,19 +23,22 @@
 
 struct MemProfile {
     std::string name = "fixed";
-    int lat_min = 1, lat_max = 1;       // clocks from accepting a request to its first ack
-    int wlat_min = 0, wlat_max = 0;     // the same for a write, if it differs (0: as for a read)
-    int gap_pct = 0;                    // chance of an idle clock between burst words
-    int stall_x1000 = 0;                // chance (per 100000) of a long stall on a request
+    int lat_min = 1, lat_max = 1;       // clocks from taking a read to its first word
+    int busy_pct = 0;                   // chance per clock that nothing is taken
+    int gap_pct = 0;                    // chance of an idle clock between the words of a read
+    int stall_x1000 = 0;                // chance (per 100000) of a long stall on a read
     int stall_min = 30, stall_max = 100;
     static MemProfile parse(const std::string &s) {
         MemProfile p; p.name = s;
         if (s == "0" || s == "fast")      { p.lat_min = p.lat_max = 1; }
-        // as measured on a DE10-Nano: a store is acknowledged in 2 clocks, a read in about 8
-        else if (s == "ddr3")             { p.lat_min = 6; p.lat_max = 12; p.wlat_min = 2; p.wlat_max = 3; p.gap_pct = 5; p.stall_x1000 = 300; }
-        else if (s == "slow")             { p.lat_min = 10; p.lat_max = 40; p.gap_pct = 30; p.stall_x1000 = 2000; }
+        // as the DE10-Nano's DDR3 behaves through rtl/mister/ddr3_ports.sv: a word about 16
+        // clocks after its read was taken (tools/py/membench.py against the times measured
+        // under COS), now and then a clock in which the bridge is busy
+        else if (s == "mister")           { p.lat_min = 15; p.lat_max = 17; p.busy_pct = 3; p.stall_x1000 = 100; }
+        else if (s == "ddr3")             { p.lat_min = 6; p.lat_max = 12; p.busy_pct = 10; p.gap_pct = 5; p.stall_x1000 = 300; }
+        else if (s == "slow")             { p.lat_min = 10; p.lat_max = 40; p.busy_pct = 40; p.gap_pct = 30; p.stall_x1000 = 2000; }
         else if (s.rfind("fixed:", 0) == 0) { p.lat_min = p.lat_max = std::max(1, atoi(s.c_str() + 6)); }
-        else if (s.rfind("rand:", 0) == 0)  { sscanf(s.c_str() + 5, "%d-%d", &p.lat_min, &p.lat_max); if (p.lat_min < 1) p.lat_min = 1; if (p.lat_max < p.lat_min) p.lat_max = p.lat_min; }
+        else if (s.rfind("rand:", 0) == 0)  { sscanf(s.c_str() + 5, "%d-%d", &p.lat_min, &p.lat_max); if (p.lat_min < 1) p.lat_min = 1; if (p.lat_max < p.lat_min) p.lat_max = p.lat_min; p.busy_pct = 20; }
         return p;
     }
 };
@@ -75,32 +79,42 @@ public:
     }
     uint32_t image_words = 0;
 
-    // Outputs for the next clock
+    // Outputs for the next clock: whether a request will be taken in it, and
+    // a word read
+    bool take = true;
     bool ack = false;
     uint64_t rdata = 0;
 
-    // Called once per clock with what the CPU drove during the clock that ended.
-    void step(bool req, bool we, bool burst, uint32_t addr, uint64_t wdata) {
+    // Called once per clock with what the CPU drove during the clock that
+    // ended, which was taken if take was high during it.  A read's words are
+    // queued, each with the clock it comes in; the first comes after the
+    // profile's latency, the rest one a clock with the profile's gaps, and
+    // never before the last word of the read before.
+    void step(bool req, bool we, unsigned len, uint32_t addr, uint64_t wdata) {
         cycle++;
-        bool was_ack = ack;
-        ack = false;
-        if (busy) {
-            if (!req) { fprintf(stderr, "mem: request withdrawn before its last ack (cycle %llu)\n", (unsigned long long)cycle); bad = true; busy = false; return; }
-            if (addr != cur_addr || we != cur_we) { fprintf(stderr, "mem: request changed while pending (cycle %llu)\n", (unsigned long long)cycle); bad = true; }
-            if (--wait <= 0) {
-                uint32_t a = (cur_addr + done) & 0x3FFFFF;
-                if (cur_we) write(a, wdata); else rdata = read(a);
-                ack = true;
-                done++;
-                if (done == total) busy = false;
-                else wait = 1 + ((prof.gap_pct && (int)(rng() % 100) < prof.gap_pct) ? range(1, 3) : 0);
+        if (req && take) {
+            if (we) write(addr & 0x3FFFFF, wdata);
+            else {
+                if (len < 1 || len > 16) { fprintf(stderr, "mem: a read of %u words (cycle %llu)\n", len, (unsigned long long)cycle); bad = true; }
+                if (((addr + len - 1) >> 4) != (addr >> 4)) { fprintf(stderr, "mem: a read across a line at %o (cycle %llu)\n", addr, (unsigned long long)cycle); bad = true; }
+                uint64_t when = cycle + range(prof.lat_min, prof.lat_max);
+                if (prof.stall_x1000 && (int)(rng() % 100000) < prof.stall_x1000) when += range(prof.stall_min, prof.stall_max);
+                if (when <= last_word) when = last_word + 1;
+                for (unsigned b = 0; b < len; b++) {
+                    if (b && prof.gap_pct && (int)(rng() % 100) < prof.gap_pct) when += range(1, 3);
+                    pending.push_back({when, (addr + b) & 0x3FFFFF});
+                    last_word = when;
+                    when++;
+                }
             }
-        } else if (req && !was_ack) {
-            busy = true; cur_addr = addr; cur_we = we; done = 0;
-            total = (burst && !we) ? 16 : 1;
-            wait = (we && prof.wlat_min) ? range(prof.wlat_min, prof.wlat_max) : range(prof.lat_min, prof.lat_max);
-            if (prof.stall_x1000 && (int)(rng() % 100000) < prof.stall_x1000) wait += range(prof.stall_min, prof.stall_max);
         }
+        ack = false;
+        if (!pending.empty() && pending.front().when <= cycle) {
+            rdata = read(pending.front().addr);
+            pending.pop_front();
+            ack = true;
+        }
+        take = !(prof.busy_pct && (int)(rng() % 100) < prof.busy_pct);
     }
 
     // End state in the same text format as the reference model (cray-xmp-run --state):
@@ -120,9 +134,9 @@ public:
     }
 
 private:
-    bool busy = false, cur_we = false;
-    uint32_t cur_addr = 0;
-    int wait = 0, done = 0, total = 1;
+    struct Word { uint64_t when; uint32_t addr; };
+    std::deque<Word> pending;
+    uint64_t last_word = 0;
     std::mt19937 rng;
     int range(int a, int b) { return a + (int)(rng() % (uint32_t)(b - a + 1)); }
 

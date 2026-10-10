@@ -9,8 +9,10 @@
 // registers a word carries when o_load pulses:
 //
 //   WAIT  issue is blocked and everything issued earlier runs to completion
-//   RD    read package word n into a temporary
-//   WR    write the outgoing word n (composed from the registers as they are)
+//   RD    read package word n into a temporary: the read is presented until
+//         memory takes it, and its word waited for
+//   WR    write the outgoing word n (composed from the registers as they are):
+//         presented until memory takes it
 //   LOAD  load the registers that word n carries from the temporary
 //   ...   16 times, then one clock of DONE in which the instruction buffers are
 //         voided, and back to RUN
@@ -36,17 +38,18 @@ module exchange_ctl (
 	output wire        o_mem_req,
 	output wire        o_mem_we,
 	output wire [21:0] o_mem_addr,
-	input  wire        i_mem_ack,
+	input  wire        i_mem_take,  // the request presented is taken this clock
+	input  wire        i_mem_ack,   // the word of the read is in i_mem_rdata
 	input  wire [63:0] i_mem_rdata
 );
 
-	localparam RUN = 3'd0, WAIT = 3'd1, RD = 3'd2, WR = 3'd3, LOAD = 3'd4, DONE = 3'd5;
+	localparam RUN = 3'd0, WAIT = 3'd1, RD = 3'd2, WR = 3'd3, LOAD = 3'd4, DONE = 3'd5, RDW = 3'd6;
 
 	reg [2:0] state;
 	reg [7:0] xa;
 
 	assign o_run  = (state == RUN);
-	assign o_swap = (state == RD) || (state == WR) || (state == LOAD) || (state == DONE);
+	assign o_swap = (state == RD) || (state == RDW) || (state == WR) || (state == LOAD) || (state == DONE);
 	assign o_load = (state == LOAD);
 	assign o_done = (state == DONE);
 
@@ -70,13 +73,15 @@ module exchange_ctl (
 					state <= RD;
 				end
 
-				RD:
+				RD: if (i_mem_take) state <= RDW;
+
+				RDW:
 				if (i_mem_ack) begin
 					o_data <= i_mem_rdata;
 					state  <= WR;
 				end
 
-				WR: if (i_mem_ack) state <= LOAD;
+				WR: if (i_mem_take) state <= LOAD;
 
 				LOAD: begin
 					o_cnt <= o_cnt + 4'd1;

@@ -255,7 +255,8 @@ module emu #(
 	localparam [2:0] CENTRAL = 3'b000;
 	localparam [2:0] BUFFER  = 3'b001;
 
-	wire mem_req, mem_we, mem_burst, mem_ack;
+	wire mem_req, mem_we, mem_take, mem_ack;
+	wire [ 6:0] mem_len;
 	wire [21:0] mem_addr;
 	wire [63:0] mem_wdata;
 
@@ -278,19 +279,26 @@ module emu #(
 	wire boot_done, boot_missing;
 
 	wire [63:0] mem_rdata;
+	wire [ 3:0] other_take;  // only the CPU streams; the other four wait for the acknowledge
+	wire        cpu_held;  // CPU Master Clear from the I/O Subsystem
 
+	// The CPU streams its requests and can be reset by the I/O Subsystem while
+	// the port runs on; the other four hold each request until its acknowledge.
 	ddr3_ports #(
-		.N(5)
+		.N     (5),
+		.STREAM(5'b00001)
 	) ddr3 (
 		.clk  (clk_cpu),
 		.reset(reset_cpu),
 
-		.req  ({boot_req, tape_req, bm_req, cm_req, mem_req}),
-		.we   ({boot_we, 1'b0, bm_we, cm_we, mem_we}),
-		.burst({4'b0000, mem_burst}),
-		.addr ({boot_addr, tape_base + {4'd0, tape_addr}, BUFFER, bm_addr[21:0], CENTRAL, cm_addr, CENTRAL, mem_addr}),
+		.req({boot_req, tape_req, bm_req, cm_req, mem_req}),
+		.we({boot_we, 1'b0, bm_we, cm_we, mem_we}),
+		.len({7'd1, 7'd1, 7'd1, 7'd1, mem_len}),
+		.addr({boot_addr, tape_base + {4'd0, tape_addr}, BUFFER, bm_addr[21:0], CENTRAL, cm_addr, CENTRAL, mem_addr}),
 		.wdata({boot_wdata, 64'd0, bm_wdata, cm_wdata, mem_wdata}),
-		.ack  ({boot_ack, tape_ack, bm_ack, cm_ack, mem_ack}),
+		.user_rst({4'b0000, cpu_held}),
+		.take({other_take, mem_take}),
+		.ack({boot_ack, tape_ack, bm_ack, cm_ack, mem_ack}),
 		.rdata(mem_rdata),
 
 		.DDRAM_CLK       (DDRAM_CLK),
@@ -341,7 +349,6 @@ module emu #(
 	wire reel_rd, reel_wr;
 	wire [8:0] drive_rd, drive_wr;
 	wire exp_rd, exp_wr;
-	wire cpu_held;
 
 	wire [7:0] print_char;
 	wire print_valid, print_ready;
@@ -356,9 +363,10 @@ module emu #(
 
 		.o_mem_req  (mem_req),
 		.o_mem_we   (mem_we),
-		.o_mem_burst(mem_burst),
+		.o_mem_len  (mem_len),
 		.o_mem_addr (mem_addr),
 		.o_mem_wdata(mem_wdata),
+		.i_mem_take (mem_take),
 		.i_mem_ack  (mem_ack),
 		.i_mem_rdata(mem_rdata),
 

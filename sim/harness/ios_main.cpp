@@ -54,6 +54,8 @@ typedef Vios Top;
 #include "verilated.h"
 #include "ios_media.h"
 
+#include <algorithm>
+#include <deque>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -154,7 +156,7 @@ int main(int argc, char **argv) {
     std::string printed_text;            // what the printer was given
     int print_wait = 0;
 #ifdef XMP_MACHINE
-    top->i_mem_ack = 0; top->i_mem_rdata = 0;
+    top->i_mem_take = 1; top->i_mem_ack = 0; top->i_mem_rdata = 0;
 #else
     // no mainframe on the other end of the MIOP's channel pair
     top->i_cpu_ready = 0; top->i_cpu_parcel = 0; top->i_cpu_disconnect = 0; top->i_cpu_resume = 0;
@@ -170,10 +172,11 @@ int main(int argc, char **argv) {
     long waited = 0;
     long key_gap = 0;
     bool asked = false;
-    uint32_t burst_at = 0; int burst_left = 0; long cpu_clocks = 0;
+    // the CPU's reads: the words still to deliver, in order (a word two clocks after its read)
+    std::deque<std::pair<long, uint32_t>> cpu_reads; long cpu_clocks = 0;
     // the CPU is held until the operator has typed START
     bool start_typed = false, ran_early = false; size_t start_looked = 0;
-    (void)burst_at; (void)burst_left; (void)cpu_clocks; (void)start_typed; (void)start_looked;
+    (void)cpu_clocks; (void)start_typed; (void)start_looked;
 
     const long limit = ms * 80000;
     while (clocks < limit && !(shown && !until.empty())) {
@@ -187,8 +190,8 @@ int main(int argc, char **argv) {
         bool rl_rd = top->o_reel_rd, rl_wr = top->o_reel_wr; uint32_t rl_lba = top->o_reel_lba; uint8_t rl_din = top->o_reel_buff_din;
         bool cm_req = top->o_cm_req && !top->i_cm_ack, cm_we = top->o_cm_we; uint32_t cm_addr = top->o_cm_addr; uint64_t cm_wdata = top->o_cm_wdata;
 #ifdef XMP_MACHINE
-        bool mem_req = top->o_mem_req, mem_we = top->o_mem_we, mem_burst = top->o_mem_burst;
-        uint32_t mem_addr = top->o_mem_addr; uint64_t mem_wdata = top->o_mem_wdata; bool mem_acked = top->i_mem_ack;
+        bool mem_req = top->o_mem_req && top->i_mem_take, mem_we = top->o_mem_we; unsigned mem_len = top->o_mem_len;
+        uint32_t mem_addr = top->o_mem_addr; uint64_t mem_wdata = top->o_mem_wdata;
 #endif
         // the printer's character is taken after a while, as a slow reader takes it
         bool print_taken = top->o_print_valid && top->i_print_ready;
@@ -242,14 +245,19 @@ int main(int argc, char **argv) {
         top->i_cm_ack = cm_req;
         if (cm_req) { if (cm_we) cm[cm_addr] = cm_wdata; else top->i_cm_rdata = cm[cm_addr]; }
 #ifdef XMP_MACHINE
-        // central memory for the CPU: a word a clock; a burst is 16 words read
-        top->i_mem_ack = 0;
-        if (burst_left > 0) { top->i_mem_ack = 1; top->i_mem_rdata = cm[burst_at++ & 0x3FFFFF]; burst_left--; }
-        else if (mem_req && !mem_acked) {
-            top->i_mem_ack = 1;
+        // central memory for the CPU: every request is taken, a write is done at
+        // once, the words of a read come a word a clock from two clocks later;
+        // a reset of the CPU drops the words still to come
+        if (mem_req) {
             if (mem_we) cm[mem_addr] = mem_wdata;
-            else { top->i_mem_rdata = cm[mem_addr]; if (mem_burst) { burst_at = mem_addr + 1; burst_left = 15; } }
+            else {
+                long when = std::max(clocks + 2, cpu_reads.empty() ? 0L : cpu_reads.back().first + 1);
+                for (unsigned b = 0; b < mem_len; b++) cpu_reads.push_back({when + b, (mem_addr + b) & 0x3FFFFF});
+            }
         }
+        if (top->o_cpu_held) cpu_reads.clear();
+        top->i_mem_ack = 0;
+        if (!cpu_reads.empty() && cpu_reads.front().first <= clocks) { top->i_mem_ack = 1; top->i_mem_rdata = cm[cpu_reads.front().second]; cpu_reads.pop_front(); }
         cpu_clocks += !top->o_cpu_held;
         if (console[3].size() != start_looked) { start_looked = console[3].size(); start_typed = squeeze(console[3]).find("STARTCOS") != std::string::npos; }
         // (not looked at in the first clocks, while the reset takes hold)

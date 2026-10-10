@@ -3,10 +3,12 @@
 // one-processor CRAY X-MP with what the operating system COS needs of it;
 // docs/MACHINE.md lists what it does and does not have.
 //
-// Memory port: req, we, burst, addr and wdata are held until the last ack of a
-// request.  ack is a one-clock pulse per word with rdata valid in that clock.
-// burst is a 16-word read with addr[3:0] = 0.  Bit 63 is Cray bit 0, so parcel 0
-// of a word is rdata[63:48].
+// Memory port: a request (req with we, len, addr and wdata) is taken in a clock
+// where take is high, and the next may follow in the clock after.  Reads are
+// of len words, 1 to 16, inside one 16-word line; their words come back one an
+// ack, with rdata valid in that clock, in the order the reads were taken.  A
+// write is done with its take.  Bit 63 is Cray bit 0, so parcel 0 of a word is
+// rdata[63:48].
 
 module cray_cpu (
 	input wire clk,
@@ -17,9 +19,10 @@ module cray_cpu (
 
 	output wire        o_mem_req,
 	output wire        o_mem_we,
-	output wire        o_mem_burst,
+	output wire [ 6:0] o_mem_len,
 	output wire [21:0] o_mem_addr,
 	output wire [63:0] o_mem_wdata,
+	input  wire        i_mem_take,
 	input  wire        i_mem_ack,
 	input  wire [63:0] i_mem_rdata,
 
@@ -39,7 +42,6 @@ module cray_cpu (
 
 	// instruction buffer signals
 	wire        instr_buf_mem_ce;
-	wire        instr_buf_mem_burst;
 	wire [21:0] instr_buf_mem_addr;
 	wire        instr_buf_mem_vld;
 
@@ -48,8 +50,7 @@ module cray_cpu (
 	wire [63:0] fu_mem_wr_data;
 	wire        fu_mem_wr_en;
 	wire        fu_mem_ce;
-	wire        fu_mem_burst;
-	wire        fu_mem_seq;
+	wire [ 6:0] fu_mem_len;
 	wire        fu_mem_ack;
 
 	wire [63:0] mem_read_data;
@@ -74,15 +75,14 @@ module cray_cpu (
 	//////////////////////////////////////////////////
 	//               Memory multiplexer             //
 	//////////////////////////////////////////////////
-	// requester 0: instruction buffers, 1: memory functional unit,
-	// 2: the 6 Mbyte channels
+	// requester 0: instruction buffers, 1: memory functional unit (which
+	// streams its requests), 2: the 6 Mbyte channels
 
 	localparam NM = 3;
 
 	wire [   NM-1:0] mux_req;
 	wire [   NM-1:0] mux_we;
-	wire [   NM-1:0] mux_burst;
-	wire [   NM-1:0] mux_seq;
+	wire [ NM*7-1:0] mux_len;
 	wire [   NM-1:0] mux_take;
 	wire [NM*22-1:0] mux_addr;
 	wire [NM*64-1:0] mux_wdata;
@@ -90,21 +90,20 @@ module cray_cpu (
 
 	assign mux_req[1:0]     = {fu_mem_ce, instr_buf_mem_ce};
 	assign mux_we[1:0]      = {fu_mem_wr_en, 1'b0};
-	assign mux_burst[1:0]   = {fu_mem_burst, instr_buf_mem_burst};
-	assign mux_seq[1:0]     = {fu_mem_seq, 1'b0};
+	assign mux_len[13:0]    = {fu_mem_len, 7'd16};
 	assign mux_addr[43:0]   = {fu_mem_addr, instr_buf_mem_addr};
 	assign mux_wdata[127:0] = {fu_mem_wr_data, 64'b0};
 
 	cray_mem_mux #(
-		.N(NM)
+		.N     (NM),
+		.STREAM(3'b010)
 	) mem_mux (
 		.clk(clk),
 		.rst(rst),
 
 		.i_req  (mux_req),
 		.i_we   (mux_we),
-		.i_burst(mux_burst),
-		.i_seq  (mux_seq),
+		.i_len  (mux_len),
 		.o_take (mux_take),
 		.i_addr (mux_addr),
 		.i_wdata(mux_wdata),
@@ -113,9 +112,10 @@ module cray_cpu (
 
 		.o_mem_req  (o_mem_req),
 		.o_mem_we   (o_mem_we),
-		.o_mem_burst(o_mem_burst),
+		.o_mem_len  (o_mem_len),
 		.o_mem_addr (o_mem_addr),
 		.o_mem_wdata(o_mem_wdata),
+		.i_mem_take (i_mem_take),
 		.i_mem_ack  (i_mem_ack),
 		.i_mem_rdata(i_mem_rdata)
 	);
@@ -136,7 +136,6 @@ module cray_cpu (
 		.o_nip_nxt  (nip_nxt),
 		.o_nip_vld  (nip_vld),
 		.o_mem_ce   (instr_buf_mem_ce),
-		.o_mem_burst(instr_buf_mem_burst),
 		.o_mem_addr (instr_buf_mem_addr),
 		.i_mem_data (mem_read_data),
 		.i_mem_vld  (instr_buf_mem_vld),
@@ -164,8 +163,7 @@ module cray_cpu (
 		.o_data_to_mem  (fu_mem_wr_data),
 		.o_mem_wr_en    (fu_mem_wr_en),
 		.o_mem_ce       (fu_mem_ce),
-		.o_mem_burst    (fu_mem_burst),
-		.o_mem_seq      (fu_mem_seq),
+		.o_mem_len      (fu_mem_len),
 		.i_mem_take     (mux_take[1]),
 		.i_mem_ack      (fu_mem_ack),
 		.i_single_step  (i_single_step),
@@ -221,7 +219,6 @@ module cray_cpu (
 		.o_out_disconnect(o_ch_out_disconnect),
 		.o_out_mc        (o_ch_out_mc)
 	);
-	assign mux_burst[2] = 1'b0;
-	assign mux_seq[2]   = 1'b0;
+	assign mux_len[20:14] = 7'd1;
 
 endmodule
