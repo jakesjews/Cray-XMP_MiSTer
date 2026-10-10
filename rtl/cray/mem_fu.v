@@ -306,9 +306,10 @@ module mem_fu (
 	// transfer and the field go.  Anything else is read a word at a time.
 	// Stage one, from the element at f_addr: where it is, and how far the line,
 	// the transfer and the field go on from it.  Stage two, from that: the
-	// elements the request covers and how far it advances.  An item moves from
-	// one to the next as memory takes the one before, so the chain of arithmetic
-	// is cut in two and a load presents a request every other clock.
+	// elements the request covers and how far it advances.  Stage three holds
+	// the request until memory takes it, and advances the address as it is
+	// filled.  So the chain of arithmetic is cut in three, and a load presents
+	// a request every third clock, which the parts of lines do not notice.
 	wire    [21:0] f_abs = f_addr[21:0] + base[21:0];
 	wire           f_oof = ({1'b0, f_addr[21:0]} >= room);
 	wire    [22:0] in_field = room - {1'b0, f_addr[21:0]};  // words of the field from f_addr on, when !f_oof
@@ -345,17 +346,27 @@ module mem_fu (
 	wire [ 6:0] item_cnt = use_chunk ? (one_stride ? run : {3'b0, hits}) : 7'd1;  // elements covered
 	wire [ 4:0] item_len = use_chunk ? (one_stride ? run[4:0] : len2) : 5'd1;  // words read
 	wire [23:0] f_adv = use_chunk ? ({19'b0, item_len - 5'd1} + {21'b0, s3}) : stride;
+	// stage two: what the request covers and how far it advances
+	reg         s2_v;
+	reg         s2_skip;
+	reg  [21:0] s2_abs;
+	reg  [ 4:0] s2_len;
+	reg  [ 6:0] s2_cnt;
+	reg  [23:0] s2_adv;
 	// the item presented to memory, or delivered as a zero
 	reg         nx_v;
 	reg         nx_skip;
 	reg  [21:0] nx_abs;
 	reg  [ 4:0] nx_len;
 	wire        ng_push;  // the item in hand is pushed this clock (below)
-	wire        nx_load = s1_v && (!nx_v || ng_push);
-	wire        s1_load = !s1_v && (f_left != 7'd0) && ((state == LOAD) || (state == PREP)) && !r_gather;
+	wire        nx_load = s2_v && (!nx_v || ng_push);
+	wire        s2_load = s1_v && (!s2_v || nx_load);
+	// (stage one waits for the address to move on behind the item in stage two)
+	wire        s1_load = !s1_v && !s2_v && (f_left != 7'd0) && ((state == LOAD) || (state == PREP)) && !r_gather;
 	always @(posedge clk)
 		if (rst || (state == IDLE)) begin
 			s1_v <= 1'b0;
+			s2_v <= 1'b0;
 			nx_v <= 1'b0;
 		end else begin
 			if (s1_load) begin
@@ -367,12 +378,21 @@ module mem_fu (
 				s1_io   <= (f_abs[21:4] == SINGLE_LINE);
 				s1_left <= f_left;
 			end
-			if (nx_load) begin
+			if (s2_load) begin
 				s1_v    <= 1'b0;
+				s2_v    <= 1'b1;
+				s2_skip <= s1_oof;
+				s2_abs  <= s1_abs;
+				s2_len  <= item_len;
+				s2_cnt  <= item_cnt;
+				s2_adv  <= f_adv;
+			end
+			if (nx_load) begin
+				s2_v    <= 1'b0;
 				nx_v    <= 1'b1;
-				nx_skip <= s1_oof;
-				nx_abs  <= s1_abs;
-				nx_len  <= item_len;
+				nx_skip <= s2_skip;
+				nx_abs  <= s2_abs;
+				nx_len  <= s2_len;
 			end else if (ng_push) nx_v <= 1'b0;
 		end
 
@@ -550,10 +570,10 @@ module mem_fu (
 					case (f_st)
 						F_RUN: begin
 							if (nx_load) begin
-								f_addr <= f_addr + f_adv;
-								f_left <= f_left - item_cnt;
+								f_addr <= f_addr + s2_adv;
+								f_left <= f_left - s2_cnt;
 							end
-							if ((f_left == 7'd0) && !s1_v && !nx_v) f_st <= F_DONE;
+							if ((f_left == 7'd0) && !s1_v && !s2_v && !nx_v) f_st <= F_DONE;
 						end
 
 						//A gather: the element of Vk for reg_idx is ready when wait_cnt reaches
