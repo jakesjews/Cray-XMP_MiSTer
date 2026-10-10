@@ -87,9 +87,10 @@ public:
 
     // Called once per clock with what the CPU drove during the clock that
     // ended, which was taken if take was high during it.  A read's words are
-    // queued, each with the clock it comes in; the first comes after the
-    // profile's latency, the rest one a clock with the profile's gaps, and
-    // never before the last word of the read before.
+    // read when the read is taken, as a memory that serves its requests in
+    // order does, and queued, each with the clock it comes in; the first comes
+    // after the profile's latency, the rest one a clock with the profile's
+    // gaps, and never before the last word of the read before.
     void step(bool req, bool we, unsigned len, uint32_t addr, uint64_t wdata) {
         cycle++;
         if (req && take) {
@@ -102,7 +103,7 @@ public:
                 if (when <= last_word) when = last_word + 1;
                 for (unsigned b = 0; b < len; b++) {
                     if (b && prof.gap_pct && (int)(rng() % 100) < prof.gap_pct) when += range(1, 3);
-                    pending.push_back({when, (addr + b) & 0x3FFFFF});
+                    pending.push_back({when, read((addr + b) & 0x3FFFFF)});
                     last_word = when;
                     when++;
                 }
@@ -110,7 +111,7 @@ public:
         }
         ack = false;
         if (!pending.empty() && pending.front().when <= cycle) {
-            rdata = read(pending.front().addr);
+            rdata = pending.front().data;
             pending.pop_front();
             ack = true;
         }
@@ -134,7 +135,7 @@ public:
     }
 
 private:
-    struct Word { uint64_t when; uint32_t addr; };
+    struct Word { uint64_t when; uint64_t data; };
     std::deque<Word> pending;
     uint64_t last_word = 0;
     std::mt19937 rng;

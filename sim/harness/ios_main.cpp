@@ -172,8 +172,9 @@ int main(int argc, char **argv) {
     long waited = 0;
     long key_gap = 0;
     bool asked = false;
-    // the CPU's reads: the words still to deliver, in order (a word two clocks after its read)
-    std::deque<std::pair<long, uint32_t>> cpu_reads; long cpu_clocks = 0;
+    // the CPU's reads: the words still to deliver, in order (a word two clocks after
+    // its read), read when the read is taken, as memory serves its requests in order
+    std::deque<std::pair<long, uint64_t>> cpu_reads; long cpu_clocks = 0;
     // the CPU is held until the operator has typed START
     bool start_typed = false, ran_early = false; size_t start_looked = 0;
     (void)cpu_clocks; (void)start_typed; (void)start_looked;
@@ -252,12 +253,12 @@ int main(int argc, char **argv) {
             if (mem_we) cm[mem_addr] = mem_wdata;
             else {
                 long when = std::max(clocks + 2, cpu_reads.empty() ? 0L : cpu_reads.back().first + 1);
-                for (unsigned b = 0; b < mem_len; b++) cpu_reads.push_back({when + b, (mem_addr + b) & 0x3FFFFF});
+                for (unsigned b = 0; b < mem_len; b++) cpu_reads.push_back({when + b, cm[(mem_addr + b) & 0x3FFFFF]});
             }
         }
         if (top->o_cpu_held) cpu_reads.clear();
         top->i_mem_ack = 0;
-        if (!cpu_reads.empty() && cpu_reads.front().first <= clocks) { top->i_mem_ack = 1; top->i_mem_rdata = cm[cpu_reads.front().second]; cpu_reads.pop_front(); }
+        if (!cpu_reads.empty() && cpu_reads.front().first <= clocks) { top->i_mem_ack = 1; top->i_mem_rdata = cpu_reads.front().second; cpu_reads.pop_front(); }
         cpu_clocks += !top->o_cpu_held;
         if (console[3].size() != start_looked) { start_looked = console[3].size(); start_typed = squeeze(console[3]).find("STARTCOS") != std::string::npos; }
         // (not looked at in the first clocks, while the reset takes hold)

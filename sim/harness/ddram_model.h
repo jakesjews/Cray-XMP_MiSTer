@@ -72,10 +72,14 @@ public:
                     int lat = range(prof.lat_min, prof.lat_max);
                     if (prof.stall_pct_x1000 && (int)(rng() % 100000) < prof.stall_pct_x1000)
                         lat += range(prof.stall_min, prof.stall_max);
+                    // the words are read now, as the bridge serves its requests in
+                    // order: a write taken after this read does not reach them
                     uint64_t when = std::max(now + lat, last_data + 1);
                     for (int b = 0; b < burstcnt; b++) {
                         if (b && prof.gap_pct && (int)(rng() % 100) < prof.gap_pct) when += range(1, 3);
-                        pending.push_back({when, off + 8u * b});
+                        uint64_t d = 0;
+                        for (int i = 7; i >= 0; i--) d = (d << 8) | mem[off + 8u * b + i];   // little-endian bus
+                        pending.push_back({when, d});
                         last_data = when;
                         when++;
                     }
@@ -86,10 +90,8 @@ public:
         now++;
         dout_ready = false;
         if (!pending.empty() && pending.front().when <= now) {
-            size_t off = pending.front().off;
+            dout = pending.front().data;
             pending.pop_front();
-            dout = 0;
-            for (int i = 7; i >= 0; i--) dout = (dout << 8) | mem[off + i];   // little-endian bus
             dout_ready = true;
         }
         busy = prof.busy_pct && (int)(rng() % 100) < prof.busy_pct;
@@ -98,7 +100,7 @@ public:
     bool bad_access = false;
 
 private:
-    struct Beat { uint64_t when; size_t off; };
+    struct Beat { uint64_t when; uint64_t data; };
     std::deque<Beat> pending;
     std::mt19937 rng;
     uint64_t now = 0, last_data = 0;
