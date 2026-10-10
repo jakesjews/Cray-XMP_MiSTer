@@ -304,20 +304,29 @@ module mem_fu (
 	// Stepping by 1 to 7 words, the elements that lie in one 16-word line are
 	// read as one request from the first of them to the last, as far as the
 	// transfer and the field go.  Anything else is read a word at a time.
+	// Stage one, from the element at f_addr: where it is, and how far the line,
+	// the transfer and the field go on from it.  Stage two, from that: the
+	// elements the request covers and how far it advances.  An item moves from
+	// one to the next as memory takes the one before, so the chain of arithmetic
+	// is cut in two and a load presents a request every other clock.
 	wire    [21:0] f_abs = f_addr[21:0] + base[21:0];
 	wire           f_oof = ({1'b0, f_addr[21:0]} >= room);
 	wire    [22:0] in_field = room - {1'b0, f_addr[21:0]};  // words of the field from f_addr on, when !f_oof
-	wire           near = (in_field < 23'd64);
-	wire    [ 5:0] nf = in_field[5:0];
-	wire    [ 4:0] o5 = {1'b0, f_abs[3:0]};
+	reg            s1_v;  // stage one holds an element
+	reg            s1_oof;  // outside the field
+	reg     [21:0] s1_abs;
+	reg            s1_near;  // fewer than 64 words of the field go on from it
+	reg     [ 5:0] s1_nf;  // how many then
+	reg            s1_io;  // it is in the line SINGLE_LINE
+	reg     [ 6:0] s1_left;  // elements of the transfer from it on
+	wire    [ 4:0] o5 = {1'b0, s1_abs[3:0]};
 	wire    [ 2:0] s3 = stride[2:0];
 	wire           small_stride = (stride[23:3] == 21'd0) && (s3 != 3'd0);
 	wire           one_stride = (stride == 24'd1);
-	wire           io_line = (f_abs[21:4] == SINGLE_LINE);
 	// stepping by 1: the words to the end of the line, the transfer or the field
 	wire    [ 6:0] run_a = {2'b0, 5'd16 - o5};
-	wire    [ 6:0] run_c = near ? {1'b0, nf} : 7'd64;
-	wire    [ 6:0] run_ab = (run_a < f_left) ? run_a : f_left;
+	wire    [ 6:0] run_c = s1_near ? {1'b0, s1_nf} : 7'd64;
+	wire    [ 6:0] run_ab = (run_a < s1_left) ? run_a : s1_left;
 	wire    [ 6:0] run = (run_ab < run_c) ? run_ab : run_c;
 	// stepping by 2 to 7: the elements after the first that lie in the line
 	reg     [ 3:0] hits;
@@ -327,15 +336,45 @@ module mem_fu (
 		hits = 4'd1;
 		for (h = 1; h < 8; h = h + 1) begin
 			hs = h[2:0] * s3;
-			if ((({2'b0, o5} + {1'b0, hs}) < 7'd16) && (!near || (hs < nf)) && (f_left > {4'b0, h[2:0]}))
+			if ((({2'b0, o5} + {1'b0, hs}) < 7'd16) && (!s1_near || (hs < s1_nf)) && (s1_left > {4'b0, h[2:0]}))
 				hits = hits + 4'd1;
 		end
 	end
 	wire [ 4:0] len2 = ({1'b0, hits - 4'd1} * s3) + 5'd1;  // at most 15: the line bounds it
-	wire        use_chunk = !f_oof && !io_line && small_stride && (one_stride ? (run > 7'd1) : (hits > 4'd1));
+	wire        use_chunk = !s1_oof && !s1_io && small_stride && (one_stride ? (run > 7'd1) : (hits > 4'd1));
 	wire [ 6:0] item_cnt = use_chunk ? (one_stride ? run : {3'b0, hits}) : 7'd1;  // elements covered
 	wire [ 4:0] item_len = use_chunk ? (one_stride ? run[4:0] : len2) : 5'd1;  // words read
 	wire [23:0] f_adv = use_chunk ? ({19'b0, item_len - 5'd1} + {21'b0, s3}) : stride;
+	// the item presented to memory, or delivered as a zero
+	reg         nx_v;
+	reg         nx_skip;
+	reg  [21:0] nx_abs;
+	reg  [ 4:0] nx_len;
+	wire        ng_push;  // the item in hand is pushed this clock (below)
+	wire        nx_load = s1_v && (!nx_v || ng_push);
+	wire        s1_load = !s1_v && (f_left != 7'd0) && ((state == LOAD) || (state == PREP)) && !r_gather;
+	always @(posedge clk)
+		if (rst || (state == IDLE)) begin
+			s1_v <= 1'b0;
+			nx_v <= 1'b0;
+		end else begin
+			if (s1_load) begin
+				s1_v    <= 1'b1;
+				s1_oof  <= f_oof;
+				s1_abs  <= f_abs;
+				s1_near <= (in_field < 23'd64);
+				s1_nf   <= in_field[5:0];
+				s1_io   <= (f_abs[21:4] == SINGLE_LINE);
+				s1_left <= f_left;
+			end
+			if (nx_load) begin
+				s1_v    <= 1'b0;
+				nx_v    <= 1'b1;
+				nx_skip <= s1_oof;
+				nx_abs  <= s1_abs;
+				nx_len  <= item_len;
+			end else if (ng_push) nx_v <= 1'b0;
+		end
 
 	wire [21:0] g_abs = g_addr + base[21:0];
 	wire        g_oof = ({1'b0, g_addr} >= room);
@@ -357,11 +396,12 @@ module mem_fu (
 	// is delivered first, so that a word can never come for an element that
 	// is not the one in hand.
 	wire f_want = (state == LOAD) && it_room && (skips == 4'd0);
-	wire ld_req = f_want && (r_gather ? ((f_st == F_GREQ) && !g_oof) : ((f_st == F_RUN) && (f_left != 7'd0) && !f_oof));
-	wire skip_push = (state == LOAD) && it_room && (r_gather ? ((f_st == F_GREQ) && g_oof) : ((f_st == F_RUN) && (f_left != 7'd0) && f_oof));
+	wire ld_req = f_want && (r_gather ? ((f_st == F_GREQ) && !g_oof) : (nx_v && !nx_skip));
+	wire skip_push = (state == LOAD) && it_room && (r_gather ? ((f_st == F_GREQ) && g_oof) : (nx_v && nx_skip));
 	wire ld_take = ld_req && i_mem_take;
 	wire it_push = ld_take || skip_push;
-	wire [IW-1:0] it_data = {skip_push, r_gather ? g_abs : f_abs, r_gather ? 5'd1 : item_len};
+	assign ng_push = it_push && !r_gather;
+	wire [IW-1:0] it_data = {skip_push, r_gather ? g_abs : nx_abs, r_gather ? 5'd1 : nx_len};
 
 	// the elements delivered
 	wire hit = h_valid && !h_skip && i_mem_ack && (r_gather || (absolute == cur_word));
@@ -508,11 +548,12 @@ module mem_fu (
 				//elements as zeros.
 				LOAD: begin
 					case (f_st)
-						F_RUN:
-						if (it_push) begin
-							f_addr <= f_addr + f_adv;
-							f_left <= f_left - item_cnt;
-							if (f_left == item_cnt) f_st <= F_DONE;
+						F_RUN: begin
+							if (nx_load) begin
+								f_addr <= f_addr + f_adv;
+								f_left <= f_left - item_cnt;
+							end
+							if ((f_left == 7'd0) && !s1_v && !nx_v) f_st <= F_DONE;
 						end
 
 						//A gather: the element of Vk for reg_idx is ready when wait_cnt reaches
@@ -768,8 +809,8 @@ module mem_fu (
 	//-----------------------------------------------------------------
 	// Memory port and issue
 	//-----------------------------------------------------------------
-	assign o_mem_addr    = fr_mem ? fr_addr : (state == STORE) ? wq_head[85:64] : (r_gather ? g_abs : f_abs);
-	assign o_mem_len     = ((state == LOAD) && !r_gather) ? {2'b0, item_len} : 7'd1;
+	assign o_mem_addr    = fr_mem ? fr_addr : (state == STORE) ? wq_head[85:64] : (r_gather ? g_abs : nx_abs);
+	assign o_mem_len     = ((state == LOAD) && !r_gather) ? {2'b0, nx_len} : 7'd1;
 	assign o_mem_wr_data = fr_mem ? fr_word : wq_head[63:0];
 	assign o_mem_ce      = sc_req || ld_req || st_req;
 	assign o_mem_wr_en   = (sc_req && fr_store) || st_req;

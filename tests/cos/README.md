@@ -13,6 +13,9 @@ DE10-Nano, under "Differences from a real X-MP".
 - `vec.cal`, `sca.cal`: two loads, an add and a store, with vector and with
   scalar instructions
 
+`tools/py/membench.py` runs the same loops in the CPU simulation
+(`tests/bench/membench.cal`), for a look before a build.
+
 To run one, put it on the expander disk as a job behind these statements
 (`tools/py/expdisk.py puttext`, see `docs/DEVELOPMENT.md`) and submit it at
 the station. The log printed with the job has the CPU time at `$ABD.` and
