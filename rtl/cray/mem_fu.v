@@ -840,9 +840,17 @@ module mem_fu (
 	//-----------------------------------------------------------------
 	// The addresses of a transfer run evenly from the first to the last, so the
 	// whole of it is inside the field when both of those are.
-	reg               released;  // the instruction has issued; the transfer goes on behind it
-	reg        [ 1:0] age;  // clocks since the start, up to 3
-	reg signed [31:0] span;  // from the first address to the last
+	reg                released;  // the instruction has issued; the transfer goes on behind it
+	reg         [ 1:0] age;  // clocks since the start, up to 3
+	// The multiplier takes the step and the count from registers of its own,
+	// loaded a clock after the start from the start's latch: a short way in,
+	// where the latch itself, with the register file's read and the result
+	// bypass in front of it, is a long one.  The product is combinational in
+	// the clock after, when the last address is looked at: the same clock as
+	// before.
+	reg         [ 7:0] span_n;
+	reg         [23:0] span_s;
+	wire signed [31:0] span = $signed(span_n) * $signed(span_s);  // from the first address to the last
 
 	// Addresses wrap at 22 bits; a transfer that would is not let go.  The last
 	// address is inside if it is below the words the field has from its base on.
@@ -859,7 +867,10 @@ module mem_fu (
 			age      <= 2'd0;
 		end else begin
 			if (age != 2'd3) age <= age + 2'd1;
-			if (age == 2'd0) span <= $signed({1'b0, remaining} - 8'sd1) * $signed(stride);
+			if (age == 2'd0) begin
+				span_n <= {1'b0, remaining} - 8'd1;
+				span_s <= stride;
+			end
 			if (o_mem_issue && i_issue) released <= 1'b1;
 		end
 
