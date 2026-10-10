@@ -1,0 +1,35 @@
+         IDENT     VEC
+         ENTRY     VEC
+         START     VEC
+N        =         4096
+REP      =         1000
+VEC      A7        REP
+OUTER    A1        A
+         A2        B
+         A3        C
+         A4        N/64
+         A5        64
+         VL        A5
+         A6        1
+INNER    A0        A1
+         V0        ,A0,A6
+         A0        A2
+         V1        ,A0,A6
+         V2        V0+V1
+         A0        A3
+         ,A0,A6    V2
+         A1        A1+A5
+         A2        A2+A5
+         A3        A3+A5
+         A4        A4-1
+         A0        A4
+         JAN       INNER
+         A7        A7-1
+         A0        A7
+         JAN       OUTER
+         S0        0
+         EX
+A        BSS       N
+B        BSS       N
+C        BSS       N
+         END

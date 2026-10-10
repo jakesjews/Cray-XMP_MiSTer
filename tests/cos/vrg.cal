@@ -1,0 +1,19 @@
+         IDENT     VRG
+         ENTRY     VRG
+         START     VRG
+N        =         4096
+REP      =         1000
+VRG      A7        REP
+         A5        64
+         VL        A5
+OUTER    A4        N/64
+INNER    V2        V0+V1
+         A4        A4-1
+         A0        A4
+         JAN       INNER
+         A7        A7-1
+         A0        A7
+         JAN       OUTER
+         S0        0
+         EX
+         END

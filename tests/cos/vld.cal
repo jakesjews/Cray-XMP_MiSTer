@@ -1,0 +1,24 @@
+         IDENT     VLD
+         ENTRY     VLD
+         START     VLD
+N        =         4096
+REP      =         1000
+VLD      A7        REP
+         A5        64
+         VL        A5
+         A6        1
+OUTER    A1        A
+         A4        N/64
+INNER    A0        A1
+         V0        ,A0,A6
+         A1        A1+A5
+         A4        A4-1
+         A0        A4
+         JAN       INNER
+         A7        A7-1
+         A0        A7
+         JAN       OUTER
+         S0        0
+         EX
+A        BSS       N
+         END

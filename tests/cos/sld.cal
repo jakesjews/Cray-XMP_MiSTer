@@ -1,0 +1,19 @@
+         IDENT     SLD
+         ENTRY     SLD
+         START     SLD
+N        =         4096
+REP      =         1000
+SLD      A7        REP
+OUTER    A1        0
+         A2        N
+INNER    S1        A,A1
+         A1        A1+1
+         A0        A2-A1
+         JAN       INNER
+         A7        A7-1
+         A0        A7
+         JAN       OUTER
+         S0        0
+         EX
+A        BSS       N
+         END
