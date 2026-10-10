@@ -29,9 +29,10 @@ The upstream CPU did not run programs correctly as found. What this core keeps
 from it, with repairs:
 
 - instruction issue from the current instruction parcel
-- the result schedulers for the A, S and V registers and their delay tables
+- the rules by which the A, S and V schedulers let an instruction issue, and
+  the tables of where a result comes from
 - the scalar integer, logical, shift and population count units
-- the A, S, B and T register files and the instruction buffers
+- the B and T register files and the instruction buffers
 
 What was written for this core, in `rtl/cray/`:
 
@@ -41,16 +42,22 @@ What was written for this core, in `rtl/cray/`:
 - `cray_predecode`, everything the issue logic has to know about an
   instruction, decoded a clock before the instruction is the current one
 - `mem_fu`, the memory sequencer for scalar, block and vector transfers
+- `res_lanes`, the results on their way to the A and S registers, a lane for
+  every unit, and `res_regfile`, the A and S registers with a way in for each
+  lane; they took the place of the upstream result pipelines and register
+  files, which delivered one A result and one S result a clock period, as
+  the CRAY-1 does
 - `v_regfile` and `v_optrack`, the vector registers and per-unit operation tracking
-- `vector_logical`, `vector_add`, `vector_shift`
+- `vector_logical`, `vector_add`, `vector_shift`, `vector_pop`
 - `fp_add`, `fp_mul`, `fp_recip`, the floating-point units
+- `xmp_channels`, the 6 Mbyte channels
 
 Repairs to the upstream files:
 
 - `imm_gen`: the complemented constants of 021 and 041 used a logical not.
 - `s_scheduler`: 052 and 053 deliver to S0, not Si.
-- `a_regfile`, `s_regfile`: the constants read for register number 0 take
-  priority over a result on its way to A0 or S0.
+- The A and S register files: the constants read for register number 0 take
+  priority over a result on its way to A0 or S0 (now in `res_regfile`).
 - `scalar_shift`, `scalar_pop_lz`: the result is chosen by the instruction
   that started the operation, not by one that issued later.
 - `brancher`: the wait for a branch's second parcel no longer reads parcels
@@ -67,9 +74,9 @@ Repairs to the upstream files:
 - `i_buf`: a buffer that is being filled again no longer answers for the
   block it held before. A jump taken after a fetch ahead could otherwise run
   parcels of the wrong block.
-- Lint clean-up across the files: signals and registers nothing read were
-  removed and operand widths made explicit. Each module was proven equivalent
-  to its form before the clean-up with `tools/py/equiv.py`.
+- Lint clean-up across the files: signals, registers and ports nothing read
+  were removed and operand widths made explicit. Each module was proven
+  equivalent to its form before the clean-up with `tools/py/equiv.py`.
 
 The CPU was first brought up and verified as the CRAY-1 of 1982, which is
 what the upstream sources set out to be, with the X-MP's features behind a
@@ -232,8 +239,9 @@ measures cases of each kind below with the real-time clock, and
   as an operand does not hold the issue of an instruction that reads it, a
   vector store included. The operation runs as the data becomes available,
   element by element, also behind a vector load, whose pauses then show in
-  every operation of the chain. An instruction that issues before or at the
-  time element 0 arrives at the register loses nothing, which is the one
+  every operation of the chain. A store, gather or scatter sees an element a
+  clock period after it has arrived. An instruction that issues before or at
+  the time element 0 arrives at the register loses nothing, which is the one
   rule the manual gives.
 
 ## Compared with Cray-on-FPGA
@@ -246,8 +254,9 @@ taken before its flag was set; that is fixed. Several of its changes differ
 from the manual (exit flags set in monitor mode, a vector length of 64 for
 `VL 1`), and it still has upstream faults repaired here, so no code was taken
 from it. One idea was: its memory instructions issue at once and transfer in
-the background. For vector loads and stores that is what the real machine does
-(manual page 4-70), and this core now does it too.
+the background. That is what the real machine does (CSM-0111000 pages 2-6,
+5-40, 5-64 and 5-92), and this core now does it too, for scalar references
+and block transfers as for vector loads and stores.
 
 ## The I/O Subsystem
 
@@ -643,19 +652,29 @@ took the CPU from there to the X-MP's clock:
 - The decision to issue an instruction starts from flip-flops. The
   instruction is decoded while it is still the next instruction parcel
   (`cray_predecode`, kept in a register beside CIP), and the A and S
-  schedulers keep the registers that have a result on its way, and the
-  register at the head of their pipelines, in registers of their own.
-- Results are gathered a clock early. Each of the A and S register files has
-  one register that takes whatever result is due in the next clock, and the
-  units whose results are due soonest keep result registers of their own. A
-  result then goes from a flip-flop through one choice into the register
-  file and its bypass. The floating-point units take their operands into
-  registers before anything else, within their 6, 7 and 14 clock periods.
+  schedulers keep the registers that have a result on its way in registers
+  of their own (`res_lanes`).
+- A result has a short way into its register. Every unit has a lane, and
+  units that can never deliver in the same clock share a way into the
+  registers, so that six ways lead into the S registers and five into the A
+  registers. The units that take longer have their result a clock before it
+  is due and write it then. The floating-point units take their operands
+  into registers before anything else, within their 6, 7 and 14 clock
+  periods.
 - An instruction issues in the clock its operand arrives without the
   decision becoming longer: beside the registers that have a result on its
   way, each scheduler keeps the same list without the result that arrives
   next, and that list is what an instruction's operands are held against.
-  The operand itself comes through the bypass.
+  The operand itself is read off the lane, and whether a read port takes it
+  from there or from the register is worked out the clock before and kept in
+  a register for every port (`res_regfile`); the decision to issue only
+  picks between what was prepared for either answer. Whether A0 or S0 is
+  zero, for the branches, is worked out when the register is written.
+- A memory unit that has things ready. An address is checked against the
+  number of words the field has above its base, which is kept in a register,
+  so the check is one comparison in the clock after a scalar reference
+  issues; and a vector transfer reads how far its register is filled from a
+  register of its own.
 - Nothing wide waits for the decision to issue. 075, 025 and the return jump
   write their T or B register in the clock after they issue, 003 and 0014j0
   load the vector mask and the real-time clock then, and the units that are
@@ -860,6 +879,20 @@ The I/O Subsystem and the core:
   Real" the kernel's boot takes 26.8 seconds where it takes 13.1, COS starts
   and the FORTRAN job runs and prints. A session at the station with the
   text editor works from the keyboard, Backspace included.
+- The build with a way into the registers for every unit, memory references
+  in the background and the whole terminal was run on a DE10-Nano from the
+  package: COS starts and the three example jobs print what they should. The
+  FORTRAN job takes 23.3 seconds of CPU time by COS's own count, where the
+  build before took 29.1. The status line shows `BLK` after Shift+F10 and
+  `PRT` after Shift+F11, F10 and F11 take them away again, and text typed
+  after Ctrl+Shift+F11 is dim. A job that assembles a program with the
+  macros of `SYSTXT` and a C program compiled on another computer and put on
+  the expander disk run and print.
+- The core as a whole starts COS in simulation with "Device times: Real" as
+  well: the station has logged on after 17.1 seconds of machine time, where
+  it takes 3.1 with the fast ones.
+- The whole test suite passes on Linux as on macOS (Ubuntu with Verilator
+  5.032, macOS with 5.052).
 
 ## Resources
 
