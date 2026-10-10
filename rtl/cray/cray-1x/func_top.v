@@ -507,8 +507,19 @@ module func_top (
 	assign a_ex_addr = x_cnt[2:0];
 	assign s_ex_addr = x_cnt[2:0];
 
-	//The instruction buffers always follow the program counter
-	assign o_p_addr    = p_addr + {instr_base_addr[21:0], 2'b0};
+	//The instruction buffers always follow the program counter.  The fetch address,
+	//P with the instruction base address, is kept in a register that follows P
+	//the same way, so that the buffers compare register with register: the sum
+	//would stand in front of the next instruction's validity and the way into
+	//CIP.  While the CPU exchanges it takes the sum itself, and is right when
+	//the CPU runs again.
+	reg [23:0] p_fetch;
+	always @(posedge clk)
+		if (rst) p_fetch <= 24'b0;
+		else if (!x_swap)
+			p_fetch <= (issue_vld && (nip_in_vld || take_branch)) ? (take_branch ? o_jump_addr : p_fetch + 24'd1) : p_fetch;
+		else p_fetch <= p_addr + {instr_base_addr[21:0], 2'b0};
+	assign o_p_addr    = p_fetch;
 	//and are told of a branch in the clock it is taken, with where it goes
 	assign o_jump      = !x_swap && issue_vld && take_branch;
 	assign o_jump_addr = p_target + {instr_base_addr[21:0], 2'b0};
