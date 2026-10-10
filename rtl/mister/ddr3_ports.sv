@@ -181,6 +181,11 @@ module ddr3_ports #(
 		end else begin
 			if (drain != 9'd0) drain <= drain - 9'd1;
 
+			// a user's reset: what it still has here is not wanted any more (an
+			// entry taken in this clock gets its own mark below)
+			for (e = 0; e < CF; e = e + 1) if (user_rst[cf_owner[e]]) cf_dead[e] <= 1'b1;
+			for (e = 0; e < RF; e = e + 1) if (user_rst[rf_owner[e]]) rf_dead[e] <= 1'b1;
+
 			// taken: into the queue, or straight to the bridge when nothing waits
 			if (any_take) begin
 				last <= pick;
@@ -229,10 +234,6 @@ module ddr3_ports #(
 				rf_cnt <= rf_pop ? 7'd0 : rf_cnt + 7'd1;
 				if (rf_pop) rf_rd <= rf_rd + 1'd1;
 			end
-
-			// a user's reset: what it still has here is not wanted any more
-			for (e = 0; e < CF; e = e + 1) if (user_rst[cf_owner[e]]) cf_dead[e] <= 1'b1;
-			for (e = 0; e < RF; e = e + 1) if (user_rst[rf_owner[e]]) rf_dead[e] <= 1'b1;
 
 			// users that hold their request until its acknowledge: a write is
 			// acknowledged the clock after it is taken

@@ -717,8 +717,11 @@ All large memories are in the MiSTer's DDR3, in 64-bit words from HPS address
 
 `rtl/mister/ddr3_ports.sv` shares the DDR3 port between the CPU, the BIOP's
 channel into central memory, the Buffer Memory channels, the tape drive and
-the copy of the kernel; they take turns. The Local Memories of the I/O
-Processors are block memory in the FPGA.
+the copy of the kernel; they take turns. Requests go to the DDR3 in the
+order they are taken, several of them on their way at once, and the words
+of reads come back in that order: the CPU presents a request a clock, the
+others hold each request until its acknowledge. The Local Memories of the
+I/O Processors are block memory in the FPGA.
 
 DDR3 keeps its contents when a core is loaded, so central memory and Buffer
 Memory are filled with zeros the first time after the core has been loaded,
@@ -730,12 +733,14 @@ that case. A reset from the menu leaves the memories as they are, as a
 restart of the real machine does.
 
 An instruction buffer holds 32 words, as on the X-MP, and fills with two
-16-word bursts: first the half with the parcel that is wanted, which runs as
-soon as it is in, then the other half. A vector load
-stepping by 1 to 7 words also reads whole lines in bursts when three or more
-of its elements lie in a line, and picks its elements out as they arrive. A
-block or vector store reads the next word from its register while the one
-before is on its way to memory.
+16-word reads: first the half with the parcel that is wanted, which runs as
+soon as it is in, then the other half. A block or vector load issues its
+reads without waiting for their words, up to eight of them ahead; stepping
+by 1 to 7 words it reads the elements that lie in a 16-word line as one
+request, from the first of them to the last, and picks them out as the
+words go by. A block or vector store reads its register a word a clock and
+hands the words to memory as it takes them. Scalar references are presented
+to memory one behind the other, in the order they issued.
 
 No memory instruction waits for memory to issue. A scalar reference issues
 as soon as both its parcels are there; its address is formed and checked

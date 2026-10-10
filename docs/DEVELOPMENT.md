@@ -161,8 +161,12 @@ sim/build/core/Vemu BOOTFILE --disk 0=exp_disk.img --until 'ENTER DATE'
 
 - `Vcray_cpu` is the CPU with a memory model of four million words, and with
   each output channel cabled to the input channel of its pair. `--mem` picks
-  the memory timing: `0`, `fixed:N`, `rand:A-B`, `ddr3` or `slow`. `--step`
-  holds each instruction until the one before has finished.
+  the memory timing: `0`, `fixed:N`, `rand:A-B`, `mister` (the DE10-Nano's
+  DDR3 as measured under COS: a word about 16 clocks after its read), `ddr3`
+  or `slow`. `--step` holds each instruction until the one before has
+  finished. `tools/py/membench.py` runs the memory loops of `tests/cos` on
+  it (`tests/bench/membench.cal`) and prints the clock periods each takes
+  for an element, for one or more `--mem` profiles.
 - `Vfp_tb` checks the floating-point units against vector files.
 - `sim/build/iop/Viop_cpu RECORD` is the I/O Processor following a record of
   the reference model's steps; `tools/py/ioptest.py` makes the records.
@@ -242,7 +246,9 @@ time, and a second random seed. All five must agree with the model.
   register and the 24-bit constant, `imm.cal` for interrupt monitor mode,
   `vnu.cal` for the VNU and ESVL bits of the package, `gather.cal` for the
   gather, the scatter and the compress index; `vfar.cal`, vector
-  transfers with long steps that leave a user's field; `together.cal`,
+  transfers with long steps that leave a user's field; `vedge.cal`, vector
+  loads with every small step that run off the end of a field (written by
+  `gen_vedge.py`); `together.cal`,
   results of several units that are due in one clock period; `memq.cal`,
   memory references that go on behind the instructions that follow them;
   and `memrange.cal`, the operand range error of such a reference with

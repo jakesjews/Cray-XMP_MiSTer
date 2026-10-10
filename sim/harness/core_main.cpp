@@ -6,7 +6,7 @@
 //
 //   Vemu [BOOTFILE] [--disk N=FILE]... [--drive N=FILE]... [--type TEXT=KEYS]...
 //        [--press TEXT=KEYS]... [--until TEXT] [--ms N] [--reset-at MS] [--reset-on TEXT] [--screen C]...
-//        [--printed BLOCKS] [--printer OUT] [--until-printed TEXT] [--frame OUT.ppm] [--ddr fast|normal|slow]
+//        [--printed BLOCKS] [--printer OUT] [--until-printed TEXT] [--frame OUT.ppm] [--ddr fast|quick|normal|slow]
 //        [--disk-wait CLOCKS] [--burst] [--seed N] [--quiet] [--mount TEXT=FILE]... [--tape-out FILE]
 //        [--real-times] [--font16]
 //
