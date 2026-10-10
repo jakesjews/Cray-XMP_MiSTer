@@ -18,7 +18,6 @@ module i_buf (
 	i_jump,
 	i_jump_addr,
 	o_nip_nxt,
-	o_word_nxt,
 	o_nip_vld,
 	o_mem_ce,
 	o_mem_burst,
@@ -35,7 +34,6 @@ module i_buf (
 	input wire i_jump;  // a branch is taken this clock: i_p_addr is its address in the next
 	input wire [23:0] i_jump_addr;
 	output reg [15:0] o_nip_nxt;
-	output reg [63:0] o_word_nxt;
 	output wire o_nip_vld;
 	//64-bit wide memory interface
 	output wire o_mem_ce;
@@ -228,18 +226,6 @@ module i_buf (
 		endcase
 	end
 
-	//and we need to output the whole current 64-bit word (for exchange packages)
-	always @(posedge clk) begin
-		case ({
-			buf0_match, buf1_match, buf2_match, buf3_match
-		})
-			4'b1000: o_word_nxt <= cur_buf0_word;
-			4'b0100: o_word_nxt <= cur_buf1_word;
-			4'b0010: o_word_nxt <= cur_buf2_word;
-			4'b0001: o_word_nxt <= cur_buf3_word;
-			default: o_word_nxt <= 64'b0;
-		endcase
-	end
 	//State machine to retrieve the two 16-word halves of a block from memory
 	always @(posedge clk)
 		if (rst) buf_state <= IDLE;

@@ -54,12 +54,10 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/fp_recip.v" -match "*Bits of signal 
 lint_off -rule UNUSEDPARAM -file "rtl/cray/cray-1x/cray_types.vh" -match "*"
 
 // The lookup tables and the branch unit take the whole instruction parcel;
-// not every field decides every answer. The A scheduler has the ports of the
-// S scheduler but no use for the second-parcel flag.
+// not every field decides every answer.
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/a_res_lut.v" -match "*Bits of signal are not used: 'i_cip'[8:3]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/s_res_lut.v" -match "*Bits of signal are not used: 'i_cip'[8:6]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/brancher.v" -match "*Bits of signal are not used: 'i_cip'[8]*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/a_scheduler.v" -match "*Signal is not used: 'i_lip_vld'*"
 
 // 023 takes the low 24 bits of (Sj). The last stage of the population count
 // only adds bits 42 to 63. The double shifts keep one half of a 128-bit shift.
@@ -67,11 +65,6 @@ lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/imm_gen.v" -match "*Bits of 
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/scalar_pop_lz.v" -match "*Bits of signal are not used: 'sj2'[41:0]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/scalar_shift.v" -match "*Bits of signal are not used: 'result_d1_l'[63:0]*"
 lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/scalar_shift.v" -match "*Bits of signal are not used: 'result_d1_r'[127:64]*"
-
-// Two inputs of func_top that nothing reads: the instruction buffer's
-// whole-word output and a debug input, both from upstream.
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'i_word_nxt'*"
-lint_off -rule UNUSEDSIGNAL -file "rtl/cray/cray-1x/func_top.v" -match "*Signal is not used: 'i_debug_full'*"
 
 // The vector unit trackers have the same outputs.  Only the shift unit needs
 // to know the first and the last operand, and the logical unit the last (for

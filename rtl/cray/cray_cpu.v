@@ -58,7 +58,6 @@ module cray_cpu (
 	wire        jump;
 	wire [23:0] jump_addr;
 	wire [15:0] nip_nxt;
-	wire [63:0] word_nxt;
 	wire        nip_vld;
 	wire        clear_ibufs;
 	wire ibuf_busy, ibuf_hold;
@@ -135,7 +134,6 @@ module cray_cpu (
 		.i_jump     (jump),
 		.i_jump_addr(jump_addr),
 		.o_nip_nxt  (nip_nxt),
-		.o_word_nxt (word_nxt),
 		.o_nip_vld  (nip_vld),
 		.o_mem_ce   (instr_buf_mem_ce),
 		.o_mem_burst(instr_buf_mem_burst),
@@ -155,7 +153,6 @@ module cray_cpu (
 		.rst            (rst),
 		// instruction buffer interface
 		.i_nip_nxt      (nip_nxt),
-		.i_word_nxt     (word_nxt),
 		.i_nip_vld      (nip_vld),
 		.o_clear_ibufs  (clear_ibufs),
 		.o_p_addr       (p_addr),
@@ -171,8 +168,6 @@ module cray_cpu (
 		.o_mem_seq      (fu_mem_seq),
 		.i_mem_take     (mux_take[1]),
 		.i_mem_ack      (fu_mem_ack),
-		.o_debug        (),
-		.i_debug_full   (1'b0),
 		.i_single_step  (i_single_step),
 		.i_mcu_int      (i_mcu_int),
 		.i_ibuf_busy    (ibuf_busy),

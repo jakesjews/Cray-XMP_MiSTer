@@ -13,7 +13,6 @@ module func_top (
 	clk,
 	rst,
 	i_nip_nxt,
-	i_word_nxt,
 	i_nip_vld,
 	o_p_addr,
 	o_jump,
@@ -28,10 +27,6 @@ module func_top (
 	o_data_to_mem,
 	o_mem_wr_en,
 	i_mem_ack,
-	//Inter-cpu interface
-	//Debug interface
-	o_debug,
-	i_debug_full,
 	i_single_step,
 	i_mcu_int,
 	i_ibuf_busy,
@@ -64,7 +59,6 @@ module func_top (
 	input wire clk;
 	input wire rst;
 	input wire [15:0] i_nip_nxt;
-	input wire [63:0] i_word_nxt;
 	input wire i_nip_vld;
 	output wire [23:0] o_p_addr;
 	output wire o_jump;  // a branch is taken this clock
@@ -95,8 +89,6 @@ module func_top (
 	input wire i_ch_int;  // some channel asks
 
 
-	output wire [31:0] o_debug;
-	input wire i_debug_full;
 	input wire i_single_step;
 	input wire i_mcu_int;  // request of the maintenance control unit: the MCU interrupt (flag bit 32)
 	input wire i_ibuf_busy;  // an instruction buffer fill is in progress
@@ -418,11 +410,6 @@ module func_top (
 	//5-20, 5-31, 5-60, 5-64)
 	wire mem_hold = (|(pd[PD_AH+:8] & a_res_mask)) || (pd[PD_USE_B] && blk_b) || (pd[PD_USE_T] && blk_t);
 	assign opnd_busy = (|(rd_a & a_wait_mask)) || (|(rd_s & s_wait_mask)) || vec_hold || mode_hold || ts_wait || (pd[PD_H074] && tw_en) || (pd[PD_H024] && bw_en) || vmem_unsure || mem_hold;
-
-	/////////////////////////////////////
-	//    Logic Analyzer        //
-	/////////////////////////////////////
-	assign o_debug[31:0] = {xa[7:0], 2'b0, cip_vld && issue_vld, 1'b0, cln, cip_vld, issue_vld, o_p_addr[15:0]};
 
 	//////////////////////////////////////////
 	//     Exchange Package Logic           //
